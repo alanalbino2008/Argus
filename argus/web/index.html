@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Argus // All-Seeing OSINT Intelligence & Graph Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <!-- Cytoscape.js core -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+</head>
+<body>
+
+  <!-- Top Navigation Bar -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">ARGUS</div>
+        <div class="brand-subtitle">Autonomous OSINT & Graph Link Analysis</div>
+      </div>
+    </div>
+
+    <!-- Quick Scan Bar -->
+    <div class="scan-bar">
+      <input type="text" id="target-input" class="scan-input" placeholder="Enter Domain, Username, Email, or IP..." autocomplete="off">
+      <select id="type-select" class="scan-select">
+        <option value="">Auto-Detect</option>
+        <option value="domain">Domain</option>
+        <option value="username">Username</option>
+        <option value="email">Email</option>
+        <option value="ip_address">IP Address</option>
+      </select>
+      <div class="scan-depth">
+        <span>Depth:</span>
+        <input type="number" id="depth-input" value="2" min="1" max="3">
+      </div>
+      <button id="launch-btn" class="btn-launch">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+        </svg>
+        Launch Recon
+      </button>
+    </div>
+
+    <!-- Telemetry Badges -->
+    <div class="telemetry-badges">
+      <div class="stat-pill">
+        <span>Status:</span>
+        <span id="status-badge" style="color: var(--text-muted); font-weight: 700;">Idle</span>
+      </div>
+      <div class="stat-pill">
+        <span>Nodes:</span>
+        <span id="node-counter" class="num">0</span>
+      </div>
+      <div class="stat-pill">
+        <span>Edges:</span>
+        <span id="edge-counter" class="num">0</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <main class="main-layout">
+    <!-- Graph Container -->
+    <div id="cy-container">
+      <div id="cy"></div>
+
+      <!-- Floating Canvas Controls -->
+      <div class="graph-floating-controls">
+        <button id="btn-fit" class="control-btn" title="Fit to Screen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+        <button id="btn-zoom-in" class="control-btn" title="Zoom In">+</button>
+        <button id="btn-zoom-out" class="control-btn" title="Zoom Out">-</button>
+        <button id="btn-relayout" class="control-btn" title="Re-simulate Layout">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Entity Legend -->
+      <div class="graph-legend">
+        <div class="legend-item"><span class="legend-dot" style="background: #00f0ff;"></span> Domain</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #38bdf8;"></span> Subdomain</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #10b981;"></span> IP Address</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #a855f7;"></span> Username</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #d946ef;"></span> Profile</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #eab308;"></span> Certificate</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #3b82f6;"></span> Tech</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #f97316;"></span> Organization</div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar / Intelligence Panel -->
+    <aside class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="tab-btn active" data-tab="tab-inspector">Inspector</button>
+        <button class="tab-btn" data-tab="tab-activity">Activity Feed</button>
+        <button class="tab-btn" data-tab="tab-analytics">Threat Intel</button>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- Inspector Pane -->
+        <div id="tab-inspector" class="tab-pane active">
+          <div id="inspector-content">
+            <div style="text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 0.85rem;">
+              Click on any entity node in the intelligence graph to inspect attributes and connections.
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity Feed Pane -->
+        <div id="tab-activity" class="tab-pane">
+          <div id="event-feed" class="event-feed">
+            <div style="text-align: center; color: var(--text-muted); margin-top: 20px; font-size: 0.85rem;">
+              Telemetry will stream live as reconnaissance executes.
+            </div>
+          </div>
+        </div>
+
+        <!-- Analytics & Threat Intel Pane -->
+        <div id="tab-analytics" class="tab-pane">
+          <div class="inspector-card">
+            <div class="inspector-title">Attack Surface Risk Score</div>
+            <div class="score-circle-container">
+              <div class="score-box">
+                <span id="threat-score-num" class="score-num">0</span>
+                <span class="score-label">Surface Score</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="inspector-card">
+            <div class="inspector-title">Top Pivots & Network Hubs</div>
+            <div id="hubs-list">
+              <div style="color: var(--text-muted); font-size: 0.8rem;">No graph hubs calculated yet.</div>
+            </div>
+          </div>
+
+          <div class="inspector-card">
+            <div class="inspector-title">Exposure Flags & Anomalies</div>
+            <div id="risk-flags-list">
+              <div style="color: var(--text-muted); font-size: 0.8rem;">No anomalies detected.</div>
+            </div>
+          </div>
+
+          <div class="inspector-card">
+            <div class="inspector-title">Intelligence Exports</div>
+            <div class="export-actions">
+              <a id="btn-export-json" href="#" class="btn-secondary" download>JSON Graph</a>
+              <a id="btn-export-csv" href="#" class="btn-secondary" download>Maltego CSV</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

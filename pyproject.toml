@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "argus-osint"
+version = "1.0.0"
+authors = [
+    { name = "Argus Intelligence", email = "security@argus.local" }
+]
+description = "Next-Generation Open Source Intelligence (OSINT) Platform & Graph Correlation Engine"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Security",
+]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "networkx>=3.2.0",
+    "aiohttp>=3.9.0",
+    "dnspython>=2.6.0",
+    "rich>=13.7.0",
+    "websockets>=12.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+argus = "argus.cli.console:cli_entrypoint"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

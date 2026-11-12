@@ -1,0 +1,530 @@
+{
+  "investigation_id": "inv_02dd2e82",
+  "nodes": [
+    {
+      "id": "domain_ed152b32b035",
+      "type": "domain",
+      "value": "example.com",
+      "label": "example.com",
+      "metadata": {
+        "security_headers_grade": "F",
+        "present_security_headers": {},
+        "missing_security_headers": [
+          "strict-transport-security",
+          "content-security-policy",
+          "x-frame-options",
+          "x-content-type-options",
+          "referrer-policy",
+          "permissions-policy"
+        ],
+        "http_status": 200,
+        "registration_date": "1995-08-14T04:00:00Z",
+        "expiration_date": "2027-08-13T04:00:00Z",
+        "last_changed": "2026-08-14T08:01:43Z"
+      },
+      "first_seen": "2026-11-12T23:05:32.429675Z",
+      "source_module": "seed",
+      "confidence": 1.0,
+      "depth": 0
+    },
+    {
+      "id": "ip_address_bb83ad7f0435",
+      "type": "ip_address",
+      "value": "172.66.147.243",
+      "label": "172.66.147.243",
+      "metadata": {
+        "record_type": "A",
+        "domain": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:32.588213Z",
+      "source_module": "dns_recon",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "ip_address_1707fa6260e0",
+      "type": "ip_address",
+      "value": "104.20.23.154",
+      "label": "104.20.23.154",
+      "metadata": {
+        "record_type": "A",
+        "domain": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:32.592669Z",
+      "source_module": "dns_recon",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "ip_address_57607ef984f9",
+      "type": "ip_address",
+      "value": "2606:4700:10::6814:179a",
+      "label": "2606:4700:10::6814:179a",
+      "metadata": {
+        "record_type": "AAAA",
+        "domain": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:32.652696Z",
+      "source_module": "dns_recon",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "certificate_f82ab7f4057a",
+      "type": "certificate",
+      "value": "TLS-Cert: example.com (Unknown CA)",
+      "label": "Cert: Unknown CA",
+      "metadata": {
+        "issuer": "Unknown CA",
+        "valid_from": null,
+        "valid_to": null,
+        "sans_count": 0,
+        "tls_version": "TLSv1.3",
+        "cipher": "TLS_AES_256_GCM_SHA384"
+      },
+      "first_seen": "2026-11-12T23:05:32.663197Z",
+      "source_module": "tls_analyzer",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "ip_address_8a596ba5b07f",
+      "type": "ip_address",
+      "value": "2606:4700:10::ac42:93f3",
+      "label": "2606:4700:10::ac42:93f3",
+      "metadata": {
+        "record_type": "AAAA",
+        "domain": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:32.664151Z",
+      "source_module": "dns_recon",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "technology_03839888ed78",
+      "type": "technology",
+      "value": "cloudflare",
+      "label": "cloudflare",
+      "metadata": {
+        "category": "Web Server",
+        "target": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:32.782036Z",
+      "source_module": "http_fingerprint",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "technology_9a65f7c7c8c4",
+      "type": "technology",
+      "value": "Cloudflare CDN & WAF",
+      "label": "Cloudflare CDN & WAF",
+      "metadata": {
+        "category": "CDN / Proxy",
+        "target": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:32.785283Z",
+      "source_module": "http_fingerprint",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "domain_9e9445777139",
+      "type": "domain",
+      "value": "",
+      "label": "MX: ",
+      "metadata": {
+        "priority": "0"
+      },
+      "first_seen": "2026-11-12T23:05:32.827036Z",
+      "source_module": "dns_recon",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "domain_926581049b87",
+      "type": "domain",
+      "value": "hera.ns.cloudflare.com",
+      "label": "NS: hera.ns.cloudflare.com",
+      "metadata": {
+        "role": "authoritative_nameserver"
+      },
+      "first_seen": "2026-11-12T23:05:32.943718Z",
+      "source_module": "dns_recon",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "domain_70465db3f68a",
+      "type": "domain",
+      "value": "elliott.ns.cloudflare.com",
+      "label": "NS: elliott.ns.cloudflare.com",
+      "metadata": {
+        "role": "authoritative_nameserver"
+      },
+      "first_seen": "2026-11-12T23:05:32.946679Z",
+      "source_module": "dns_recon",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "dns_record_5720ddc268a6",
+      "type": "dns_record",
+      "value": "SPF: v=spf1 -all...",
+      "label": "SPF Policy",
+      "metadata": {
+        "full_record": "v=spf1 -all",
+        "type": "SPF"
+      },
+      "first_seen": "2026-11-12T23:05:33.014501Z",
+      "source_module": "dns_recon",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "organization_d646d66b7206",
+      "type": "organization",
+      "value": "RESERVED-Internet Assigned Numbers Authority",
+      "label": "Registrar: RESERVED-Internet Assigned Numbers Authority",
+      "metadata": {
+        "role": "registrar",
+        "domain": "example.com"
+      },
+      "first_seen": "2026-11-12T23:05:33.173958Z",
+      "source_module": "whois_lookup",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "dns_record_d00a991187cb",
+      "type": "dns_record",
+      "value": "DMARC: v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s...",
+      "label": "DMARC Policy",
+      "metadata": {
+        "full_record": "v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s",
+        "type": "DMARC"
+      },
+      "first_seen": "2026-11-12T23:05:33.186900Z",
+      "source_module": "dns_recon",
+      "confidence": 1.0,
+      "depth": 1
+    },
+    {
+      "id": "subdomain_fea276acfc03",
+      "type": "subdomain",
+      "value": "www.example.com",
+      "label": "www.example.com",
+      "metadata": {
+        "parent_domain": "example.com",
+        "discovery_method": "certificate_transparency"
+      },
+      "first_seen": "2026-11-12T23:05:34.374900Z",
+      "source_module": "subdomain_finder",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "subdomain_8d0b799fb461",
+      "type": "subdomain",
+      "value": "support.example.com",
+      "label": "support.example.com",
+      "metadata": {
+        "parent_domain": "example.com",
+        "discovery_method": "certificate_transparency"
+      },
+      "first_seen": "2026-11-12T23:05:34.377281Z",
+      "source_module": "subdomain_finder",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "subdomain_d2e4ca1e6dbf",
+      "type": "subdomain",
+      "value": "products.example.com",
+      "label": "products.example.com",
+      "metadata": {
+        "parent_domain": "example.com",
+        "discovery_method": "certificate_transparency"
+      },
+      "first_seen": "2026-11-12T23:05:34.379503Z",
+      "source_module": "subdomain_finder",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "subdomain_caec43746373",
+      "type": "subdomain",
+      "value": "m.example.com",
+      "label": "m.example.com",
+      "metadata": {
+        "parent_domain": "example.com",
+        "discovery_method": "certificate_transparency"
+      },
+      "first_seen": "2026-11-12T23:05:34.381648Z",
+      "source_module": "subdomain_finder",
+      "confidence": 0.95,
+      "depth": 1
+    },
+    {
+      "id": "subdomain_44c58d8557fe",
+      "type": "subdomain",
+      "value": "dev.example.com",
+      "label": "dev.example.com",
+      "metadata": {
+        "parent_domain": "example.com",
+        "discovery_method": "certificate_transparency"
+      },
+      "first_seen": "2026-11-12T23:05:34.383809Z",
+      "source_module": "subdomain_finder",
+      "confidence": 0.95,
+      "depth": 1
+    }
+  ],
+  "edges": [
+    {
+      "id": "afab004ea62e",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "ip_address_bb83ad7f0435",
+      "type": "RESOLVES_TO",
+      "label": "DNS A",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.592382Z"
+    },
+    {
+      "id": "f4f6128fc313",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "ip_address_1707fa6260e0",
+      "type": "RESOLVES_TO",
+      "label": "DNS A",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.594200Z"
+    },
+    {
+      "id": "bcd61e024ed1",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "ip_address_57607ef984f9",
+      "type": "RESOLVES_TO",
+      "label": "DNS AAAA",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.663323Z"
+    },
+    {
+      "id": "2380f0efe921",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "certificate_f82ab7f4057a",
+      "type": "SECURED_BY",
+      "label": "Secured By Certificate",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.664069Z"
+    },
+    {
+      "id": "ea731d427b39",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "ip_address_8a596ba5b07f",
+      "type": "RESOLVES_TO",
+      "label": "DNS AAAA",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.665399Z"
+    },
+    {
+      "id": "04f1363c0e0c",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "technology_03839888ed78",
+      "type": "USES_TECH",
+      "label": "Uses Web Server",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.784903Z"
+    },
+    {
+      "id": "d7ef780c4458",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "technology_9a65f7c7c8c4",
+      "type": "USES_TECH",
+      "label": "Uses CDN / Proxy",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.787555Z"
+    },
+    {
+      "id": "c7bba9d7dc83",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "domain_9e9445777139",
+      "type": "ASSOCIATED_WITH",
+      "label": "Mail Server",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.829131Z"
+    },
+    {
+      "id": "b33e95d1d10c",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "domain_926581049b87",
+      "type": "ASSOCIATED_WITH",
+      "label": "Authoritative Nameserver",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.946440Z"
+    },
+    {
+      "id": "8499e962aae2",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "domain_70465db3f68a",
+      "type": "ASSOCIATED_WITH",
+      "label": "Authoritative Nameserver",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:32.948144Z"
+    },
+    {
+      "id": "ef9d0ef9cf17",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "dns_record_5720ddc268a6",
+      "type": "HAS_DNS_RECORD",
+      "label": "SPF Record",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:33.016109Z"
+    },
+    {
+      "id": "d51dd0b9a123",
+      "source_id": "organization_d646d66b7206",
+      "target_id": "domain_ed152b32b035",
+      "type": "OPERATES",
+      "label": "Domain Registrar",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:33.175149Z"
+    },
+    {
+      "id": "d24720d2d31a",
+      "source_id": "domain_ed152b32b035",
+      "target_id": "dns_record_d00a991187cb",
+      "type": "HAS_DNS_RECORD",
+      "label": "DMARC Record",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:33.187866Z"
+    },
+    {
+      "id": "09ee6056e489",
+      "source_id": "subdomain_fea276acfc03",
+      "target_id": "domain_ed152b32b035",
+      "type": "SUBDOMAIN_OF",
+      "label": "Subdomain of",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:34.377037Z"
+    },
+    {
+      "id": "efe0c4f19c69",
+      "source_id": "subdomain_8d0b799fb461",
+      "target_id": "domain_ed152b32b035",
+      "type": "SUBDOMAIN_OF",
+      "label": "Subdomain of",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:34.379216Z"
+    },
+    {
+      "id": "e3c0b3a380cc",
+      "source_id": "subdomain_d2e4ca1e6dbf",
+      "target_id": "domain_ed152b32b035",
+      "type": "SUBDOMAIN_OF",
+      "label": "Subdomain of",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:34.381417Z"
+    },
+    {
+      "id": "45c6c6a2bfde",
+      "source_id": "subdomain_caec43746373",
+      "target_id": "domain_ed152b32b035",
+      "type": "SUBDOMAIN_OF",
+      "label": "Subdomain of",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:34.383521Z"
+    },
+    {
+      "id": "125f78daa893",
+      "source_id": "subdomain_44c58d8557fe",
+      "target_id": "domain_ed152b32b035",
+      "type": "SUBDOMAIN_OF",
+      "label": "Subdomain of",
+      "metadata": {},
+      "confidence": 1.0,
+      "discovered_at": "2026-11-12T23:05:34.386130Z"
+    }
+  ],
+  "analytics": {
+    "node_count": 19,
+    "edge_count": 18,
+    "entities_by_type": {
+      "domain": 4,
+      "ip_address": 4,
+      "certificate": 1,
+      "technology": 2,
+      "dns_record": 2,
+      "organization": 1,
+      "subdomain": 5
+    },
+    "top_hubs": [
+      {
+        "id": "domain_ed152b32b035",
+        "label": "example.com",
+        "type": "domain",
+        "degree": 18
+      },
+      {
+        "id": "ip_address_bb83ad7f0435",
+        "label": "172.66.147.243",
+        "type": "ip_address",
+        "degree": 1
+      },
+      {
+        "id": "ip_address_1707fa6260e0",
+        "label": "104.20.23.154",
+        "type": "ip_address",
+        "degree": 1
+      },
+      {
+        "id": "ip_address_57607ef984f9",
+        "label": "2606:4700:10::6814:179a",
+        "type": "ip_address",
+        "degree": 1
+      },
+      {
+        "id": "certificate_f82ab7f4057a",
+        "label": "Cert: Unknown CA",
+        "type": "certificate",
+        "degree": 1
+      },
+      {
+        "id": "ip_address_8a596ba5b07f",
+        "label": "2606:4700:10::ac42:93f3",
+        "type": "ip_address",
+        "degree": 1
+      },
+      {
+        "id": "technology_03839888ed78",
+        "label": "cloudflare",
+        "type": "technology",
+        "degree": 1
+      },
+      {
+        "id": "technology_9a65f7c7c8c4",
+        "label": "Cloudflare CDN & WAF",
+        "type": "technology",
+        "degree": 1
+      }
+    ],
+    "density": 0.0526
+  }
+}
