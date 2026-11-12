@@ -28,6 +28,8 @@ class EntityType(str, Enum):
     TECHNOLOGY = "technology"
     DNS_RECORD = "dns_record"
     PHONE = "phone"
+    VULNERABILITY = "vulnerability"
+    PORT = "port"
     GENERIC = "generic"
 
 
@@ -43,6 +45,7 @@ class RelationType(str, Enum):
     SECURED_BY = "SECURED_BY"
     USES_TECH = "USES_TECH"
     HAS_DNS_RECORD = "HAS_DNS_RECORD"
+    EXPOSES = "EXPOSES"
     ASSOCIATED_WITH = "ASSOCIATED_WITH"
     EXTRACTED_FROM = "EXTRACTED_FROM"
 

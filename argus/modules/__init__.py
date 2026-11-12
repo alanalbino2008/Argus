@@ -10,13 +10,19 @@ from argus.modules.infrastructure.ip_intelligence import IpIntelligenceModule
 from argus.modules.infrastructure.whois_lookup import WhoisLookupModule
 from argus.modules.infrastructure.tls_analyzer import TlsAnalyzerModule
 from argus.modules.infrastructure.http_fingerprint import HttpFingerprintModule
+from argus.modules.infrastructure.shodan_internetdb import ShodanInternetDbModule
+from argus.modules.identity.github_hunter import GitHubHunterModule
+from argus.modules.identity.phone_recon import PhoneReconModule
 
 ALL_MODULE_CLASSES: List[Type[BaseModule]] = [
     UsernameHunterModule,
     EmailReconModule,
+    GitHubHunterModule,
+    PhoneReconModule,
     DnsReconModule,
     SubdomainFinderModule,
     IpIntelligenceModule,
+    ShodanInternetDbModule,
     WhoisLookupModule,
     TlsAnalyzerModule,
     HttpFingerprintModule,

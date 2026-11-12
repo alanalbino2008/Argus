@@ -50,8 +50,13 @@
       </button>
     </div>
 
-    <!-- Telemetry Badges -->
+    <!-- Telemetry Badges & Theme Toggle -->
     <div class="telemetry-badges">
+      <select id="theme-select" class="theme-select" title="Switch Interface Theme">
+        <option value="cyberpunk">Cyber Obsidian</option>
+        <option value="matrix">Matrix Green</option>
+        <option value="soc">SOC Blue</option>
+      </select>
       <div class="stat-pill">
         <span>Status:</span>
         <span id="status-badge" style="color: var(--text-muted); font-weight: 700;">Idle</span>
@@ -75,6 +80,12 @@
 
       <!-- Floating Canvas Controls -->
       <div class="graph-floating-controls">
+        <select id="layout-select" class="layout-select" title="Switch Graph Layout Engine">
+          <option value="cose">Physics (CoSE)</option>
+          <option value="concentric">Concentric (Radial)</option>
+          <option value="breadthfirst">Tree (Hierarchy)</option>
+          <option value="circle">Circular Orbit</option>
+        </select>
         <button id="btn-fit" class="control-btn" title="Fit to Screen">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
@@ -96,9 +107,11 @@
         <div class="legend-item"><span class="legend-dot" style="background: #10b981;"></span> IP Address</div>
         <div class="legend-item"><span class="legend-dot" style="background: #a855f7;"></span> Username</div>
         <div class="legend-item"><span class="legend-dot" style="background: #d946ef;"></span> Profile</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #eab308;"></span> Certificate</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span> Vuln (CVE)</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #06b6d4;"></span> Port</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #eab308;"></span> Cert</div>
         <div class="legend-item"><span class="legend-dot" style="background: #3b82f6;"></span> Tech</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #f97316;"></span> Organization</div>
+        <div class="legend-item"><span class="legend-dot" style="background: #f97316;"></span> Org</div>
       </div>
     </div>
 
@@ -156,16 +169,40 @@
           </div>
 
           <div class="inspector-card">
-            <div class="inspector-title">Intelligence Exports</div>
+            <div class="inspector-title">Intelligence Exports & Briefings</div>
             <div class="export-actions">
               <a id="btn-export-json" href="#" class="btn-secondary" download>JSON Graph</a>
               <a id="btn-export-csv" href="#" class="btn-secondary" download>Maltego CSV</a>
+            </div>
+            <div style="margin-top: 10px;">
+              <button id="btn-open-report" class="btn-secondary" style="width: 100%; border-color: var(--accent-cyan); color: var(--accent-cyan);">
+                📑 Generate Executive Dossier (Print / PDF)
+              </button>
             </div>
           </div>
         </div>
       </div>
     </aside>
   </main>
+
+  <!-- Executive Dossier Printable Modal -->
+  <div id="report-modal" class="modal-overlay">
+    <div class="report-card">
+      <div class="report-header">
+        <div>
+          <h2 style="font-size: 1.1rem; color: #fff; margin: 0;">ARGUS INTELLIGENCE REPORT</h2>
+          <div style="font-size: 0.75rem; color: #94a3b8;">Confidential OSINT Reconnaissance Dossier</div>
+        </div>
+        <button id="btn-close-report" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">✕</button>
+      </div>
+      <div id="report-modal-body" class="report-body">
+        <!-- Injected via JavaScript -->
+      </div>
+      <div class="report-footer">
+        <button id="btn-print-report" class="btn-launch" style="background: var(--accent-cyan);">🖨️ Print / Save as PDF</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

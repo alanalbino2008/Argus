@@ -484,3 +484,161 @@ header {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+/* --- THEME VARIATIONS --- */
+body.theme-matrix {
+  --bg-primary: #030a04;
+  --bg-secondary: #081409;
+  --bg-card: rgba(8, 20, 9, 0.85);
+  --border-color: rgba(34, 197, 94, 0.25);
+  --accent-cyan: #22c55e;
+  --accent-emerald: #16a34a;
+  --accent-purple: #10b981;
+}
+
+body.theme-soc {
+  --bg-primary: #0b1120;
+  --bg-secondary: #0f172a;
+  --bg-card: rgba(30, 41, 59, 0.8);
+  --border-color: rgba(56, 189, 248, 0.2);
+  --accent-cyan: #38bdf8;
+  --accent-emerald: #0ea5e9;
+  --accent-purple: #6366f1;
+}
+
+/* Theme & Layout Selectors */
+.theme-select, .layout-select {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  outline: none;
+  cursor: pointer;
+}
+
+/* Executive Report Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+}
+
+.modal-overlay.active {
+  display: flex;
+}
+
+.report-card {
+  background: #0f172a;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 850px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.report-header {
+  padding: 20px 24px;
+  background: #1e293b;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.report-body {
+  padding: 24px;
+  overflow-y: auto;
+  color: #e2e8f0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.report-body h2 {
+  font-size: 1.25rem;
+  color: #38bdf8;
+  margin: 18px 0 8px 0;
+}
+
+.report-body h3 {
+  font-size: 1rem;
+  color: #94a3b8;
+  margin: 14px 0 6px 0;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+}
+
+.report-table th, .report-table td {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.report-table th {
+  background: rgba(255, 255, 255, 0.05);
+  color: #38bdf8;
+}
+
+.report-footer {
+  padding: 16px 24px;
+  background: #1e293b;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Print Styles for Executive Dossier */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+  }
+  header, #cy-container, .sidebar, .report-footer, .btn-launch {
+    display: none !important;
+  }
+  .modal-overlay {
+    position: static !important;
+    background: none !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  .report-card {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+  }
+  .report-body {
+    color: #000000 !important;
+  }
+  .report-body h2, .report-body h3, .report-table th {
+    color: #000000 !important;
+  }
+  .report-table th, .report-table td {
+    border: 1px solid #cccccc !important;
+    color: #000000 !important;
+  }
+}

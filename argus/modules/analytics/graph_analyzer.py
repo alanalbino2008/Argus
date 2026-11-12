@@ -45,6 +45,15 @@ class GraphIntelligenceAnalyzer:
         risk_flags: List[str] = []
 
         for entity in graph.get_all_entities():
+            # Flag CVE vulnerabilities
+            if entity.type == EntityType.VULNERABILITY:
+                exposure_points += 25
+                risk_flags.append(f"Known CVE Vulnerability: {entity.label}")
+
+            # Flag open ports
+            if entity.type == EntityType.PORT:
+                exposure_points += 3
+
             # Flag subdomains as potential attack vectors
             if entity.type == EntityType.SUBDOMAIN:
                 exposure_points += 2

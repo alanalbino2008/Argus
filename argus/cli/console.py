@@ -50,7 +50,11 @@ def detect_target_type(target: str) -> EntityType:
     if re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", target_clean) and not target_clean.startswith("@"):
         return EntityType.DOMAIN
 
-    # 4. Default to Username
+    # 4. Phone Number
+    if re.match(r"^\+?[0-9\s().-]{7,20}$", target_clean) and sum(c.isdigit() for c in target_clean) >= 7:
+        return EntityType.PHONE
+
+    # 5. Default to Username
     return EntityType.USERNAME
 
 

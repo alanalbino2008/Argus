@@ -21,6 +21,9 @@ const ENTITY_COLORS = {
   certificate: "#eab308",   // Yellow/Gold
   technology: "#3b82f6",    // Blue
   dns_record: "#f59e0b",    // Amber
+  port: "#06b6d4",          // Cyan/Teal
+  vulnerability: "#ef4444", // Crimson Red
+  phone: "#14b8a6",         // Mint Teal
   generic: "#94a3b8"        // Slate Gray
 };
 
@@ -173,8 +176,118 @@ function setupUIEventListeners() {
   document.getElementById("btn-zoom-in")?.addEventListener("click", () => cy.zoom(cy.zoom() * 1.25));
   document.getElementById("btn-zoom-out")?.addEventListener("click", () => cy.zoom(cy.zoom() * 0.8));
   document.getElementById("btn-relayout")?.addEventListener("click", () => {
-    cy.layout({ name: "cose", animate: true, animationDuration: 600 }).run();
+    const layoutEngine = document.getElementById("layout-select")?.value || "cose";
+    cy.layout({ name: layoutEngine, animate: true, animationDuration: 600 }).run();
   });
+
+  // Layout Engine Dropdown
+  document.getElementById("layout-select")?.addEventListener("change", (e) => {
+    const engine = e.target.value || "cose";
+    cy.layout({ name: engine, animate: true, animationDuration: 600 }).run();
+  });
+
+  // Theme Switcher Dropdown
+  document.getElementById("theme-select")?.addEventListener("change", (e) => {
+    document.body.classList.remove("theme-matrix", "theme-soc");
+    if (e.target.value === "matrix") document.body.classList.add("theme-matrix");
+    if (e.target.value === "soc") document.body.classList.add("theme-soc");
+  });
+
+  // Executive Dossier Modal Controls
+  document.getElementById("btn-open-report")?.addEventListener("click", openExecutiveReport);
+  document.getElementById("btn-close-report")?.addEventListener("click", () => {
+    document.getElementById("report-modal")?.classList.remove("active");
+  });
+  document.getElementById("btn-print-report")?.addEventListener("click", () => {
+    window.print();
+  });
+}
+
+function openExecutiveReport() {
+  const nodes = cy.nodes();
+  const edges = cy.edges();
+  const targetVal = document.getElementById("target-input")?.value || "Unknown Target";
+  const threatScore = document.getElementById("threat-score-num")?.textContent || "0";
+
+  // Group entities by type
+  const byType = {};
+  nodes.forEach((n) => {
+    const t = n.data("type") || "generic";
+    if (!byType[t]) byType[t] = [];
+    byType[t].push(n.data("label") || n.data("value"));
+  });
+
+  // Collect Vulnerabilities & Open Ports
+  const vulns = byType["vulnerability"] || [];
+  const ports = byType["port"] || [];
+
+  let html = `
+    <div style="margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+      <h1 style="font-size: 1.6rem; color: #fff; margin-bottom: 4px;">Executive Threat & OSINT Intelligence Dossier</h1>
+      <div style="font-size: 0.85rem; color: #94a3b8;">
+        Target Seed: <strong style="color: #38bdf8;">${escapeHtml(targetVal)}</strong> | Generated: ${new Date().toUTCString()}
+      </div>
+    </div>
+
+    <h2>1. Executive Summary & Attack Surface Posture</h2>
+    <p>
+      Argus conducted multi-hop recursive reconnaissance across public surface vectors, discovering 
+      <strong>${nodes.length} entities</strong> connected by <strong>${edges.length} verified relationships</strong>.
+      The target presents a calculated <strong>Attack Surface Score of ${threatScore}/100</strong>.
+    </p>
+
+    <h2>2. Discovered Vulnerabilities & Exposed Services</h2>
+    <table class="report-table">
+      <thead>
+        <tr><th>Category</th><th>Count</th><th>Identified Assets & CVEs</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong style="color: #ef4444;">Known CVEs</strong></td>
+          <td>${vulns.length}</td>
+          <td>${vulns.length > 0 ? vulns.map(v => `<span style="background: rgba(239,68,68,0.2); padding: 2px 6px; border-radius: 4px; margin-right: 4px;">${escapeHtml(v)}</span>`).join("") : "No known CVEs indexed."}</td>
+        </tr>
+        <tr>
+          <td><strong style="color: #06b6d4;">Open Services/Ports</strong></td>
+          <td>${ports.length}</td>
+          <td>${ports.length > 0 ? ports.map(p => escapeHtml(p)).join(", ") : "None detected."}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. Topology Breakdown by Intelligence Category</h2>
+    <table class="report-table">
+      <thead>
+        <tr><th>Entity Category</th><th>Total Nodes</th><th>Discovered Assets (Sample)</th></tr>
+      </thead>
+      <tbody>
+  `;
+
+  for (const [cat, items] of Object.entries(byType)) {
+    const sample = items.slice(0, 5).join(", ") + (items.length > 5 ? `, +${items.length - 5} more` : "");
+    html += `
+      <tr>
+        <td><strong>${cat.toUpperCase()}</strong></td>
+        <td>${items.length}</td>
+        <td>${escapeHtml(sample)}</td>
+      </tr>
+    `;
+  }
+
+  html += `
+      </tbody>
+    </table>
+
+    <h2>4. Methodology & Compliance Notice</h2>
+    <p style="font-size: 0.8rem; color: #94a3b8;">
+      All findings in this report were gathered via non-intrusive, passive Open Source Intelligence (OSINT) 
+      methods conforming to industry standard guidelines. Protocols queried include public DNS records, Certificate 
+      Transparency logs, standardized RDAP queries (RFC 7480), and public service fingerprints.
+    </p>
+  `;
+
+  document.getElementById("report-modal-body").innerHTML = html;
+  document.getElementById("report-modal").classList.add("active");
 }
 
 async function startInvestigation(target, targetType, maxDepth) {
