@@ -30,6 +30,7 @@ from urllib.parse import urlsplit
 
 import aiohttp
 
+from argus import __version__
 from argus.core.runctx import report_error, report_ok
 from argus.security.network import BlockedDestinationError, assert_public_host
 
@@ -41,7 +42,7 @@ RETRYABLE_EXCEPTIONS = (
     aiohttp.ClientPayloadError,
     asyncio.TimeoutError,
 )
-DEFAULT_USER_AGENT = "Argus-OSINT/1.1 (+https://github.com/alanalbino2008/Argus)"
+DEFAULT_USER_AGENT = f"Argus-OSINT/{__version__} (+https://github.com/alanalbino2008/Argus)"
 
 
 @dataclass

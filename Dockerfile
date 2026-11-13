@@ -1,40 +1,49 @@
-# Multi-stage Docker build for Argus OSINT Platform
-FROM python:3.11-slim as builder
+# syntax=docker/dockerfile:1
+# Multi-stage build: the runtime image contains only an installed wheel in a virtualenv -
+# no source tree, tests, git history or build tools.
 
-WORKDIR /app
+# ---------------------------------------------------------------------------- build stage
+FROM python:3.12-slim AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+WORKDIR /src
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN python -m venv /opt/venv
+ENV PATH=/opt/venv/bin:$PATH
 
-# Final runner stage
-FROM python:3.11-slim
+COPY pyproject.toml README.md ./
+COPY argus ./argus
+RUN pip install build && python -m build --wheel --outdir /dist . \
+    && pip install /dist/*.whl
 
-WORKDIR /app
+# -------------------------------------------------------------------------- runtime stage
+FROM python:3.12-slim
 
-# Non-root user for security best practice
-RUN groupadd -r argus && useradd -r -g argus argus \
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="Argus OSINT" \
+      org.opencontainers.image.description="Autonomous OSINT reconnaissance and graph link analysis platform" \
+      org.opencontainers.image.source="https://github.com/alanalbino2008/Argus" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}"
+
+# Non-root user; the only writable location is the data volume.
+RUN groupadd --system argus && useradd --system --gid argus --home-dir /app argus \
     && mkdir -p /app/data && chown argus:argus /app/data
 
-COPY --from=builder /root/.local /home/argus/.local
-COPY --chown=argus:argus . .
+COPY --from=builder /opt/venv /opt/venv
 
-ENV PATH=/home/argus/.local/bin:$PATH
-ENV PYTHONUNBUFFERED=1
-# Investigation history lives on the /app/data volume (override for PostgreSQL)
-ENV ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
 
+WORKDIR /app
 USER argus
-
+VOLUME ["/app/data"]
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://localhost:8000/api/health').status != 200)"
 
-# Default to launching the Argus web dashboard
-ENTRYPOINT ["python", "-m", "argus.cli.console"]
-CMD ["--serve", "--host", "0.0.0.0", "--port", "8000"]
+# 0.0.0.0 inside the container is required for port publishing; access is still API-key protected.
+CMD ["argus", "--serve", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,24 @@
+# Keep secrets, local data and history out of the build context (and so out of any image layer).
+.git
+.github
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+data/
+venv/
+.venv/
+**/__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info
+tests/
+docs/
+scan_example.json

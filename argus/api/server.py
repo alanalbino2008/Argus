@@ -29,6 +29,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
+from argus import __version__
 from argus.api.deps import WebSocketTickets, audit, require
 from argus.api.security_routes import router as security_router
 from argus.core.engine import ArgusEngine
@@ -165,7 +166,7 @@ async def _bootstrap_admin_key(app: FastAPI) -> None:
 app = FastAPI(
     title="Argus OSINT Platform API",
     description="REST & WebSocket API for Argus Reconnaissance & Relationship Graphing",
-    version="1.3.0",
+    version=__version__,
     lifespan=lifespan,
 )
 

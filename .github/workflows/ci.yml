@@ -1,31 +1,121 @@
-name: Argus CI
+name: CI
 
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
   pull_request:
-    branches: [ main, master ]
+    branches: [main]
+
+# Least privilege for every job unless a job asks for more.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt ruff mypy
+      - name: Ruff (lint, incl. bandit security rules)
+        run: ruff check argus tests --output-format=github
+      - name: Ruff (format)
+        run: ruff format --check argus tests
+      - name: mypy
+        run: mypy argus
+
   test:
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
-
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements.txt pytest-cov
+      - name: pytest (coverage gate in pyproject.toml)
+        run: pytest --cov=argus --cov-report=term --cov-report=xml --durations=5
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+  package:
+    name: Build & clean-install smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: pip install build && python -m build
+      # Installing into an empty venv catches undeclared dependencies and missing package data,
+      # which the test job cannot (it installs requirements.txt directly).
+      - name: Install wheel into a clean virtualenv and boot the server
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install dist/*.whl
+          ARGUS_DATABASE_URL=sqlite+aiosqlite:////tmp/argus.db /tmp/clean/bin/argus --serve --port 8000 &
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/api/health && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8000/api/health | grep -q '"status":"ok"'
+          curl -fsS -o /dev/null http://127.0.0.1:8000/static/vendor/cytoscape-3.28.1.min.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - name: pip-audit (known CVEs in dependencies)
+        run: pip-audit -r requirements.txt --strict
 
-    - name: Run test suite with pytest
-      run: |
-        pytest -v --durations=5
+  docker:
+    name: Docker image build & health check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: argus:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Run container and wait for a healthy status
+        run: |
+          docker run -d --name argus -p 8000:8000 argus:ci
+          for i in $(seq 1 40); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' argus)
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          docker logs argus
+          [ "$(docker inspect -f '{{.State.Health.Status}}' argus)" = healthy ]
+      - name: Image must not contain secrets, source tree or git history
+        run: |
+          ! docker run --rm --entrypoint sh argus:ci -c 'ls -a /app; ls /app/.git /app/.env /app/tests 2>/dev/null' | grep -E '\.git|\.env|tests'

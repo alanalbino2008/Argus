@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.4.0] — Phase 4: Engineering quality & delivery
+
+### Added
+- CI pipeline: ruff (incl. bandit security rules) + format check, mypy, pytest on Python 3.10–3.13
+  with an 85 % coverage gate, clean-virtualenv package install test, pip-audit, Docker build with
+  health and image-content checks.
+- CodeQL security scanning (Python and JavaScript), Dependabot (pip, Actions, Docker).
+- Tag-driven release workflow: version check, tests, GitHub Release with changelog notes, image
+  published to `ghcr.io`.
+- Alembic migrations, applied automatically at startup; pre-migration databases are adopted; a test
+  fails if models and migrations drift.
+- Offline parsing tests for every collector (fake HTTP session + real dnspython records) and CLI tests;
+  coverage 68 % → 87 %.
+- `.pre-commit-config.yaml`, `CONTRIBUTING.md`, `docs/explained/04-engineering-quality.md`.
+
+### Changed
+- Version is single-sourced from `argus/__init__.py` (package metadata, API, User-Agent).
+- Docker image rebuilt as a wheel-only multi-stage image on Python 3.12 with OCI labels and a data volume.
+- Certificates are keyed by SHA-256 fingerprint; the analyzer flags expired, self-signed and
+  soon-to-expire certificates.
+
+### Fixed
+- TLS analyzer extracted nothing (no SANs, issuer or dates) because `getpeercert()` returns `{}` for
+  unverified certificates; certificates are now parsed from DER with `cryptography`.
+- `alembic` was used but not declared as a dependency (installed packages crashed on start).
+- No `.dockerignore`: `.env`, local databases and `.git` could be copied into images.
+- Shodan module could send private IPs to its API (relied on a flag set by a concurrent module).
+- GitHub blog URLs with paths produced invalid domain entities.
+- Runtime `assert` (removed under `python -O`) replaced with an exception.
+
 ## [1.3.0] — Phase 3: Platform security
 
 ### Added

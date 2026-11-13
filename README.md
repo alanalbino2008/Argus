@@ -1,9 +1,12 @@
 # 👁️ Argus: Autonomous OSINT Reconnaissance & Graph Link Analysis
 
-[![Python Version](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.14-blue?logo=python)](https://www.python.org/)
+[![CI](https://github.com/alanalbino2008/Argus/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alanalbino2008/Argus/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/alanalbino2008/Argus/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/alanalbino2008/Argus/actions/workflows/codeql.yml)
+[![Coverage](https://img.shields.io/badge/coverage-87%25%20(gate%2085%25)-brightgreen)](#-testing--verification)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue?logo=python)](https://www.python.org/)
+[![Ruff](https://img.shields.io/badge/lint-ruff%20%2B%20bandit-261230)](https://docs.astral.sh/ruff/)
+[![mypy](https://img.shields.io/badge/types-mypy-2a6db2)](https://mypy-lang.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Cytoscape](https://img.shields.io/badge/Cytoscape.js-3.28-orange?logo=javascript)](https://js.cytoscape.org/)
-[![Tests](https://img.shields.io/badge/Tests-14%20Passed%20(100%25)-success)](#testing--verification)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 > *"Named after Argus Panoptes, the hundred-eyed all-seeing giant of Greek mythology, Argus is a next-generation Open Source Intelligence (OSINT) platform that unites rapid credential hunting, multi-hop infrastructure enrichment, and interactive topological relationship graphing into a single, lightning-fast platform."*
@@ -211,27 +214,27 @@ python -m argus.cli.console security@example.com --export-csv maltego_export.csv
 
 ## 🧪 Testing & Verification
 
-Argus is backed by an automated test suite verifying Pydantic models, deterministic entity IDs, graph topology metrics, and module logic:
+Every push runs the full pipeline in GitHub Actions:
+
+| Stage | What it proves |
+|---|---|
+| **Lint** — ruff (incl. bandit security rules) + format check | Style, likely bugs, security smells (`S` rules), asyncio pitfalls |
+| **Types** — mypy (pydantic plugin) | Interfaces between engine, modules, storage and API agree |
+| **Tests** — pytest on Python 3.10–3.13, coverage gate 85 % | ~150 tests: engine concurrency, retries, SSRF guard, auth/RBAC, audit tampering, persistence, migrations, and every collector's parsing against recorded API responses — all offline |
+| **Package** — build wheel, install into an *empty* virtualenv, boot server | No undeclared dependencies or missing package data |
+| **Dependency audit** — pip-audit | No known CVEs in dependencies |
+| **Docker** — build, run, wait for `healthy`, check image contents | Image works and contains no source tree, `.git` or `.env` |
+| **CodeQL** (weekly + every PR) | Static security analysis of Python and JavaScript |
+
+Run the same checks locally:
 
 ```bash
-pytest -v
+pip install -r requirements.txt ruff mypy pytest-cov
+ruff check argus tests && ruff format --check argus tests && mypy argus
+pytest --cov=argus
 ```
 
-```text
-tests/test_graph.py::test_graph_add_entity_and_deduplication PASSED      [  9%]
-tests/test_graph.py::test_graph_relations_and_neighbors PASSED           [ 18%]
-tests/test_graph.py::test_cytoscape_elements_serialization PASSED        [ 27%]
-tests/test_graph.py::test_maltego_csv_export PASSED                      [ 36%]
-tests/test_models.py::test_deterministic_entity_id PASSED                [ 45%]
-tests/test_models.py::test_entity_creation PASSED                        [ 54%]
-tests/test_models.py::test_relation_creation PASSED                      [ 63%]
-tests/test_models.py::test_scan_config_validation PASSED                 [ 72%]
-tests/test_modules.py::test_detect_target_type PASSED                    [ 81%]
-tests/test_modules.py::test_http_fingerprint_security_headers_grading PASSED [ 90%]
-tests/test_modules.py::test_event_bus_dispatch PASSED                    [100%]
-
-============================= 11 passed in 0.97s ==============================
-```
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow and [`docs/explained/04-engineering-quality.md`](docs/explained/04-engineering-quality.md) for the reasoning.
 
 ---
 
