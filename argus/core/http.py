@@ -30,6 +30,8 @@ from urllib.parse import urlsplit
 
 import aiohttp
 
+from argus.core.runctx import report_error, report_ok
+
 logger = logging.getLogger("argus.http")
 
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
@@ -191,19 +193,25 @@ class HttpClient:
                 except RETRYABLE_EXCEPTIONS as exc:
                     if attempt >= self.max_retries:
                         self.stats.failures += 1
+                        report_error(host, exc)
                         raise
                     error: Optional[BaseException] = exc
                     resp = None
-                except Exception:
+                except Exception as exc:
                     # Non-transient (TLS failure, proxy refusal, bad URL...): count and surface.
                     self.stats.failures += 1
+                    report_error(host, exc)
                     raise
                 else:
                     error = None
 
             if resp is not None:
                 self.stats.status_counts[resp.status] += 1
-                if resp.status not in RETRYABLE_STATUS or attempt >= self.max_retries:
+                if resp.status not in RETRYABLE_STATUS:
+                    report_ok()
+                    return resp
+                if attempt >= self.max_retries:
+                    report_error(host, f"HTTP {resp.status} after {attempt} retries")
                     return resp
                 retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
                 if resp.status == 429:

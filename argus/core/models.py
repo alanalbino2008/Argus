@@ -167,6 +167,7 @@ class Investigation(BaseModel):
     node_count: int = 0
     edge_count: int = 0
     errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
     module_stats: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     http_stats: Dict[str, Any] = Field(default_factory=dict)
 

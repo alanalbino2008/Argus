@@ -38,6 +38,7 @@ class TlsAnalyzerModule(BaseModule):
         try:
             connect_fut = asyncio.open_connection(domain, 443, ssl=ssl_ctx, server_hostname=domain)
             reader, writer = await asyncio.wait_for(connect_fut, timeout=config.timeout_seconds)
+            self.report_ok()
 
             try:
                 ssl_obj = writer.get_extra_info("ssl_object")
@@ -114,5 +115,8 @@ class TlsAnalyzerModule(BaseModule):
                 writer.close()
                 await writer.wait_closed()
 
+        except ConnectionRefusedError:
+            self.report_ok()  # port 443 closed: a valid finding, not a failure
         except Exception as e:
             logger.debug("TLS connection error for %s: %s", domain, e)
+            self.report_error("tls:443", e)

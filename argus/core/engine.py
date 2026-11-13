@@ -36,6 +36,7 @@ import aiohttp
 from argus.core.events import Event, EventBus, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.http import HttpClient
+from argus.core.runctx import ModuleRunReport, current_run
 from argus.core.models import (
     Entity,
     Investigation,
@@ -49,6 +50,8 @@ from argus.modules.base import BaseModule
 
 logger = logging.getLogger("argus.engine")
 
+MAX_WARNINGS = 500
+
 
 @dataclass
 class ModuleStats:
@@ -56,7 +59,9 @@ class ModuleStats:
 
     runs: int = 0
     succeeded: int = 0
+    degraded: int = 0
     failed: int = 0
+    source_errors: int = 0
     timed_out: int = 0
     entities_found: int = 0
     relations_found: int = 0
@@ -232,11 +237,12 @@ class ArgusEngine:
         stats = self.module_stats[module.name]
         stats.runs += 1
         started = time.monotonic()
+        report = ModuleRunReport(module=module.name, entity=entity.value)
         await self._emit(EventType.MODULE_STARTED, {"module": module.name, "entity": entity.label})
 
         try:
             await asyncio.wait_for(
-                self._consume_module(module, entity, stats),
+                self._consume_module(module, entity, stats, report),
                 timeout=self.config.module_timeout_seconds,
             )
         except asyncio.TimeoutError:
@@ -247,17 +253,48 @@ class ArgusEngine:
         except Exception as exc:
             await self._record_failure(module, entity, repr(exc))
         else:
-            stats.succeeded += 1
-            stats.consecutive_failures = 0
+            await self._classify_run(module, entity, report)
         finally:
             stats.total_seconds += time.monotonic() - started
+            stats.source_errors += report.source_errors
 
-        await self._emit(EventType.MODULE_FINISHED, {"module": module.name, "entity": entity.label})
+        await self._emit(EventType.MODULE_FINISHED, {
+            "module": module.name,
+            "entity": entity.label,
+            "outcome": report.outcome,
+            "source_errors": report.source_errors,
+        })
 
-    async def _consume_module(self, module: BaseModule, entity: Entity, stats: ModuleStats) -> None:
+    async def _classify_run(self, module: BaseModule, entity: Entity, report: ModuleRunReport) -> None:
+        """Turn a run that finished without raising into success / degraded / failed."""
+        stats = self.module_stats[module.name]
+        outcome = report.outcome
+        if outcome == "failed":
+            await self._record_failure(module, entity, "all data sources failed (" + "; ".join(report.errors[:3]) + ")")
+            return
+        stats.succeeded += 1
+        stats.consecutive_failures = 0
+        if outcome == "degraded":
+            stats.degraded += 1
+            msg = (
+                f"Module {module.name} on {entity.value}: partial results, "
+                f"{report.source_errors} source error(s) ({'; '.join(report.errors[:3])})"
+            )
+            self._add_warning(msg)
+            await self._emit(EventType.LOG_MESSAGE, {"level": "WARNING", "message": msg})
+
+    def _add_warning(self, msg: str) -> None:
+        if len(self.investigation.warnings) < MAX_WARNINGS:
+            self.investigation.warnings.append(msg)
+
+    async def _consume_module(
+        self, module: BaseModule, entity: Entity, stats: ModuleStats, report: ModuleRunReport
+    ) -> None:
+        current_run.set(report)  # visible to HttpClient and any tasks the module spawns
         async for item in module.run(entity, self.http, self.config):  # type: ignore[arg-type]
             if self._cancel_event.is_set():
                 return
+            report.items += 1
             if isinstance(item, Entity):
                 await self._ingest_entity(item, module.name, stats)
             elif isinstance(item, Relation):

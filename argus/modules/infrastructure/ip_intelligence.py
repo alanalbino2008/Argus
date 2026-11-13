@@ -6,6 +6,7 @@ import ipaddress
 import logging
 from typing import AsyncIterator, Union
 import aiohttp
+import dns.resolver
 import dns.asyncresolver
 import dns.reversename
 
@@ -65,8 +66,10 @@ class IpIntelligenceModule(BaseModule):
                     rel_type=RelationType.RESOLVES_TO,
                     label="Reverse DNS (PTR)",
                 )
-        except Exception:
-            pass
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            pass  # no PTR record configured
+        except Exception as e:
+            self.report_error("dns:PTR", e)
 
         # 2. GeoIP & ASN lookup via ip-api.com
         try:

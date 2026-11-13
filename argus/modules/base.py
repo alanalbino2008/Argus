@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 import logging
 from typing import AsyncIterator, List, Union
 from argus.core.http import HttpClient
+from argus.core.runctx import report_error as _report_error, report_ok as _report_ok
 from argus.core.models import Entity, EntityType, Relation, ScanConfig
 
 logger = logging.getLogger("argus.module")
@@ -17,6 +18,19 @@ class BaseModule(ABC):
     name: str = "base_module"
     description: str = "Base reconnaissance module"
     supported_entity_types: List[EntityType] = []
+
+    def report_error(self, source: str, error: object) -> None:
+        """Record that a data source failed during this run (e.g. a DNS timeout).
+
+        Use it inside ``except`` blocks that deliberately swallow an error so the
+        module can carry on with other sources. HTTP failures through the shared
+        client are recorded automatically.
+        """
+        _report_error(source, error)
+
+    def report_ok(self) -> None:
+        """Record that a non-HTTP data source (DNS, raw socket...) answered."""
+        _report_ok()
 
     def can_handle(self, entity: Entity) -> bool:
         """Determine if this module can process the given entity type."""

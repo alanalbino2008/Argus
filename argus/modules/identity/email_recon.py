@@ -7,6 +7,7 @@ import logging
 import re
 from typing import AsyncIterator, Union
 import aiohttp
+import dns.resolver
 import dns.asyncresolver
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -86,8 +87,12 @@ class EmailReconModule(BaseModule):
 
             domain_entity.metadata["mx_records"] = mx_records
             domain_entity.metadata["has_valid_mx"] = True
-        except Exception:
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
             domain_entity.metadata["has_valid_mx"] = False
+        except Exception as e:
+            # A timeout tells us nothing about the domain: record "unknown", not "invalid".
+            domain_entity.metadata["has_valid_mx"] = None
+            self.report_error("dns:MX", e)
 
         # 4. Check Gravatar Profile via MD5 hash
         email_hash = hashlib.md5(email.encode("utf-8")).hexdigest()

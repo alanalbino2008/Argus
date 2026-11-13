@@ -71,7 +71,7 @@ class GraphIntelligenceAnalyzer:
 
             # Flag missing DMARC
             if entity.type == EntityType.DOMAIN and "has_valid_mx" in entity.metadata:
-                if not entity.metadata.get("has_valid_mx"):
+                if entity.metadata.get("has_valid_mx") is False:  # None = lookup failed, unknown
                     risk_flags.append(f"Domain {entity.label} lacks operational MX records")
 
         # Determine surface score 0-100

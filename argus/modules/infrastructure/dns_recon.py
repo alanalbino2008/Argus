@@ -37,6 +37,7 @@ class DnsReconModule(BaseModule):
         for rtype in self.RECORD_TYPES:
             try:
                 answers = await resolver.resolve(domain, rtype)
+                self.report_ok()
                 for rdata in answers:
                     text_val = rdata.to_text().strip('"')
 
@@ -137,10 +138,12 @@ class DnsReconModule(BaseModule):
                                 label="SPF Record",
                             )
 
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.resolver.NoNameservers, dns.exception.Timeout):
+            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+                self.report_ok()  # authoritative "no such record" is a valid answer
                 continue
-            except Exception as e:
+            except Exception as e:  # timeouts, SERVFAIL, unreachable nameservers
                 logger.debug("DNS query %s for %s error: %s", rtype, domain, e)
+                self.report_error(f"dns:{rtype}", e)
 
         # Query DMARC policy
         try:
@@ -165,5 +168,7 @@ class DnsReconModule(BaseModule):
                         rel_type=RelationType.HAS_DNS_RECORD,
                         label="DMARC Record",
                     )
-        except Exception:
-            pass
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            pass  # no DMARC record published - surfaced later by the risk analyzer
+        except Exception as e:
+            self.report_error("dns:DMARC", e)

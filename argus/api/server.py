@@ -188,6 +188,7 @@ async def get_investigation(inv_id: str):
         "edge_count": engine.graph.edge_count,
         "truncated": engine.truncated,
         "errors": inv.errors,
+        "warnings": inv.warnings,
         "module_stats": inv.module_stats or {n: s.as_dict() for n, s in engine.module_stats.items()},
         "http_stats": inv.http_stats or (engine.http.stats.as_dict() if engine.http else {}),
         "created_at": inv.created_at.isoformat(),
