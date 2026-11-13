@@ -1,0 +1,54 @@
+Argus - Proprietary Software Licence
+Copyright (c) 2025-2026 Alan Albino. All rights reserved.
+
+1. Ownership
+   This software, including its source code, object code, documentation, user
+   interface, designs, graphics, names and logos (together, the "Software"), is
+   the exclusive property of the copyright holder named above and is protected by
+   copyright law and international treaties. No ownership rights are transferred
+   to anyone by any means.
+
+2. No licence granted
+   Except where the copyright holder has given prior, express, written permission,
+   no person or organisation may:
+     a) copy, reproduce, modify, translate, adapt or create derivative works of the
+        Software, in whole or in part;
+     b) distribute, publish, sublicense, sell, rent, lease or otherwise make the
+        Software available to any third party;
+     c) use the Software, or any part of it, for any commercial purpose or to
+        provide any paid or revenue-generating service;
+     d) remove, alter or obscure any copyright notice, attribution or authorship
+        information, or present the Software, or any part of it, as their own work;
+     e) reverse engineer, decompile or disassemble the Software, except to the
+        extent that applicable law expressly permits it despite this restriction.
+
+3. Viewing is not permission
+   If the source code is ever made visible (for example in a public repository or
+   as part of an academic or job application), that visibility exists solely so it
+   can be read and evaluated. It grants no licence or right of any kind under
+   Section 2.
+
+4. Third-party components
+   Third-party components included with or used by the Software remain subject to
+   their own licences (for example, Cytoscape.js under the MIT licence; see
+   argus/web/vendor/cytoscape-LICENSE). This licence does not restrict rights
+   that those licences grant in respect of those components.
+
+5. No warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+   FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT
+   HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF
+   OR IN CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+6. Lawful use
+   Any use permitted in writing must comply with all applicable laws, including the
+   UK Computer Misuse Act 1990 and data protection law. Investigating systems or
+   people without authorisation is prohibited.
+
+7. Permissions
+   Requests for permission to use the Software should be made to the copyright
+   holder via the Software's GitHub repository.
+
+Unauthorised use, reproduction or distribution of the Software may give rise to
+civil and criminal liability.

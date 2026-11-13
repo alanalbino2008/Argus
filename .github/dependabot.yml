@@ -22,3 +22,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Moving the runtime to a new Python minor/major is a deliberate change: add that version to
+      # the CI test matrix first. Patch-level base-image updates (security fixes) still come through.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]

@@ -23,7 +23,7 @@ ARG VERSION=dev
 LABEL org.opencontainers.image.title="Argus OSINT" \
       org.opencontainers.image.description="Autonomous OSINT reconnaissance and graph link analysis platform" \
       org.opencontainers.image.source="https://github.com/alanalbino2008/Argus" \
-      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.licenses="LicenseRef-Proprietary" \
       org.opencontainers.image.version="${VERSION}"
 
 # Non-root user; the only writable location is the data volume.

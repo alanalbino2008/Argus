@@ -6,9 +6,10 @@ Only the latest release on `main` receives security fixes.
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue** for security problems. Instead, use GitHub's
-[private vulnerability reporting](https://github.com/alanalbino2008/Argus/security/advisories/new)
-for this repository. Include steps to reproduce, impact, and any proof of concept.
+Please **do not open a public issue** for security problems. Report them privately to the
+repository owner (via GitHub's private vulnerability reporting when the repository is public, or by
+contacting the owner through their GitHub profile). Include steps to reproduce, impact, and any
+proof of concept.
 
 You can expect an acknowledgement within 7 days. Good-faith research that avoids privacy
 violations, data destruction and service disruption is welcome, and will be credited in the

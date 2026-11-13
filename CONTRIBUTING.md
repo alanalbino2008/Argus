@@ -1,5 +1,9 @@
 # Contributing to Argus
 
+> Argus is proprietary software (see [`LICENSE`](LICENSE)). Contributions are accepted only by prior
+> written agreement with the copyright holder. This guide documents the workflow for those authorised
+> to work on the codebase.
+
 ## Development setup
 
 ```bash

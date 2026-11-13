@@ -7,7 +7,7 @@
 [![Ruff](https://img.shields.io/badge/lint-ruff%20%2B%20bandit-261230)](https://docs.astral.sh/ruff/)
 [![mypy](https://img.shields.io/badge/types-mypy-2a6db2)](https://mypy-lang.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Proprietary](https://img.shields.io/badge/License-Proprietary%20%C2%B7%20All%20rights%20reserved-red.svg)](LICENSE)
 
 > *"Named after Argus Panoptes, the hundred-eyed all-seeing giant of Greek mythology, Argus is a next-generation Open Source Intelligence (OSINT) platform that unites rapid credential hunting, multi-hop infrastructure enrichment, and interactive topological relationship graphing into a single, lightning-fast platform."*
 
@@ -248,6 +248,9 @@ For interview presentation notes and STAR-method responses, refer to [`PORTFOLIO
 
 ---
 
-## ⚖️ Legal & Ethical Notice
+## ⚖️ Licence, Legal & Ethical Notice
+
+**Copyright © 2025-2026 Alan Albino. All rights reserved.** Argus is proprietary software: no part of it may be copied, modified, distributed, used commercially or presented as anyone else's work without the copyright holder's prior written permission. Access to the source code (for example for academic or job applications) is for evaluation only and grants no licence. See [`LICENSE`](LICENSE).
+
 
 Argus is developed strictly for authorized security research, educational exploration, threat intelligence, and defensive posture evaluation. All data collection mechanisms leverage publicly available endpoints, standard protocols (DNS, RDAP, HTTP), and public Certificate Transparency logs. Users are responsible for complying with all applicable local, national, and international laws.
