@@ -28,7 +28,7 @@ async def test_retries_transient_5xx_then_succeeds():
     server = await make_server(handler)
     try:
         async with aiohttp.ClientSession() as s:
-            client = HttpClient(s, max_retries=3, backoff_base=0.01, min_host_interval=0)
+            client = HttpClient(s, allow_private=True, max_retries=3, backoff_base=0.01, min_host_interval=0)
             async with client.get(str(server.make_url("/x"))) as resp:
                 assert resp.status == 200
                 assert await resp.text() == "ok"
@@ -45,7 +45,7 @@ async def test_gives_up_and_returns_last_response():
     server = await make_server(handler)
     try:
         async with aiohttp.ClientSession() as s:
-            client = HttpClient(s, max_retries=2, backoff_base=0.01, min_host_interval=0)
+            client = HttpClient(s, allow_private=True, max_retries=2, backoff_base=0.01, min_host_interval=0)
             async with client.get(str(server.make_url("/"))) as resp:
                 assert resp.status == 502
         assert client.stats.requests == 3
@@ -60,7 +60,7 @@ async def test_does_not_retry_client_errors():
     server = await make_server(handler)
     try:
         async with aiohttp.ClientSession() as s:
-            client = HttpClient(s, max_retries=3, min_host_interval=0)
+            client = HttpClient(s, allow_private=True, max_retries=3, min_host_interval=0)
             async with client.get(str(server.make_url("/"))) as resp:
                 assert resp.status == 404
         assert client.stats.requests == 1 and client.stats.retries == 0
@@ -80,7 +80,7 @@ async def test_honours_retry_after_on_429():
     server = await make_server(handler)
     try:
         async with aiohttp.ClientSession() as s:
-            client = HttpClient(s, max_retries=2, min_host_interval=0)
+            client = HttpClient(s, allow_private=True, max_retries=2, min_host_interval=0)
             t0 = time.monotonic()
             async with client.get(str(server.make_url("/"))) as resp:
                 assert resp.status == 200
@@ -97,7 +97,7 @@ async def test_per_host_rate_limit_spaces_requests():
     server = await make_server(handler)
     try:
         async with aiohttp.ClientSession() as s:
-            client = HttpClient(s, min_host_interval=0.1)
+            client = HttpClient(s, allow_private=True, min_host_interval=0.1)
             t0 = time.monotonic()
             for _ in range(5):
                 async with client.get(str(server.make_url("/"))) as resp:
@@ -109,7 +109,7 @@ async def test_per_host_rate_limit_spaces_requests():
 
 async def test_connection_errors_are_retried_then_raised():
     async with aiohttp.ClientSession() as s:
-        client = HttpClient(s, max_retries=1, backoff_base=0.01, min_host_interval=0)
+        client = HttpClient(s, allow_private=True, max_retries=1, backoff_base=0.01, min_host_interval=0)
         with pytest.raises(aiohttp.ClientConnectionError):
             async with client.get("http://127.0.0.1:1/"):
                 pass
@@ -125,7 +125,7 @@ def test_parse_retry_after():
 
 async def test_non_retryable_errors_are_counted():
     async with aiohttp.ClientSession() as s:
-        client = HttpClient(s, max_retries=3, min_host_interval=0)
+        client = HttpClient(s, allow_private=True, max_retries=3, min_host_interval=0)
         with pytest.raises(aiohttp.InvalidURL):
             async with client.get("http://"):
                 pass

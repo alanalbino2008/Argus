@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from argus.core.runctx import report_error, report_ok
+from argus.security.network import BlockedDestinationError, assert_public_host
 
 logger = logging.getLogger("argus.http")
 
@@ -51,6 +52,7 @@ class HttpStats:
     retries: int = 0
     throttled: int = 0
     failures: int = 0
+    blocked: int = 0
     status_counts: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
 
     def as_dict(self) -> Dict[str, Any]:
@@ -59,6 +61,7 @@ class HttpStats:
             "retries": self.retries,
             "throttled": self.throttled,
             "failures": self.failures,
+            "blocked": self.blocked,
             "status_counts": dict(self.status_counts),
         }
 
@@ -148,8 +151,10 @@ class HttpClient:
         per_host_concurrency: int = 6,
         global_concurrency: int = 50,
         max_retry_after: float = 30.0,
+        allow_private: bool = False,
     ):
         self.session = session
+        self.allow_private = allow_private
         self.max_retries = max(0, max_retries)
         self.backoff_base = backoff_base
         self.backoff_cap = backoff_cap
@@ -182,6 +187,14 @@ class HttpClient:
         headers.setdefault("User-Agent", DEFAULT_USER_AGENT)
         kwargs["headers"] = headers
 
+        if not self.allow_private:
+            try:
+                assert_public_host(host)
+            except BlockedDestinationError as exc:
+                self.stats.blocked += 1
+                report_error(host, exc)
+                raise
+
         attempt = 0
         while True:
             async with self.limiter.semaphore(host):
@@ -191,6 +204,11 @@ class HttpClient:
                     async with self._global:
                         resp = await self.session.request(method, url, **kwargs)
                 except RETRYABLE_EXCEPTIONS as exc:
+                    if isinstance(getattr(exc, "os_error", None), BlockedDestinationError):
+                        # Egress guard refused the resolved address: retrying cannot help.
+                        self.stats.blocked += 1
+                        report_error(host, exc.os_error)
+                        raise
                     if attempt >= self.max_retries:
                         self.stats.failures += 1
                         report_error(host, exc)

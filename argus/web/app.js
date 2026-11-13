@@ -31,9 +31,12 @@ document.addEventListener("DOMContentLoaded", () => {
   initCytoscape();
   setupUIEventListeners();
   setupHistoryPanel();
+  setupAuth();
+  setupRulesOfEngagement();
+  setupExports();
   // Deep link: /?inv=<investigation_id> reopens a saved investigation.
   const deepLink = new URLSearchParams(window.location.search).get("inv");
-  if (deepLink) openInvestigation(deepLink);
+  ensureSignedIn().then((ok) => { if (ok && deepLink) openInvestigation(deepLink); });
 });
 
 function initCytoscape() {
@@ -154,7 +157,7 @@ function setupUIEventListeners() {
     const ttype = typeSelect.value ? typeSelect.value : null;
     const depth = parseInt(depthInput.value, 10) || 2;
 
-    startInvestigation(target, ttype, depth);
+    openRulesOfEngagement(target, ttype, depth);
   });
 
   targetInput.addEventListener("keydown", (e) => {
@@ -294,7 +297,7 @@ function openExecutiveReport() {
   document.getElementById("report-modal").classList.add("active");
 }
 
-async function startInvestigation(target, targetType, maxDepth) {
+async function startInvestigation(target, targetType, maxDepth, purpose) {
   const launchBtn = document.getElementById("launch-btn");
   const statusBadge = document.getElementById("status-badge");
 
@@ -303,35 +306,46 @@ async function startInvestigation(target, targetType, maxDepth) {
   resetWorkspace();
 
   try {
-    const response = await fetch("/api/scan", {
+    const response = await authFetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         target: target,
         target_type: targetType,
-        max_depth: maxDepth
+        max_depth: maxDepth,
+        purpose: purpose,
+        authorized: true
       })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(JSON.stringify(data.detail || data));
+    if (!response.ok) throw new Error(describeError(data));
     attachInvestigation(data.investigation_id);
   } catch (err) {
     console.error("Failed to start scan:", err);
+    addEventToFeed(`Scan rejected: ${err.message}`);
     launchBtn.disabled = false;
     statusBadge.textContent = "Error";
     statusBadge.style.color = "var(--accent-crimson)";
   }
 }
 
-function connectWebSocket(invId) {
+async function connectWebSocket(invId) {
   if (activeSocket) {
     activeSocket.close();
   }
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws/stream/${invId}`;
-  activeSocket = new WebSocket(wsUrl);
+  let ticket;
+  try {
+    // Browsers can't send auth headers on WebSockets: trade the key for a one-time ticket.
+    ticket = (await (await authFetch("/api/ws-ticket", { method: "POST" })).json()).ticket;
+  } catch (err) {
+    addEventToFeed("Could not open live stream (authentication failed)");
+    return;
+  }
+  activeSocket = new WebSocket(`${wsUrl}?ticket=${encodeURIComponent(ticket)}`);
 
   activeSocket.onmessage = (event) => {
     try {
@@ -408,7 +422,7 @@ async function loadHistory() {
   const params = new URLSearchParams({ limit: "100" });
   if (filter) params.set("target", filter);
   try {
-    const res = await fetch(`/api/investigations?${params}`);
+    const res = await authFetch(`/api/investigations?${params}`);
     const rows = await res.json();
     if (!rows.length) {
       list.innerHTML = '<div class="history-empty">No investigations yet.</div>';
@@ -433,7 +447,7 @@ async function loadHistory() {
 
 async function deleteInvestigation(invId) {
   if (!confirm("Permanently delete this investigation and all of its findings?")) return;
-  const res = await fetch(`/api/investigation/${encodeURIComponent(invId)}`, { method: "DELETE" });
+  const res = await authFetch(`/api/investigation/${encodeURIComponent(invId)}`, { method: "DELETE" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     alert(`Delete failed: ${body.detail || res.status}`);
@@ -472,7 +486,7 @@ async function loadPivots(nodeData) {
   if (!box || String(nodeData.value).length < 2) return;
   try {
     const params = new URLSearchParams({ q: nodeData.value, type: nodeData.type, limit: "20" });
-    const hits = (await (await fetch(`/api/entities/search?${params}`)).json())
+    const hits = (await (await authFetch(`/api/entities/search?${params}`)).json())
       .filter((h) => h.investigation_id !== currentInvestigationId && h.entity.value === nodeData.value);
     box.innerHTML = hits.length
       ? hits.map((h) => `
@@ -663,4 +677,140 @@ function escapeHtml(str) {
   return String(str ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// ================================================================ authentication
+// The API key lives in sessionStorage (cleared when the tab closes) and is sent as a
+// Bearer header. The strict Content-Security-Policy makes script injection - the main
+// way such a token could be stolen - far harder.
+const KEY_STORAGE = "argus_api_key";
+
+function storedKey() {
+  try { return sessionStorage.getItem(KEY_STORAGE) || ""; } catch (e) { return ""; }
+}
+
+async function authFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const key = storedKey();
+  if (key) headers.set("Authorization", `Bearer ${key}`);
+  const res = await fetch(url, { ...options, headers });
+  if (res.status === 401) {
+    showLogin("Your session is not signed in or the key was revoked.");
+    throw new Error("Authentication required");
+  }
+  return res;
+}
+
+function describeError(body) {
+  const d = body && body.detail;
+  if (Array.isArray(d)) return d.map((e) => e.msg).join("; ");
+  return d || "Request failed";
+}
+
+function showLogin(message = "") {
+  document.getElementById("login-error").textContent = message;
+  document.getElementById("login-modal").classList.add("active");
+  document.getElementById("api-key-input").focus();
+}
+
+function setUser(me) {
+  document.getElementById("user-name").textContent = `${me.name} · ${me.role}`;
+  document.getElementById("user-pill").hidden = false;
+  document.body.dataset.role = me.role;
+}
+
+async function ensureSignedIn() {
+  const res = await fetch("/api/me", { headers: storedKey() ? { Authorization: `Bearer ${storedKey()}` } : {} });
+  if (res.ok) {
+    setUser(await res.json());
+    return true;
+  }
+  showLogin();
+  return false;
+}
+
+function setupAuth() {
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const key = document.getElementById("api-key-input").value.trim();
+    const res = await fetch("/api/me", { headers: { Authorization: `Bearer ${key}` } });
+    if (!res.ok) {
+      document.getElementById("login-error").textContent = "That key was not accepted.";
+      return;
+    }
+    try { sessionStorage.setItem(KEY_STORAGE, key); } catch (err) { /* storage blocked: key held for this page only */ }
+    document.getElementById("api-key-input").value = "";
+    document.getElementById("login-modal").classList.remove("active");
+    setUser(await res.json());
+    loadHistory();
+  });
+
+  document.getElementById("btn-logout").addEventListener("click", () => {
+    try { sessionStorage.removeItem(KEY_STORAGE); } catch (e) { /* ignore */ }
+    if (activeSocket) activeSocket.close();
+    currentInvestigationId = null;
+    resetWorkspace();
+    setStatus("idle");
+    document.getElementById("user-pill").hidden = true;
+    showLogin("Signed out.");
+  });
+}
+
+// ================================================================ rules of engagement
+let pendingScan = null;
+
+function openRulesOfEngagement(target, ttype, depth) {
+  pendingScan = { target, ttype, depth };
+  document.getElementById("roe-target").textContent = target;
+  try { document.getElementById("roe-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch (e) { /* ignore */ }
+  document.getElementById("roe-authorized").checked = false;
+  document.getElementById("roe-error").textContent = "";
+  document.getElementById("roe-modal").classList.add("active");
+  document.getElementById("roe-purpose").focus();
+}
+
+function setupRulesOfEngagement() {
+  const modal = document.getElementById("roe-modal");
+  document.getElementById("roe-cancel").addEventListener("click", () => modal.classList.remove("active"));
+  const clearError = () => { document.getElementById("roe-error").textContent = ""; };
+  document.getElementById("roe-purpose").addEventListener("input", clearError);
+  document.getElementById("roe-authorized").addEventListener("change", clearError);
+  document.getElementById("roe-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const purpose = document.getElementById("roe-purpose").value.trim();
+    const error = document.getElementById("roe-error");
+    if (purpose.length < 5) {
+      error.textContent = "Describe the engagement (at least 5 characters).";
+      return;
+    }
+    if (!document.getElementById("roe-authorized").checked) {
+      error.textContent = "You must confirm you are authorised to investigate this target.";
+      return;
+    }
+    try { sessionStorage.setItem("argus_last_purpose", purpose); } catch (err) { /* ignore */ }
+    modal.classList.remove("active");
+    const { target, ttype, depth } = pendingScan;
+    startInvestigation(target, ttype, depth, purpose);
+  });
+}
+
+// ================================================================ authenticated exports
+// Plain <a href> links cannot carry the Authorization header, so download via fetch.
+function setupExports() {
+  for (const [id, ext] of [["btn-export-json", "json"], ["btn-export-csv", "csv"]]) {
+    document.getElementById(id).addEventListener("click", async (e) => {
+      e.preventDefault();
+      if (!currentInvestigationId) return;
+      const res = await authFetch(`/api/investigation/${encodeURIComponent(currentInvestigationId)}/export/${ext}`);
+      if (!res.ok) return addEventToFeed(`Export failed (${res.status})`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `argus_${currentInvestigationId}.${ext === "csv" ? "maltego.csv" : "json"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
 }

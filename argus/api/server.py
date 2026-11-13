@@ -21,13 +21,16 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
+import anyio
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
+from argus.api.deps import WebSocketTickets, audit, require
+from argus.api.security_routes import router as security_router
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
@@ -35,7 +38,12 @@ from argus.core.models import EntityType, Investigation, InvestigationStatus, Sc
 from argus.core.settings import get_settings
 from argus.modules import get_default_modules
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
+from argus.security.auth import SYSTEM, Principal, Role
+from argus.security.headers import SecurityHeadersMiddleware
+from argus.security.network import validate_scan_target
+from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from argus.storage.security_repo import ApiKeyRepository, AuditLog
 
 logger = logging.getLogger("argus.api")
 
@@ -98,6 +106,11 @@ async def lifespan(app: FastAPI):
         logger.warning("Marked %d interrupted investigation(s) as failed", interrupted)
 
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
+    app.state.keys = ApiKeyRepository(db)
+    app.state.audit = AuditLog(db)
+    app.state.ws_tickets = WebSocketTickets(settings.ws_ticket_ttl_seconds)
+    app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
+    await _bootstrap_admin_key(app)
     event_bus.subscribe_all(ws_dispatcher)
     try:
         yield
@@ -114,20 +127,60 @@ async def lifespan(app: FastAPI):
         await db.dispose()
 
 
+MIN_BOOTSTRAP_KEY_LENGTH = 32
+
+
+async def _bootstrap_admin_key(app: FastAPI) -> None:
+    """Guarantee an administrator can always get in - without shipping a default password."""
+    settings = app.state.settings
+    if not settings.auth_enabled:
+        logger.warning("AUTHENTICATION IS DISABLED (ARGUS_AUTH_ENABLED=false). Never expose this instance.")
+        return
+    keys: ApiKeyRepository = app.state.keys
+    if await keys.count_active(Role.ADMIN) > 0:
+        return
+    supplied = (settings.bootstrap_admin_key.get_secret_value() if settings.bootstrap_admin_key else "").strip() or None
+    if supplied is not None and len(supplied) < MIN_BOOTSTRAP_KEY_LENGTH:
+        # Fail closed: never install a guessable admin credential.
+        raise RuntimeError(
+            f"ARGUS_BOOTSTRAP_ADMIN_KEY must be at least {MIN_BOOTSTRAP_KEY_LENGTH} characters "
+            "(generate one with: python -c \"import secrets; print('argus_' + secrets.token_urlsafe(32))\")"
+        )
+    record, key = await keys.create("bootstrap-admin", Role.ADMIN, created_by="system", plaintext=supplied)
+    await app.state.audit.record(SYSTEM, "key.bootstrap", record["id"], details={"source": "env" if supplied else "generated"})
+    if not supplied:
+        banner = "=" * 72
+        logger.warning(
+            "\n%s\n No admin API key existed, so one was generated. It will NOT be shown again:\n\n"
+            "   %s\n\n Use it to sign in to the web UI, then create personal keys and revoke this one.\n%s",
+            banner, key, banner,
+        )
+
+
 app = FastAPI(
     title="Argus OSINT Platform API",
     description="REST & WebSocket API for Argus Reconnaissance & Relationship Graphing",
-    version="1.2.0",
+    version="1.3.0",
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(SecurityHeadersMiddleware)
+# Same-origin by default. The UI is served by this app, so CORS is only needed for
+# separate front-ends, which must be listed explicitly (never "*").
+_cors_origins = get_settings().cors_origins
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=False,  # auth is via header, not cookies
+        allow_methods=["GET", "POST", "DELETE"],
+        allow_headers=["Authorization", "X-API-Key", "Content-Type"],
+    )
+app.include_router(security_router)
+
+VIEWER = Depends(require(Role.VIEWER))
+ANALYST = Depends(require(Role.ANALYST))
+ADMIN = Depends(require(Role.ADMIN))
 
 
 def get_repo(request: Request) -> InvestigationRepository:
@@ -141,6 +194,11 @@ class StartScanRequest(BaseModel):
     max_depth: int = Field(default=2, ge=0, le=4)
     enabled_modules: Optional[List[str]] = None
     concurrency_limit: int = Field(default=15, ge=1, le=50)
+    purpose: str = Field(
+        min_length=5, max_length=500,
+        description="Why this target is being investigated, e.g. 'HackerOne program X, ticket #123' or 'CTF'",
+    )
+    authorized: bool = Field(description="Confirms you are authorised to investigate this target")
 
 
 def _live_investigation(engine: ArgusEngine) -> Investigation:
@@ -174,6 +232,8 @@ def _investigation_payload(inv: Investigation) -> Dict[str, Any]:
         "http_stats": inv.http_stats,
         "created_at": inv.created_at.isoformat(),
         "completed_at": inv.completed_at.isoformat() if inv.completed_at else None,
+        "created_by": inv.created_by,
+        "purpose": inv.purpose,
     }
 
 
@@ -240,7 +300,7 @@ async def health(request: Request):
 
 
 @app.get("/api/modules")
-async def list_modules():
+async def list_modules(_: Principal = VIEWER):
     """Return list of available OSINT reconnaissance modules."""
     return [
         {
@@ -259,6 +319,7 @@ async def list_investigations(
     offset: int = Query(0, ge=0),
     status: Optional[InvestigationStatus] = None,
     target: Optional[str] = Query(None, max_length=253),
+    _: Principal = VIEWER,
 ):
     """Investigation history (newest first), with live counters for running scans."""
     rows = await get_repo(request).list_investigations(
@@ -274,19 +335,40 @@ async def list_investigations(
 
 
 @app.post("/api/scan")
-async def start_scan(req: StartScanRequest, request: Request):
+async def start_scan(req: StartScanRequest, request: Request, principal: Principal = ANALYST):
     """Initiate a new reconnaissance scan in the background."""
     from argus.cli.console import detect_target_type
 
+    settings = request.app.state.settings
     target = req.target.strip()
     if not target:
         raise HTTPException(status_code=422, detail="Target must not be blank")
+    if not req.authorized:
+        await audit(request, principal, "scan.start", target, "denied", {"reason": "authorisation not confirmed"})
+        raise HTTPException(status_code=422, detail="You must confirm you are authorised to investigate this target")
     if req.enabled_modules:
         unknown = set(req.enabled_modules) - set(get_default_modules())
         if unknown:
             raise HTTPException(status_code=422, detail=f"Unknown modules: {sorted(unknown)}")
 
     ttype = req.target_type or detect_target_type(target)
+    if not settings.allow_private_targets:
+        try:
+            validate_scan_target(target, ttype)
+        except ValueError as exc:
+            await audit(request, principal, "scan.start", target, "denied", {"reason": str(exc)})
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    running = sum(1 for e in INVESTIGATIONS.values() if e.is_running or e.investigation.status.value == "initializing")
+    if running >= settings.max_concurrent_scans:
+        raise HTTPException(status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans")
+    limiter: SlidingWindowLimiter = request.app.state.scan_limiter
+    if not limiter.hit(principal.key_id):
+        raise HTTPException(
+            status_code=429, detail="Scan rate limit exceeded",
+            headers={"Retry-After": str(limiter.retry_after(principal.key_id))},
+        )
+
     try:
         config = ScanConfig(
             target=target,
@@ -294,12 +376,15 @@ async def start_scan(req: StartScanRequest, request: Request):
             max_depth=req.max_depth,
             enabled_modules=req.enabled_modules,
             concurrency_limit=req.concurrency_limit,
+            allow_private_targets=settings.allow_private_targets,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
 
     repo = get_repo(request)
     engine = ArgusEngine(config)
+    engine.investigation.created_by = principal.name
+    engine.investigation.purpose = req.purpose
     try:  # fail fast (503) if we cannot record the scan, rather than run it unsaved
         await repo.save_investigation(engine.investigation)
     except Exception as exc:
@@ -312,6 +397,10 @@ async def start_scan(req: StartScanRequest, request: Request):
     task = asyncio.create_task(_run_scan(engine, recorder), name=f"scan-{engine.investigation_id}")
     task.add_done_callback(_on_scan_done)
     SCAN_TASKS[engine.investigation_id] = task
+    await audit(request, principal, "scan.start", engine.investigation_id, details={
+        "target": target, "target_type": ttype.value, "max_depth": req.max_depth, "purpose": req.purpose,
+        "authorized_confirmed": True,
+    })
 
     return {
         "status": "launched",
@@ -322,34 +411,36 @@ async def start_scan(req: StartScanRequest, request: Request):
 
 
 @app.get("/api/investigation/{inv_id}")
-async def get_investigation(inv_id: str, request: Request):
+async def get_investigation(inv_id: str, request: Request, _: Principal = VIEWER):
     """Status, summary metrics and execution telemetry of an investigation."""
     return _investigation_payload(await _resolve(inv_id, get_repo(request)))
 
 
 @app.post("/api/investigation/{inv_id}/cancel")
-async def cancel_investigation(inv_id: str, request: Request):
+async def cancel_investigation(inv_id: str, request: Request, principal: Principal = ANALYST):
     """Request cooperative cancellation of a running investigation."""
     engine = INVESTIGATIONS.get(inv_id)
     if engine is None or not engine.is_running:
         inv = await _resolve(inv_id, get_repo(request))  # 404 if unknown
         raise HTTPException(status_code=409, detail=f"Investigation is {inv.status.value}")
     engine.cancel()
+    await audit(request, principal, "scan.cancel", inv_id)
     return {"status": "cancelling", "investigation_id": inv_id}
 
 
 @app.delete("/api/investigation/{inv_id}", status_code=204)
-async def delete_investigation(inv_id: str, request: Request):
+async def delete_investigation(inv_id: str, request: Request, principal: Principal = ADMIN):
     """Permanently delete an investigation and all of its findings."""
     if inv_id in INVESTIGATIONS:
         raise HTTPException(status_code=409, detail="Investigation is running; cancel it first")
     if not await get_repo(request).delete_investigation(inv_id):
         raise HTTPException(status_code=404, detail="Investigation not found")
+    await audit(request, principal, "investigation.delete", inv_id)
     return Response(status_code=204)
 
 
 @app.get("/api/investigation/{inv_id}/graph")
-async def get_investigation_graph(inv_id: str, request: Request):
+async def get_investigation_graph(inv_id: str, request: Request, _: Principal = VIEWER):
     """Retrieve full Cytoscape-formatted graph elements."""
     graph = await _resolve_graph(inv_id, get_repo(request))
     return {
@@ -360,15 +451,18 @@ async def get_investigation_graph(inv_id: str, request: Request):
 
 
 @app.get("/api/investigation/{inv_id}/export/json")
-async def export_graph_json(inv_id: str, request: Request):
+async def export_graph_json(inv_id: str, request: Request, principal: Principal = VIEWER):
     """Export complete graph as JSON."""
-    return (await _resolve_graph(inv_id, get_repo(request))).to_dict()
+    graph = await _resolve_graph(inv_id, get_repo(request))
+    await audit(request, principal, "investigation.export", inv_id, details={"format": "json"})
+    return graph.to_dict()
 
 
 @app.get("/api/investigation/{inv_id}/export/csv")
-async def export_graph_csv(inv_id: str, request: Request):
+async def export_graph_csv(inv_id: str, request: Request, principal: Principal = VIEWER):
     """Export relationships in Maltego-compatible CSV format."""
     graph = await _resolve_graph(inv_id, get_repo(request))
+    await audit(request, principal, "investigation.export", inv_id, details={"format": "csv"})
     return PlainTextResponse(
         graph.to_maltego_csv(),
         media_type="text/csv",
@@ -382,6 +476,7 @@ async def search_entities(
     q: str = Query(min_length=2, max_length=253, description="Substring of the entity value"),
     type: Optional[EntityType] = None,
     limit: int = Query(50, ge=1, le=500),
+    _: Principal = VIEWER,
 ):
     """Cross-investigation pivot: every investigation in which a value has been seen."""
     return await get_repo(request).search_entities(q, type.value if type else None, limit)
@@ -390,7 +485,14 @@ async def search_entities(
 # --------------------------------------------------------------------------- WebSocket
 @app.websocket("/ws/stream/{inv_id}")
 async def websocket_stream(websocket: WebSocket, inv_id: str):
-    """Snapshot of everything found so far, followed by live events."""
+    """Snapshot of everything found so far, followed by live events.
+
+    Authenticate with ``?ticket=`` from ``POST /api/ws-ticket`` (single use, short-lived).
+    """
+    if websocket.app.state.settings.auth_enabled:
+        if websocket.app.state.ws_tickets.redeem(websocket.query_params.get("ticket")) is None:
+            await websocket.close(code=4401)
+            return
     repo: InvestigationRepository = websocket.app.state.repo
     engine = INVESTIGATIONS.get(inv_id)
     if engine is None and await repo.get_investigation(inv_id) is None:
@@ -412,32 +514,44 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
             return
         conn.offer(_snapshot_message(inv, graph))
 
-    pump = asyncio.create_task(conn.pump())
-    receiver = asyncio.create_task(_drain_client(websocket))
-    dead = asyncio.create_task(conn.dead.wait())
+    client_gone = False
+
+    async def drain_client() -> None:
+        nonlocal client_gone
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            client_gone = True
+
     try:
-        await asyncio.wait({pump, receiver, dead}, return_when=asyncio.FIRST_COMPLETED)
+        # Structured concurrency (anyio, which Starlette itself uses): whichever of
+        # sender / receiver / overflow-watch finishes first cancels the other two,
+        # and cancellation from the server propagates through cleanly.
+        async with anyio.create_task_group() as tg:
+            async def first_to_finish_wins(fn) -> None:
+                try:
+                    await fn()
+                except Exception as exc:  # e.g. send on a broken socket
+                    logger.debug("WebSocket task ended: %r", exc)
+                finally:
+                    tg.cancel_scope.cancel()
+
+            tg.start_soon(first_to_finish_wins, conn.pump)
+            tg.start_soon(first_to_finish_wins, drain_client)
+            tg.start_soon(first_to_finish_wins, conn.dead.wait)
     finally:
-        for t in (pump, receiver, dead):
-            t.cancel()
-        await asyncio.gather(pump, receiver, dead, return_exceptions=True)
         conns = CONNECTIONS.get(inv_id)
         if conns is not None:
             conns.discard(conn)
             if not conns:
                 CONNECTIONS.pop(inv_id, None)
+
+    if not client_gone:  # server-side ending (e.g. slow client): tell the browser
         try:
-            await websocket.close()
+            await websocket.close(code=1013)
         except Exception:
             pass
-
-
-async def _drain_client(websocket: WebSocket) -> None:
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        return
 
 
 def _snapshot_message(inv: Investigation, graph: IntelligenceGraph) -> str:

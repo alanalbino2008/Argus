@@ -11,6 +11,7 @@ import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
+from argus.security.network import resolve_public
 
 logger = logging.getLogger("argus.module.tls_analyzer")
 
@@ -36,7 +37,10 @@ class TlsAnalyzerModule(BaseModule):
         ssl_ctx.verify_mode = ssl.CERT_NONE
 
         try:
-            connect_fut = asyncio.open_connection(domain, 443, ssl=ssl_ctx, server_hostname=domain)
+            # Connect to a vetted public IP (not the name) so DNS cannot be re-pointed
+            # at an internal address between the check and the connection.
+            connect_host = domain if config.allow_private_targets else (await resolve_public(domain, 443))[0]
+            connect_fut = asyncio.open_connection(connect_host, 443, ssl=ssl_ctx, server_hostname=domain)
             reader, writer = await asyncio.wait_for(connect_fut, timeout=config.timeout_seconds)
             self.report_ok()
 

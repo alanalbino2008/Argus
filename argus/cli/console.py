@@ -65,6 +65,7 @@ async def run_cli_scan(
     enabled_modules: Optional[list] = None,
     export_json: Optional[str] = None,
     export_csv: Optional[str] = None,
+    allow_private: bool = False,
 ):
     """Run an investigation directly from the terminal with real-time Rich UI."""
     console.print(BANNER)
@@ -74,6 +75,14 @@ async def run_cli_scan(
         entity_type = EntityType(entity_type_str.lower())
     else:
         entity_type = detect_target_type(target)
+
+    if not allow_private:
+        from argus.security.network import validate_scan_target
+        try:
+            validate_scan_target(target, entity_type)
+        except ValueError as exc:
+            console.print(f"[bold red]✗ {exc}[/bold red]\n[dim]Use --allow-private only for authorised internal assessments.[/dim]")
+            sys.exit(2)
 
     console.print(Panel(
         f"[bold white]Target:[/bold white] [green]{target}[/green]   "
@@ -90,6 +99,7 @@ async def run_cli_scan(
         enabled_modules=enabled_modules,
         concurrency_limit=15,
         timeout_seconds=10.0,
+        allow_private_targets=allow_private,
     )
 
     engine = ArgusEngine(config)
@@ -165,6 +175,26 @@ async def run_cli_scan(
     console.print(f"\n[bold green]Done.[/bold green] Discovered [bold]{graph.node_count}[/bold] entities and [bold]{graph.edge_count}[/bold] relationships.")
 
 
+async def create_api_key_cli(name: str, role: str) -> None:
+    """Out-of-band key creation (first setup, or recovery if every admin key is lost)."""
+    from argus.core.settings import get_settings
+    from argus.security.auth import SYSTEM, Role
+    from argus.storage.db import Database
+    from argus.storage.security_repo import ApiKeyRepository, AuditLog
+
+    db = Database(get_settings().database_url)
+    try:
+        await db.create_all()
+        record, key = await ApiKeyRepository(db).create(name, Role(role), created_by="cli")
+        await AuditLog(db).record(SYSTEM, "key.create", record["id"], details={"name": name, "role": role, "via": "cli"})
+    finally:
+        await db.dispose()
+    console.print(Panel(
+        f"[bold white]{key}[/bold white]\n\n[dim]id {record['id']} · role {role} · shown once, store it securely[/dim]",
+        title=f"[bold green]API key created: {name}[/bold green]", border_style="green",
+    ))
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -180,8 +210,18 @@ def cli_entrypoint():
     parser.add_argument("--serve", action="store_true", help="Launch the interactive Web Dashboard & API server")
     parser.add_argument("--port", type=int, default=8000, help="Web server port (default: 8000)")
     parser.add_argument("--host", default="127.0.0.1", help="Web server host (default: 127.0.0.1)")
+    parser.add_argument("--allow-private", action="store_true",
+                        help="Permit private/internal targets (authorised internal assessments only)")
+    parser.add_argument("--create-api-key", metavar="NAME",
+                        help="Create an API key in the configured database and print it once")
+    parser.add_argument("--role", choices=["viewer", "analyst", "admin"], default="analyst",
+                        help="Role for --create-api-key (default: analyst)")
 
     args = parser.parse_args()
+
+    if args.create_api_key:
+        asyncio.run(create_api_key_cli(args.create_api_key, args.role))
+        return
 
     if args.serve or (not args.target and "--serve" in sys.argv):
         import uvicorn
@@ -203,6 +243,7 @@ def cli_entrypoint():
         enabled_modules=mods,
         export_json=args.export_json,
         export_csv=args.export_csv,
+        allow_private=args.allow_private,
     ))
 
 

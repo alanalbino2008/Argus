@@ -37,6 +37,7 @@ from argus.core.events import Event, EventBus, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.http import HttpClient
 from argus.core.runctx import ModuleRunReport, current_run
+from argus.security.network import GuardedResolver, configured_proxy_hosts
 from argus.core.models import (
     Entity,
     Investigation,
@@ -154,7 +155,10 @@ class ArgusEngine:
             if self._external_session is not None:
                 await self._run(self._external_session)
             else:
-                connector = aiohttp.TCPConnector(limit=100, limit_per_host=self.config.per_host_concurrency, ttl_dns_cache=300)
+                resolver = None if self.config.allow_private_targets else GuardedResolver(trusted_hosts=configured_proxy_hosts())
+                connector = aiohttp.TCPConnector(
+                    limit=100, limit_per_host=self.config.per_host_concurrency, ttl_dns_cache=300, resolver=resolver,
+                )
                 # trust_env: honour HTTP(S)_PROXY / NO_PROXY, as required on corporate networks.
                 async with aiohttp.ClientSession(connector=connector, trust_env=True) as session:
                     await self._run(session)
@@ -188,6 +192,7 @@ class ArgusEngine:
             min_host_interval=self.config.rate_limit_delay,
             per_host_concurrency=self.config.per_host_concurrency,
             global_concurrency=max(self.config.concurrency_limit * 4, 20),
+            allow_private=self.config.allow_private_targets,
         )
         workers = [
             asyncio.create_task(self._worker(i), name=f"argus-worker-{i}")

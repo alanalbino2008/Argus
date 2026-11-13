@@ -14,6 +14,9 @@ services:
       # Default: SQLite on a named volume. For PostgreSQL install the `postgres` extra and use e.g.
       # ARGUS_DATABASE_URL=postgresql+asyncpg://argus:<password>@db:5432/argus
       - ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
+      # On first start an admin API key is generated and printed once: `docker compose logs argus`.
+      # Or supply your own via an untracked .env file: ARGUS_BOOTSTRAP_ADMIN_KEY=argus_<long-random>
+      - ARGUS_BOOTSTRAP_ADMIN_KEY=${ARGUS_BOOTSTRAP_ADMIN_KEY:-}
     volumes:
       - argus-data:/app/data
     healthcheck:

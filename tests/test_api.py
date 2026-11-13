@@ -3,25 +3,14 @@
 import asyncio
 
 import pytest
-from fastapi.testclient import TestClient
 
 from argus.api import server
 from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus
 from argus.core.models import EntityType, ScanConfig
-from argus.core.settings import get_settings
 from tests.test_engine import FanOutModule
 
 
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'argus.db'}")
-    get_settings.cache_clear()
-    with TestClient(server.app) as c:
-        yield c
-    server.INVESTIGATIONS.clear()
-    server.SCAN_TASKS.clear()
-    get_settings.cache_clear()
 
 
 def test_list_modules(client):
@@ -29,11 +18,17 @@ def test_list_modules(client):
     assert {"dns_recon", "username_hunter"} <= {m["name"] for m in mods}
 
 
+OK = {"purpose": "Unit test fixture", "authorized": True}
+
+
 @pytest.mark.parametrize("payload", [
-    {"target": "example.com", "max_depth": 9},
-    {"target": "example.com", "concurrency_limit": 0},
-    {"target": "   "},
-    {"target": "example.com", "enabled_modules": ["does_not_exist"]},
+    {"target": "example.com", "max_depth": 9, **OK},
+    {"target": "example.com", "concurrency_limit": 0, **OK},
+    {"target": "   ", **OK},
+    {"target": "example.com", "enabled_modules": ["does_not_exist"], **OK},
+    {"target": "example.com", "purpose": "x", "authorized": True},        # purpose too short
+    {"target": "example.com", "purpose": "Pentest ACME", "authorized": False},
+    {"target": "example.com"},                                             # no authorisation at all
 ])
 def test_scan_rejects_invalid_input(client, payload):
     assert client.post("/api/scan", json=payload).status_code == 422

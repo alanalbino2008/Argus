@@ -9,8 +9,9 @@ variable or a local ``.env`` file, e.g.::
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import List, Optional
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +25,21 @@ class Settings(BaseSettings):
     db_echo: bool = Field(default=False, description="Log every SQL statement (debugging only)")
     persist_flush_interval: float = Field(default=1.0, gt=0, description="Seconds between write-behind flushes")
     ws_queue_size: int = Field(default=2000, ge=10, description="Max buffered messages per WebSocket client")
+
+    # --- Security (Phase 3) ---------------------------------------------------------
+    auth_enabled: bool = Field(default=True, description="Require API keys. Disable ONLY for isolated local development.")
+    bootstrap_admin_key: Optional[SecretStr] = Field(
+        default=None, description="Admin key to install on first start (otherwise one is generated and logged once)"
+    )
+    cors_origins: List[str] = Field(
+        default_factory=list, description='Extra browser origins allowed to call the API, e.g. ["https://soc.example"]'
+    )
+    allow_private_targets: bool = Field(
+        default=False, description="Permit scanning private/internal networks (authorised internal tests only)"
+    )
+    max_concurrent_scans: int = Field(default=5, ge=1, description="Scans allowed to run at once (whole server)")
+    scans_per_minute: int = Field(default=10, ge=1, description="Scan launches allowed per API key per minute")
+    ws_ticket_ttl_seconds: int = Field(default=30, ge=5, description="Lifetime of one-time WebSocket tickets")
 
 
 @lru_cache

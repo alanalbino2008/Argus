@@ -3,13 +3,11 @@
 import asyncio
 
 import pytest
-from fastapi.testclient import TestClient
 
 from argus.api import server
 from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus
 from argus.core.models import EntityType, InvestigationStatus, ScanConfig
-from argus.core.settings import get_settings
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from tests.test_engine import FanOutModule
 
@@ -110,15 +108,6 @@ async def test_upsert_merges_rather_than_duplicates(repo):
 
 
 # ----------------------------------------------------------------------------- API level
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'api.db'}")
-    get_settings.cache_clear()
-    with TestClient(server.app) as c:
-        yield c
-    server.INVESTIGATIONS.clear()
-    server.SCAN_TASKS.clear()
-    get_settings.cache_clear()
 
 
 def _seed_finished_investigation(client) -> str:
@@ -152,7 +141,8 @@ def test_history_survives_and_serves_finished_investigations(client):
 
 def test_websocket_replays_snapshot_for_finished_scan(client):
     inv_id = _seed_finished_investigation(client)
-    with client.websocket_connect(f"/ws/stream/{inv_id}") as ws:
+    ticket = client.post("/api/ws-ticket").json()["ticket"]
+    with client.websocket_connect(f"/ws/stream/{inv_id}?ticket={ticket}") as ws:
         msg = ws.receive_json()
     assert msg["type"] == "snapshot"
     assert msg["data"]["investigation"]["status"] == "completed"
@@ -162,7 +152,8 @@ def test_websocket_replays_snapshot_for_finished_scan(client):
 def test_websocket_rejects_unknown_investigation(client):
     from starlette.websockets import WebSocketDisconnect
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/ws/stream/inv_missing") as ws:
+        ticket = client.post("/api/ws-ticket").json()["ticket"]
+        with client.websocket_connect(f"/ws/stream/inv_missing?ticket={ticket}") as ws:
             ws.receive_json()
 
 
@@ -175,3 +166,13 @@ def test_entity_search_and_delete_endpoints(client):
     assert client.delete(f"/api/investigation/{inv_id}").status_code == 204
     assert client.get(f"/api/investigation/{inv_id}").status_code == 404
     assert client.delete(f"/api/investigation/{inv_id}").status_code == 404
+
+
+async def test_slow_websocket_client_is_cut_off_not_buffered_forever():
+    """Backpressure: a client that stops reading is disconnected once its queue is full."""
+    conn = server.ClientConnection(ws=None, maxsize=3)
+    for i in range(3):
+        conn.offer(f"msg{i}")
+    assert not conn.dead.is_set()
+    conn.offer("one too many")
+    assert conn.dead.is_set() and conn.queue.qsize() == 3

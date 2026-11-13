@@ -76,14 +76,45 @@ Every investigation is stored in a database (SQLite by default, PostgreSQL via `
 | `DELETE /api/investigation/{id}` | Delete an investigation and its findings |
 | `GET /api/investigation/{id}/graph` · `/export/json` · `/export/csv` | Graph and exports |
 | `GET /api/entities/search?q=&type=` | Cross-investigation entity pivot |
-| `GET /api/health` | Liveness/readiness probe |
-| `WS /ws/stream/{id}` | Snapshot of findings so far, then live events |
+| `GET /api/health` | Liveness/readiness probe (public) |
+| `GET /api/me` · `POST /api/ws-ticket` | Current identity · one-time WebSocket ticket |
+| `GET/POST /api/keys` · `DELETE /api/keys/{id}` | API-key management (admin) |
+| `GET /api/audit` · `GET /api/audit/verify` | Audit trail and tamper check (admin) |
+| `WS /ws/stream/{id}?ticket=` | Snapshot of findings so far, then live events |
 
 | Setting (env var) | Default |
 |---|---|
 | `ARGUS_DATABASE_URL` | `sqlite+aiosqlite:///./argus.db` |
 | `ARGUS_PERSIST_FLUSH_INTERVAL` | `1.0` seconds |
 | `ARGUS_WS_QUEUE_SIZE` | `2000` messages per client |
+
+---
+
+### Security Model
+
+Argus ingests attacker-controlled data and makes outbound connections on a user's behalf, so the platform itself is treated as attack surface.
+
+| Control | Implementation |
+|---|---|
+| **Authentication** | API keys (`Authorization: Bearer`), 256-bit random, stored only as SHA-256 hashes; revocable |
+| **Authorisation (RBAC)** | `viewer` (read) · `analyst` (+ scan/cancel) · `admin` (+ delete, keys, audit) |
+| **Rules of engagement** | Every scan requires a stated purpose and explicit confirmation of authorisation |
+| **SSRF / egress guard** | Private, loopback, link-local (cloud metadata), CGNAT and internal hostnames blocked at seed validation *and* at connection time after DNS resolution (defeats DNS rebinding); opt-in `ARGUS_ALLOW_PRIVATE_TARGETS` for authorised internal tests |
+| **Audit trail** | Append-only, SHA-256 hash-chained log of scans, exports, deletions, key changes and denied requests; `GET /api/audit/verify` detects tampering |
+| **Abuse limits** | Per-key scan rate limit and a server-wide concurrent scan cap (HTTP 429) |
+| **Browser hardening** | Strict CSP (`script-src 'self'`), `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `Cache-Control: no-store` on API data; HSTS over HTTPS; output escaping of all OSINT data |
+| **CORS** | Same-origin by default; extra origins must be listed explicitly (`ARGUS_CORS_ORIGINS`) |
+| **WebSockets** | Single-use, 30-second tickets instead of long-lived keys in URLs |
+
+See [`docs/explained/03-platform-security.md`](docs/explained/03-platform-security.md) and [`SECURITY.md`](SECURITY.md).
+
+| Security setting (env var) | Default |
+|---|---|
+| `ARGUS_AUTH_ENABLED` | `true` |
+| `ARGUS_BOOTSTRAP_ADMIN_KEY` | *(unset → generated and logged once)* |
+| `ARGUS_ALLOW_PRIVATE_TARGETS` | `false` |
+| `ARGUS_CORS_ORIGINS` | `[]` |
+| `ARGUS_MAX_CONCURRENT_SCANS` / `ARGUS_SCANS_PER_MINUTE` | `5` / `10` |
 
 ---
 
@@ -130,9 +161,11 @@ python -m argus.cli.console --serve
 
 Then visit **`http://127.0.0.1:8000`** in your browser.
 
+> **First start:** Argus is secure by default. If no admin key exists, one is generated and printed **once** in the server log — paste it into the sign-in screen, then create personal keys (`POST /api/keys`) and revoke the bootstrap key. Lost every admin key? `python -m argus.cli.console --create-api-key recovery --role admin`.
+
 * Enter any target (**Domain**, **Username**, **Email**, or **IP Address**).
 * Choose maximum hop depth (1 to 3).
-* Click **Launch Recon** and watch the directed graph expand and animate in real time!
+* Click **Launch Recon**, state the engagement purpose and confirm you are authorised (recorded in the audit log), then watch the directed graph expand and animate in real time!
 * Click any node to open the **Entity Inspector** and inspect confidence ratings, discovery origins, and enriched metadata.
 * Switch to **Threat Intel** to view graph pivots, risk exposure score, and export to JSON or Maltego CSV.
 

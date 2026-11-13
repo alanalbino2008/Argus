@@ -70,6 +70,40 @@ class RelationRow(Base):
     data: Mapped[Dict[str, Any]] = mapped_column(JSON)
 
 
+class ApiKeyRow(Base):
+    """API credentials. Only a SHA-256 hash of each key is stored, never the key itself."""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    prefix: Mapped[str] = mapped_column(String(16))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AuditEventRow(Base):
+    """Append-only, hash-chained security audit trail."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[str] = mapped_column(String(40), index=True)  # ISO-8601 UTC string: part of the hash
+    actor_id: Mapped[str] = mapped_column(String(64), index=True)
+    actor_name: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    resource: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(16))
+    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    details: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    hash: Mapped[str] = mapped_column(String(64))
+
+
 class Database:
     """Owns the async engine and session factory for one database URL."""
 

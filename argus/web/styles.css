@@ -726,3 +726,49 @@ body.theme-soc {
 
 .pivot-link { cursor: pointer; }
 .pivot-link:hover .meta-key { color: var(--accent-cyan); }
+
+/* ---------------------------------------------------------- Sign-in & rules of engagement */
+.auth-card {
+  background: #0f172a;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 480px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+.auth-title { margin: 0; font-size: 1.1rem; color: var(--text-primary); }
+.auth-hint { margin: 0; font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5; }
+.auth-hint code { color: var(--accent-cyan); font-family: var(--font-mono); word-break: break-all; }
+.form-label { font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+.form-input { width: 100%; box-sizing: border-box; resize: vertical; font-family: var(--font-mono); }
+.form-error { min-height: 1em; font-size: 0.8rem; color: var(--accent-crimson); }
+
+.checkbox-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.checkbox-row input { margin-top: 3px; accent-color: var(--accent-cyan); }
+.auth-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.user-pill[hidden] { display: none; }
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent-cyan);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0;
+}
+.link-btn:hover { text-decoration: underline; }
+.auth-actions .btn-secondary { flex: 0 0 auto; width: auto; padding: 8px 16px; }

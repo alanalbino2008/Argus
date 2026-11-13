@@ -101,7 +101,7 @@ async def test_http_failures_are_captured_automatically():
                     yield entity
 
     try:
-        engine = make_engine([NaiveHttpModule()], max_retries=0)
+        engine = make_engine([NaiveHttpModule()], max_retries=0, allow_private_targets=True)
         await engine.start()
     finally:
         await server.close()

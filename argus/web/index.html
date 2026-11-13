@@ -70,8 +70,47 @@
         <span>Edges:</span>
         <span id="edge-counter" class="num">0</span>
       </div>
+      <div class="stat-pill user-pill" id="user-pill" hidden>
+        <span id="user-name"></span>
+        <button id="btn-logout" class="link-btn" title="Sign out">Sign out</button>
+      </div>
     </div>
   </header>
+
+  <!-- Sign-in -->
+  <div id="login-modal" class="modal-overlay">
+    <form id="login-form" class="auth-card" autocomplete="off">
+      <h2 class="auth-title">Sign in to Argus</h2>
+      <p class="auth-hint">Paste your API key. On first start an admin key is printed once in the server log.</p>
+      <label class="form-label" for="api-key-input">API key</label>
+      <input type="password" id="api-key-input" class="scan-input form-input" placeholder="argus_..." required>
+      <div id="login-error" class="form-error" role="alert"></div>
+      <div class="auth-actions">
+        <button type="submit" class="btn-launch">Sign in</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Rules of engagement: every scan must be justified and authorised -->
+  <div id="roe-modal" class="modal-overlay">
+    <form id="roe-form" class="auth-card">
+      <h2 class="auth-title">Rules of Engagement</h2>
+      <p class="auth-hint">Target: <code id="roe-target"></code></p>
+      <label class="form-label" for="roe-purpose">Purpose / engagement reference</label>
+      <textarea id="roe-purpose" class="scan-input form-input" rows="3" maxlength="500"
+        placeholder="e.g. HackerOne program ACME, report #1234 · CTF challenge · own infrastructure audit" required></textarea>
+      <label class="checkbox-row">
+        <input type="checkbox" id="roe-authorized">
+        <span>I confirm I am authorised to investigate this target and will act within the law and the programme's scope.
+          This request is recorded in the audit log.</span>
+      </label>
+      <div id="roe-error" class="form-error" role="alert"></div>
+      <div class="auth-actions">
+        <button type="button" id="roe-cancel" class="btn-secondary">Cancel</button>
+        <button type="submit" class="btn-launch">Launch Recon</button>
+      </div>
+    </form>
+  </div>
 
   <!-- Main Layout -->
   <main class="main-layout">

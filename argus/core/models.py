@@ -144,6 +144,7 @@ class ScanConfig(BaseModel):
     max_retries: int = Field(default=3, ge=0, le=10, description="Retries for transient HTTP failures (429/5xx/connection errors)")
     per_host_concurrency: int = Field(default=6, ge=1, le=50, description="Max simultaneous requests to any single host")
     max_entities: int = Field(default=2000, ge=1, le=100000, description="Safety cap on total graph nodes per investigation")
+    allow_private_targets: bool = Field(default=False, description="Permit connections to private/internal networks (authorised internal tests only)")
     circuit_breaker_threshold: int = Field(default=5, ge=1, description="Consecutive failures before a module is disabled for the rest of the scan")
 
 
@@ -172,6 +173,8 @@ class Investigation(BaseModel):
     http_stats: Dict[str, Any] = Field(default_factory=dict)
     truncated: bool = False
     analytics: Optional[Dict[str, Any]] = None
+    created_by: Optional[str] = None
+    purpose: Optional[str] = None
 
 
 class SystemMetrics(BaseModel):

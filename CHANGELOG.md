@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.3.0] — Phase 3: Platform security
+
+### Added
+- API-key authentication (SHA-256-hashed, revocable, shown once) with viewer / analyst / admin RBAC.
+- Secure-by-default bootstrap: an admin key is generated and logged once (or supplied via
+  `ARGUS_BOOTSTRAP_ADMIN_KEY`, minimum 32 characters, otherwise startup fails closed).
+- CLI: `--create-api-key NAME --role ROLE` for out-of-band key creation and recovery.
+- SSRF egress guard: private/reserved/internal destinations blocked at seed validation, at
+  connection time after DNS resolution (defeats DNS rebinding), and for raw-socket modules.
+  Opt-in `ARGUS_ALLOW_PRIVATE_TARGETS` / `--allow-private` for authorised internal tests.
+- Rules of engagement: scans require a purpose and explicit authorisation, stored with the
+  investigation; UI confirmation dialog.
+- Tamper-evident, SHA-256 hash-chained audit log (`GET /api/audit`, `GET /api/audit/verify`).
+- Per-key scan rate limiting and a server-wide concurrent scan cap (HTTP 429).
+- Security headers: strict CSP (`script-src 'self'`), frame denial, nosniff, no-referrer,
+  `no-store` on API data, HSTS over HTTPS.
+- Single-use, short-lived WebSocket tickets; authenticated exports in the UI.
+- Web UI sign-in / sign-out and current-user indicator.
+- `SECURITY.md` disclosure policy; `docs/explained/03-platform-security.md`.
+- Tests: SSRF, authentication, RBAC, audit tampering, limits, headers, CORS (55 → 120).
+
+### Changed
+- CORS is same-origin by default (was `*` with credentials); extra origins via `ARGUS_CORS_ORIGINS`.
+- WebSocket handler supervised by an anyio task group (fixes a cancellation race found by stress testing).
+- Invalid API keys are audited (rate-limited per IP); anonymous page loads are not.
+
 ## [1.2.0] — Phase 2: Persistence, history & live replay
 
 ### Added
