@@ -3,7 +3,7 @@
 # no source tree, tests, git history or build tools.
 
 # ---------------------------------------------------------------------------- build stage
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /src
@@ -17,7 +17,7 @@ RUN pip install build && python -m build --wheel --outdir /dist . \
     && pip install /dist/*.whl
 
 # -------------------------------------------------------------------------- runtime stage
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="Argus OSINT" \
