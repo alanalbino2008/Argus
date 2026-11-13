@@ -21,6 +21,7 @@ class DnsReconModule(BaseModule):
     name = "dns_recon"
     description = "Comprehensive DNS interrogation, mail exchange mapping, and email security verification"
     supported_entity_types = [EntityType.DOMAIN, EntityType.SUBDOMAIN]
+    attack_techniques = ("T1590.002", "T1596.001")
 
     RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SOA"]
 

@@ -21,6 +21,7 @@ class ShodanInternetDbModule(BaseModule):
     name = "shodan_internetdb"
     description = "Passive open port discovery, service tags, and known CVE vulnerability mapping via Shodan"
     supported_entity_types = [EntityType.IP_ADDRESS]
+    attack_techniques = ("T1596.005",)
 
     PORT_SERVICE_MAP = {
         21: "FTP",

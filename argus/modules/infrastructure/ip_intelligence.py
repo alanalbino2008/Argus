@@ -24,6 +24,7 @@ class IpIntelligenceModule(BaseModule):
     name = "ip_intelligence"
     description = "IP Geolocation, Autonomous System (ASN), ISP, and Reverse DNS mapping"
     supported_entity_types = [EntityType.IP_ADDRESS]
+    attack_techniques = ("T1590.005", "T1590.004")
 
     async def run(
         self,

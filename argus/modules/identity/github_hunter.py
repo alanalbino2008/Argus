@@ -22,6 +22,7 @@ class GitHubHunterModule(BaseModule):
     name = "github_hunter"
     description = "GitHub intelligence: extracts commit author emails, real names, SSH keys, and organizations"
     supported_entity_types = [EntityType.USERNAME]
+    attack_techniques = ("T1593.003", "T1589.002", "T1589.003")
 
     async def run(
         self,

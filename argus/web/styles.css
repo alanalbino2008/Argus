@@ -772,3 +772,19 @@ body.theme-soc {
 }
 .link-btn:hover { text-decoration: underline; }
 .auth-actions .btn-secondary { flex: 0 0 auto; width: auto; padding: 8px 16px; }
+
+/* ---------------------------------------------------------- MITRE ATT&CK */
+.attack-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.78rem;
+}
+.attack-id { font-family: var(--font-mono); color: var(--accent-cyan); text-decoration: none; }
+.attack-id:hover { text-decoration: underline; }
+.attack-name { color: var(--text-primary); }
+.attack-count { font-family: var(--font-mono); color: var(--accent-amber); font-weight: 700; }
+.attack-defence { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; line-height: 1.4; }

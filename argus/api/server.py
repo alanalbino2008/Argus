@@ -24,7 +24,7 @@ from typing import Any
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
@@ -37,6 +37,8 @@ from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import get_settings
+from argus.intel.attack import map_investigation, to_navigator_layer
+from argus.intel.stix import build_bundle
 from argus.modules import get_default_modules
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.security.auth import SYSTEM, Principal, Role
@@ -317,6 +319,8 @@ async def list_modules(_: Principal = VIEWER):
             "name": m.name,
             "description": m.description,
             "supported_types": [t.value for t in m.supported_entity_types],
+            "attack_techniques": list(m.attack_techniques),
+            "active": m.active,
         }
         for m in get_default_modules().values()
     ]
@@ -489,6 +493,44 @@ async def export_graph_csv(inv_id: str, request: Request, principal: Principal =
         graph.to_maltego_csv(),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=argus_{inv_id}_maltego.csv"},
+    )
+
+
+def _modules_for(inv_id: str) -> dict[str, Any]:
+    engine = INVESTIGATIONS.get(inv_id)
+    return engine.modules if engine else get_default_modules()
+
+
+@app.get("/api/investigation/{inv_id}/attack")
+async def get_attack_mapping(inv_id: str, request: Request, _: Principal = VIEWER):
+    """Findings classified by MITRE ATT&CK reconnaissance technique, with defensive guidance."""
+    graph = await _resolve_graph(inv_id, get_repo(request))
+    return map_investigation(graph, _modules_for(inv_id))
+
+
+@app.get("/api/investigation/{inv_id}/export/navigator")
+async def export_attack_navigator(inv_id: str, request: Request, principal: Principal = VIEWER):
+    """ATT&CK Navigator layer (open at https://mitre-attack.github.io/attack-navigator/)."""
+    repo = get_repo(request)
+    inv, graph = await _resolve(inv_id, repo), await _resolve_graph(inv_id, repo)
+    layer = to_navigator_layer(map_investigation(graph), f"Argus: {inv.config.target}", f"Investigation {inv_id}")
+    await audit(request, principal, "investigation.export", inv_id, details={"format": "attack-navigator"})
+    return JSONResponse(
+        layer, headers={"Content-Disposition": f"attachment; filename=argus_{inv_id}_attack_layer.json"}
+    )
+
+
+@app.get("/api/investigation/{inv_id}/export/stix")
+async def export_stix(inv_id: str, request: Request, principal: Principal = VIEWER):
+    """STIX 2.1 bundle for threat-intelligence platforms (OpenCTI, MISP...). Marked TLP:AMBER."""
+    repo = get_repo(request)
+    inv, graph = await _resolve(inv_id, repo), await _resolve_graph(inv_id, repo)
+    bundle = build_bundle(inv, graph)
+    await audit(request, principal, "investigation.export", inv_id, details={"format": "stix-2.1"})
+    return Response(
+        bundle.serialize(pretty=True),
+        media_type="application/stix+json;version=2.1",
+        headers={"Content-Disposition": f"attachment; filename=argus_{inv_id}_stix.json"},
     )
 
 

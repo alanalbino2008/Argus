@@ -20,6 +20,7 @@ class WhoisLookupModule(BaseModule):
     name = "whois_lookup"
     description = "RDAP domain registration metadata, registrar identification, and ownership tracking"
     supported_entity_types = [EntityType.DOMAIN]
+    attack_techniques = ("T1596.002", "T1590.001")
 
     async def run(
         self,

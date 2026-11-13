@@ -35,6 +35,7 @@ class PhoneReconModule(BaseModule):
     name = "phone_recon"
     description = "International phone number parsing, country origin identification, and OSINT footprinting"
     supported_entity_types = [EntityType.PHONE]
+    attack_techniques = ("T1589",)
 
     async def run(
         self,

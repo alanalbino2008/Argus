@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from typing import ClassVar
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, ScanConfig
@@ -20,6 +21,11 @@ class BaseModule(ABC):
     name: str = "base_module"
     description: str = "Base reconnaissance module"
     supported_entity_types: list[EntityType] = []
+    # MITRE ATT&CK reconnaissance techniques this collector emulates (see argus/intel/attack.py).
+    attack_techniques: ClassVar[tuple[str, ...]] = ()
+    # True if the module connects to the *target's own* infrastructure (not just third-party
+    # databases). Matters for engagements that only permit passive reconnaissance.
+    active: ClassVar[bool] = False
 
     def report_error(self, source: str, error: object) -> None:
         """Record that a data source failed during this run (e.g. a DNS timeout).

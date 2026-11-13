@@ -20,6 +20,8 @@ class HttpFingerprintModule(BaseModule):
     name = "http_fingerprint"
     description = "Web technology fingerprinting, CDN detection, and HTTP security header compliance auditing"
     supported_entity_types = [EntityType.DOMAIN, EntityType.SUBDOMAIN, EntityType.IP_ADDRESS]
+    attack_techniques = ("T1592.002", "T1594", "T1590.006", "T1595")
+    active = True  # connects to the target's own servers
 
     SECURITY_HEADERS = [
         "strict-transport-security",

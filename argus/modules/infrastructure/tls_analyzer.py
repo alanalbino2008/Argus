@@ -82,6 +82,8 @@ class TlsAnalyzerModule(BaseModule):
     name = "tls_analyzer"
     description = "TLS/SSL Certificate inspection, Subject Alternative Name (SAN) discovery, and cipher analysis"
     supported_entity_types = [EntityType.DOMAIN, EntityType.SUBDOMAIN]
+    attack_techniques = ("T1596.003", "T1595")
+    active = True  # connects to the target's own servers
     port = 443
 
     async def run(

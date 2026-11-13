@@ -22,6 +22,7 @@ class UsernameHunterModule(BaseModule):
     name = "username_hunter"
     description = "Sherlock-style cross-platform social profile & account discovery"
     supported_entity_types = [EntityType.USERNAME]
+    attack_techniques = ("T1593.001",)
 
     async def run(
         self,

@@ -21,6 +21,7 @@ class SubdomainFinderModule(BaseModule):
     name = "subdomain_finder"
     description = "Passive subdomain enumeration via Certificate Transparency and public telemetry"
     supported_entity_types = [EntityType.DOMAIN]
+    attack_techniques = ("T1596.003", "T1596.001")
 
     async def run(
         self,

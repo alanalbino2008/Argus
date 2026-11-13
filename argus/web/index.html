@@ -216,10 +216,21 @@
           </div>
 
           <div class="inspector-card">
+            <div class="inspector-title">MITRE ATT&amp;CK · Reconnaissance (TA0043)</div>
+            <div id="attack-list">
+              <div style="color: var(--text-muted); font-size: 0.8rem;">Techniques appear once findings arrive.</div>
+            </div>
+          </div>
+
+          <div class="inspector-card">
             <div class="inspector-title">Intelligence Exports & Briefings</div>
             <div class="export-actions">
               <a id="btn-export-json" href="#" class="btn-secondary" download>JSON Graph</a>
               <a id="btn-export-csv" href="#" class="btn-secondary" download>Maltego CSV</a>
+            </div>
+            <div class="export-actions" style="margin-top: 8px;">
+              <a id="btn-export-stix" href="#" class="btn-secondary" download title="STIX 2.1 bundle for OpenCTI / MISP (TLP:AMBER)">STIX 2.1</a>
+              <a id="btn-export-navigator" href="#" class="btn-secondary" download title="Open in MITRE ATT&amp;CK Navigator">ATT&amp;CK Layer</a>
             </div>
             <div style="margin-top: 10px;">
               <button id="btn-open-report" class="btn-secondary" style="width: 100%; border-color: var(--accent-cyan); color: var(--accent-cyan);">

@@ -34,6 +34,7 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "cryptography>=42.0.0",
     "alembic>=1.13.0",
+    "stix2>=3.0.1",
 ]
 
 [project.optional-dependencies]
@@ -107,7 +108,7 @@ strict_equality = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["networkx.*", "dns.*", "rich.*"]
+module = ["networkx.*", "dns.*", "rich.*", "stix2.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

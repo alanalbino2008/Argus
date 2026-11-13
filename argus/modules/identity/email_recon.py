@@ -38,6 +38,7 @@ class EmailReconModule(BaseModule):
     name = "email_recon"
     description = "Email syntax validation, domain extraction, MX verification, and Gravatar profiling"
     supported_entity_types = [EntityType.EMAIL]
+    attack_techniques = ("T1589.002", "T1590.002")
 
     async def run(
         self,

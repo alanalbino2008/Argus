@@ -646,7 +646,29 @@ function renderMetadataRows(meta) {
   return html;
 }
 
+// ================================================================ MITRE ATT&CK
+async function loadAttackMapping() {
+  if (!currentInvestigationId) return;
+  const box = document.getElementById("attack-list");
+  try {
+    const res = await authFetch(`/api/investigation/${encodeURIComponent(currentInvestigationId)}/attack`);
+    const mapping = await res.json();
+    box.innerHTML = mapping.techniques.length
+      ? mapping.techniques.map((t) => `
+          <div class="attack-row" title="${escapeHtml(t.defence)}">
+            <a class="attack-id" href="${escapeHtml(t.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(t.id)}</a>
+            <span class="attack-name">${escapeHtml(t.parent === t.id ? t.name : `${t.parent_name}: ${t.name}`)}</span>
+            <span class="attack-count">${t.count}</span>
+            <div class="attack-defence">🛡 ${escapeHtml(t.defence)}</div>
+          </div>`).join("")
+      : '<div style="color: var(--text-muted); font-size: 0.8rem;">No reconnaissance exposure mapped.</div>';
+  } catch (err) {
+    box.innerHTML = "";
+  }
+}
+
 function renderAnalytics(analytics) {
+  loadAttackMapping();
   // Threat Score
   const scoreNum = document.getElementById("threat-score-num");
   if (scoreNum) scoreNum.textContent = analytics.threat_exposure_score || "10";
@@ -797,16 +819,22 @@ function setupRulesOfEngagement() {
 // ================================================================ authenticated exports
 // Plain <a href> links cannot carry the Authorization header, so download via fetch.
 function setupExports() {
-  for (const [id, ext] of [["btn-export-json", "json"], ["btn-export-csv", "csv"]]) {
+  const exports = [
+    ["btn-export-json", "json", "json"],
+    ["btn-export-csv", "csv", "maltego.csv"],
+    ["btn-export-stix", "stix", "stix.json"],
+    ["btn-export-navigator", "navigator", "attack_layer.json"],
+  ];
+  for (const [id, path, suffix] of exports) {
     document.getElementById(id).addEventListener("click", async (e) => {
       e.preventDefault();
       if (!currentInvestigationId) return;
-      const res = await authFetch(`/api/investigation/${encodeURIComponent(currentInvestigationId)}/export/${ext}`);
+      const res = await authFetch(`/api/investigation/${encodeURIComponent(currentInvestigationId)}/export/${path}`);
       if (!res.ok) return addEventToFeed(`Export failed (${res.status})`);
       const url = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = url;
-      a.download = `argus_${currentInvestigationId}.${ext === "csv" ? "maltego.csv" : "json"}`;
+      a.download = `argus_${currentInvestigationId}_${suffix}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
