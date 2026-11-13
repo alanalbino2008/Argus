@@ -145,7 +145,7 @@ def test_scheduler_respects_the_concurrency_cap(make_client, monkeypatch):
 def test_scheduler_disables_monitors_that_fall_out_of_scope(make_client):
     client = make_client(monitors_enabled="false")
     repo = client.app.state.monitors
-    mon = client.portal.call(
+    client.portal.call(
         lambda: repo.create(
             target="intranet.corp",
             target_type="domain",
