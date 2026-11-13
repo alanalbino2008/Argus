@@ -45,3 +45,11 @@ htmlcov/
 *.log
 argus_data/
 *.sqlite3
+
+# Argus local database & secrets
+argus.db
+argus.db-wal
+argus.db-shm
+*.db
+data/
+.env

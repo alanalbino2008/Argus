@@ -61,7 +61,29 @@ graph TD
 | **Observability** | Per-module stats (runs, failures, timeouts, latency) and HTTP stats (requests, retries, throttles, status codes) on every investigation. |
 | **Corporate networks** | Honours `HTTP(S)_PROXY` / `NO_PROXY`. |
 
-A plain-English walkthrough lives in [`docs/explained/01-engine-and-reliability.md`](docs/explained/01-engine-and-reliability.md).
+Plain-English walkthroughs: [engine & reliability](docs/explained/01-engine-and-reliability.md) · [persistence & history](docs/explained/02-persistence-and-history.md).
+
+### Persistence & History
+
+Every investigation is stored in a database (SQLite by default, PostgreSQL via `ARGUS_DATABASE_URL`), checkpointed every second while it runs, and survives restarts. The web UI's **History** tab reopens any past investigation, and the inspector shows every *other* investigation in which the same IP, email or domain appeared.
+
+| Method & path | Purpose |
+|---|---|
+| `POST /api/scan` | Launch an investigation |
+| `GET /api/investigations?status=&target=&limit=&offset=` | Investigation history |
+| `GET /api/investigation/{id}` | Status, stats, errors and warnings |
+| `POST /api/investigation/{id}/cancel` | Cancel a running scan |
+| `DELETE /api/investigation/{id}` | Delete an investigation and its findings |
+| `GET /api/investigation/{id}/graph` · `/export/json` · `/export/csv` | Graph and exports |
+| `GET /api/entities/search?q=&type=` | Cross-investigation entity pivot |
+| `GET /api/health` | Liveness/readiness probe |
+| `WS /ws/stream/{id}` | Snapshot of findings so far, then live events |
+
+| Setting (env var) | Default |
+|---|---|
+| `ARGUS_DATABASE_URL` | `sqlite+aiosqlite:///./argus.db` |
+| `ARGUS_PERSIST_FLUSH_INTERVAL` | `1.0` seconds |
+| `ARGUS_WS_QUEUE_SIZE` | `2000` messages per client |
 
 ---
 

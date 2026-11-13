@@ -9,15 +9,19 @@ from argus.api import server
 from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus
 from argus.core.models import EntityType, ScanConfig
+from argus.core.settings import get_settings
 from tests.test_engine import FanOutModule
 
 
 @pytest.fixture
-def client():
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'argus.db'}")
+    get_settings.cache_clear()
     with TestClient(server.app) as c:
         yield c
     server.INVESTIGATIONS.clear()
     server.SCAN_TASKS.clear()
+    get_settings.cache_clear()
 
 
 def test_list_modules(client):

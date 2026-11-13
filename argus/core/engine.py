@@ -176,7 +176,7 @@ class ArgusEngine:
             self._finalize(InvestigationStatus.COMPLETED, started)
             await self._emit(EventType.SCAN_COMPLETED, {
                 **self._summary(started),
-                "analytics": GraphIntelligenceAnalyzer.analyze(self.graph),
+                "analytics": self.investigation.analytics,
             })
         return self.graph
 
@@ -367,6 +367,11 @@ class ArgusEngine:
         inv.edge_count = self.graph.edge_count
         inv.module_stats = {name: s.as_dict() for name, s in self.module_stats.items()}
         inv.http_stats = self.http.stats.as_dict() if self.http else {}
+        inv.truncated = self.truncated
+        try:  # partial graphs from cancelled/failed scans are still worth scoring
+            inv.analytics = GraphIntelligenceAnalyzer.analyze(self.graph)
+        except Exception:
+            logger.exception("Graph analytics failed for %s", self.investigation_id)
 
     async def _emit(self, event_type: EventType, data: Dict[str, Any]) -> None:
         await self.bus.emit(Event(type=event_type, investigation_id=self.investigation_id, data=data))

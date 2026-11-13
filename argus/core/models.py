@@ -170,6 +170,8 @@ class Investigation(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     module_stats: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
     http_stats: Dict[str, Any] = Field(default_factory=dict)
+    truncated: bool = False
+    analytics: Optional[Dict[str, Any]] = None
 
 
 class SystemMetrics(BaseModel):

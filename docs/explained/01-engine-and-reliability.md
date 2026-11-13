@@ -40,6 +40,24 @@ memory overhead and locking problems for no benefit.
 | **Cancellation** | Users need a "stop" button. Cancellation is *cooperative*: the engine sets a flag, workers stop cleanly, and partial results are kept. | `engine.cancel()`, `POST /api/investigation/{id}/cancel` |
 | **Clear end states** | Previously a crashed scan stayed "running" forever. Now every scan ends as `completed`, `cancelled` or `failed`. | `engine.py → start` |
 
+### Success, degraded or failed?
+Modules deliberately *swallow* errors from individual sources — if crt.sh is down, we still
+want HackerTarget's results. But that hid failures: "found nothing" looked the same as
+"every source was down", so the circuit breaker never fired.
+
+Fix: each module run gets a **report card** (`ModuleRunReport`, stored in a Python
+`ContextVar` so it follows the run into helper tasks automatically). The shared HTTP client
+ticks it for every request. At the end the engine grades the run:
+
+| Grade | Meaning | Counts toward circuit breaker? |
+|---|---|---|
+| success | no source errors | no |
+| degraded | some sources failed, but we got results | no (logged as a warning) |
+| failed | every source failed and nothing was found | **yes** |
+
+It also fixed a real bug: a DNS *timeout* used to record a domain as having "no valid MX
+records", which falsely raised its risk score. Now a timeout means "unknown".
+
 ## 4. The resilient HTTP client (`argus/core/http.py`)
 
 Every module now talks to the internet through one shared `HttpClient`.

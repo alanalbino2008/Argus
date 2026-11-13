@@ -642,3 +642,87 @@ body.theme-soc {
     color: #000000 !important;
   }
 }
+
+/* ---------------------------------------------------------- Investigation history */
+.history-filter {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-item {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 32px 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.history-item:hover { background: var(--bg-card-hover); border-color: var(--border-focus); }
+.history-item.active { border-color: var(--accent-cyan); }
+
+.history-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-target {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-status {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.history-status.status-completed { color: var(--accent-emerald); }
+.history-status.status-running,
+.history-status.status-initializing,
+.history-status.status-cancelled { color: var(--accent-amber); }
+.history-status.status-failed { color: var(--accent-crimson); }
+
+.history-meta {
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.history-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.history-delete:hover { color: var(--accent-crimson); }
+
+.history-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 20px;
+}
+
+.pivot-link { cursor: pointer; }
+.pivot-link:hover .meta-key { color: var(--accent-cyan); }

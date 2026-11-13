@@ -30,6 +30,10 @@ const ENTITY_COLORS = {
 document.addEventListener("DOMContentLoaded", () => {
   initCytoscape();
   setupUIEventListeners();
+  setupHistoryPanel();
+  // Deep link: /?inv=<investigation_id> reopens a saved investigation.
+  const deepLink = new URLSearchParams(window.location.search).get("inv");
+  if (deepLink) openInvestigation(deepLink);
 });
 
 function initCytoscape() {
@@ -295,14 +299,8 @@ async function startInvestigation(target, targetType, maxDepth) {
   const statusBadge = document.getElementById("status-badge");
 
   launchBtn.disabled = true;
-  statusBadge.textContent = "Scanning...";
-  statusBadge.style.color = "var(--accent-amber)";
-
-  // Reset graph and counters
-  cy.elements().remove();
-  document.getElementById("node-counter").textContent = "0";
-  document.getElementById("edge-counter").textContent = "0";
-  document.getElementById("event-feed").innerHTML = "";
+  setStatus("running");
+  resetWorkspace();
 
   try {
     const response = await fetch("/api/scan", {
@@ -316,13 +314,8 @@ async function startInvestigation(target, targetType, maxDepth) {
     });
 
     const data = await response.json();
-    currentInvestigationId = data.investigation_id;
-
-    // Setup Export Links
-    document.getElementById("btn-export-json").href = `/api/investigation/${currentInvestigationId}/export/json`;
-    document.getElementById("btn-export-csv").href = `/api/investigation/${currentInvestigationId}/export/csv`;
-
-    connectWebSocket(currentInvestigationId);
+    if (!response.ok) throw new Error(JSON.stringify(data.detail || data));
+    attachInvestigation(data.investigation_id);
   } catch (err) {
     console.error("Failed to start scan:", err);
     launchBtn.disabled = false;
@@ -354,10 +347,153 @@ function connectWebSocket(invId) {
   };
 }
 
+// ---------------------------------------------------------------- workspace state
+const STATUS_STYLES = {
+  initializing: ["Starting...", "var(--accent-amber)"],
+  running: ["Scanning...", "var(--accent-amber)"],
+  completed: ["Complete", "var(--accent-emerald)"],
+  cancelled: ["Cancelled", "var(--accent-amber, #f5a524)"],
+  failed: ["Failed", "var(--accent-crimson, #ff4d6d)"],
+};
+
+function setStatus(status) {
+  const [text, color] = STATUS_STYLES[status] || [status, "var(--text-muted)"];
+  const badge = document.getElementById("status-badge");
+  badge.textContent = text;
+  badge.style.color = color;
+  document.getElementById("launch-btn").disabled = status === "running" || status === "initializing";
+}
+
+function resetWorkspace() {
+  cy.elements().remove();
+  document.getElementById("node-counter").textContent = "0";
+  document.getElementById("edge-counter").textContent = "0";
+  document.getElementById("event-feed").innerHTML = "";
+  clearNodeInspector();
+}
+
+function attachInvestigation(invId) {
+  currentInvestigationId = invId;
+  const base = `/api/investigation/${encodeURIComponent(invId)}`;
+  document.getElementById("btn-export-json").href = `${base}/export/json`;
+  document.getElementById("btn-export-csv").href = `${base}/export/csv`;
+  connectWebSocket(invId);
+}
+
+function openInvestigation(invId) {
+  resetWorkspace();
+  setStatus("initializing");
+  attachInvestigation(invId);
+}
+
+// Server sends everything found so far on connect, so late joiners and
+// historical investigations render identically to a live scan.
+function applySnapshot(data) {
+  const inv = data.investigation;
+  cy.batch(() => {
+    data.entities.forEach(addEntityToGraph);
+    data.relations.forEach(addRelationToGraph);
+  });
+  setStatus(inv.status);
+  addEventToFeed(`Loaded ${inv.target}: ${data.entities.length} entities, ${data.relations.length} relations (${inv.status})`);
+  (inv.warnings || []).slice(-5).forEach((w) => addEventToFeed(`[WARNING] ${w}`));
+  if (data.analytics) renderAnalytics(data.analytics);
+  cy.layout({ name: "cose", animate: false }).run();
+}
+
+// ---------------------------------------------------------------- history
+async function loadHistory() {
+  const list = document.getElementById("history-list");
+  const filter = document.getElementById("history-filter").value.trim();
+  const params = new URLSearchParams({ limit: "100" });
+  if (filter) params.set("target", filter);
+  try {
+    const res = await fetch(`/api/investigations?${params}`);
+    const rows = await res.json();
+    if (!rows.length) {
+      list.innerHTML = '<div class="history-empty">No investigations yet.</div>';
+      return;
+    }
+    list.innerHTML = rows.map((r) => `
+      <div class="history-item${r.id === currentInvestigationId ? " active" : ""}" data-id="${escapeHtml(r.id)}">
+        <div class="history-main">
+          <span class="history-target">${escapeHtml(r.target)}</span>
+          <span class="history-status status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span>
+        </div>
+        <div class="history-meta">
+          ${escapeHtml(r.target_type)} · ${r.nodes_count} nodes · ${new Date(r.created_at).toLocaleString()}
+          ${r.threat_exposure_score != null ? ` · score ${r.threat_exposure_score}` : ""}
+        </div>
+        <button class="history-delete" title="Delete investigation" data-id="${escapeHtml(r.id)}">✕</button>
+      </div>`).join("");
+  } catch (err) {
+    list.innerHTML = '<div class="history-empty">Could not load history.</div>';
+  }
+}
+
+async function deleteInvestigation(invId) {
+  if (!confirm("Permanently delete this investigation and all of its findings?")) return;
+  const res = await fetch(`/api/investigation/${encodeURIComponent(invId)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(`Delete failed: ${body.detail || res.status}`);
+  }
+  if (invId === currentInvestigationId) {
+    currentInvestigationId = null;
+    resetWorkspace();
+    setStatus("idle");
+  }
+  loadHistory();
+}
+
+function setupHistoryPanel() {
+  const list = document.getElementById("history-list");
+  list.addEventListener("click", (e) => {
+    const del = e.target.closest(".history-delete");
+    if (del) {
+      e.stopPropagation();
+      deleteInvestigation(del.dataset.id);
+      return;
+    }
+    const item = e.target.closest(".history-item");
+    if (item) openInvestigation(item.dataset.id);
+  });
+  let debounce;
+  document.getElementById("history-filter").addEventListener("input", () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(loadHistory, 250);
+  });
+  document.querySelector('.tab-btn[data-tab="tab-history"]').addEventListener("click", loadHistory);
+}
+
+// Cross-investigation pivot: has this value appeared in any other investigation?
+async function loadPivots(nodeData) {
+  const box = document.getElementById("pivot-results");
+  if (!box || String(nodeData.value).length < 2) return;
+  try {
+    const params = new URLSearchParams({ q: nodeData.value, type: nodeData.type, limit: "20" });
+    const hits = (await (await fetch(`/api/entities/search?${params}`)).json())
+      .filter((h) => h.investigation_id !== currentInvestigationId && h.entity.value === nodeData.value);
+    box.innerHTML = hits.length
+      ? hits.map((h) => `
+          <div class="meta-row pivot-link" data-id="${escapeHtml(h.investigation_id)}">
+            <span class="meta-key">${escapeHtml(h.investigation_target)}</span>
+            <span class="meta-val">${new Date(h.investigation_created_at).toLocaleDateString()}</span>
+          </div>`).join("")
+      : '<div class="meta-row"><span class="meta-key">Not seen in other investigations</span></div>';
+    box.querySelectorAll(".pivot-link").forEach((el) =>
+      el.addEventListener("click", () => openInvestigation(el.dataset.id)));
+  } catch (err) {
+    box.innerHTML = "";
+  }
+}
+
 function handleLiveEvent(msg) {
   const { type, data } = msg;
 
-  if (type === "entity_discovered") {
+  if (type === "snapshot") {
+    applySnapshot(data);
+  } else if (type === "entity_discovered") {
     const ent = data.entity;
     addEntityToGraph(ent);
     addEventToFeed(`Found ${ent.type.toUpperCase()}: ${ent.label} (via ${data.source_module})`);
@@ -368,10 +504,7 @@ function handleLiveEvent(msg) {
     document.getElementById("node-counter").textContent = data.total_nodes;
     document.getElementById("edge-counter").textContent = data.total_edges;
   } else if (type === "scan_completed") {
-    document.getElementById("launch-btn").disabled = false;
-    const statusBadge = document.getElementById("status-badge");
-    statusBadge.textContent = "Complete";
-    statusBadge.style.color = "var(--accent-emerald)";
+    setStatus("completed");
 
     if (data.analytics) {
       renderAnalytics(data.analytics);
@@ -380,11 +513,8 @@ function handleLiveEvent(msg) {
     // Trigger optimal layout
     cy.layout({ name: "cose", animate: true, animationDuration: 800 }).run();
   } else if (type === "scan_failed" || type === "scan_cancelled") {
-    document.getElementById("launch-btn").disabled = false;
-    const statusBadge = document.getElementById("status-badge");
     const failed = type === "scan_failed";
-    statusBadge.textContent = failed ? "Failed" : "Cancelled";
-    statusBadge.style.color = failed ? "var(--accent-crimson, #ff4d6d)" : "var(--accent-amber, #f5a524)";
+    setStatus(failed ? "failed" : "cancelled");
     addEventToFeed(failed ? `Scan failed: ${data.error || "unknown error"}` : "Scan cancelled by operator");
   } else if (type === "log_message" && data.level !== "DEBUG") {
     addEventToFeed(`[${data.level}] ${data.message}`);
@@ -438,7 +568,7 @@ function addEventToFeed(desc) {
   item.className = "event-item";
   item.innerHTML = `
     <span class="event-time">${time}</span>
-    <span class="event-desc">${desc}</span>
+    <span class="event-desc">${escapeHtml(desc)}</span>
   `;
 
   feed.prepend(item);
@@ -469,7 +599,13 @@ function displayNodeInspector(nodeData) {
       <div class="meta-row"><span class="meta-key">Discovered By</span><span class="meta-val">${nodeData.source_module}</span></div>
       ${renderMetadataRows(nodeData.metadata)}
     </div>
+
+    <div class="inspector-card">
+      <div class="inspector-title">Seen In Other Investigations</div>
+      <div id="pivot-results"><div class="meta-row"><span class="meta-key">Searching...</span></div></div>
+    </div>
   `;
+  loadPivots(nodeData);
 }
 
 function clearNodeInspector() {
@@ -522,5 +658,9 @@ function renderAnalytics(analytics) {
 }
 
 function escapeHtml(str) {
-  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  // All OSINT data is attacker-controllable (DNS TXT, HTTP headers, profile names...),
+  // so every value rendered via innerHTML must pass through here.
+  return String(str ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }

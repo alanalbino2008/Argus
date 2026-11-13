@@ -11,10 +11,16 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      # Default: SQLite on a named volume. For PostgreSQL install the `postgres` extra and use e.g.
+      # ARGUS_DATABASE_URL=postgresql+asyncpg://argus:<password>@db:5432/argus
+      - ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
     volumes:
-      - ./data:/app/data
+      - argus-data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/modules')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  argus-data:
