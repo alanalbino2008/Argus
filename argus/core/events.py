@@ -17,6 +17,7 @@ class EventType(str, Enum):
     SCAN_PROGRESS = "scan_progress"
     SCAN_COMPLETED = "scan_completed"
     SCAN_FAILED = "scan_failed"
+    SCAN_CANCELLED = "scan_cancelled"
     ENTITY_DISCOVERED = "entity_discovered"
     RELATION_DISCOVERED = "relation_discovered"
     MODULE_STARTED = "module_started"

@@ -379,6 +379,15 @@ function handleLiveEvent(msg) {
 
     // Trigger optimal layout
     cy.layout({ name: "cose", animate: true, animationDuration: 800 }).run();
+  } else if (type === "scan_failed" || type === "scan_cancelled") {
+    document.getElementById("launch-btn").disabled = false;
+    const statusBadge = document.getElementById("status-badge");
+    const failed = type === "scan_failed";
+    statusBadge.textContent = failed ? "Failed" : "Cancelled";
+    statusBadge.style.color = failed ? "var(--accent-crimson, #ff4d6d)" : "var(--accent-amber, #f5a524)";
+    addEventToFeed(failed ? `Scan failed: ${data.error || "unknown error"}` : "Scan cancelled by operator");
+  } else if (type === "log_message" && data.level !== "DEBUG") {
+    addEventToFeed(`[${data.level}] ${data.message}`);
   }
 }
 

@@ -2,7 +2,7 @@ name: Argus CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ "**" ]
   pull_request:
     branches: [ main, master ]
 
@@ -28,4 +28,4 @@ jobs:
 
     - name: Run test suite with pytest
       run: |
-        pytest -v
+        pytest -v --durations=5
