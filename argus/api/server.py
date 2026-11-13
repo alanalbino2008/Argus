@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +40,7 @@ from argus.core.models import EntityType, Investigation, InvestigationStatus, Sc
 from argus.core.settings import get_settings
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.stix import build_bundle
-from argus.modules import get_default_modules, get_module_catalog
+from argus.modules import get_default_modules, get_module_catalog, plugin_report
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.headers import SecurityHeadersMiddleware
@@ -115,6 +116,7 @@ async def lifespan(app: FastAPI):
     app.state.ws_tickets = WebSocketTickets(settings.ws_ticket_ttl_seconds)
     app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
     await _bootstrap_admin_key(app)
+    await _audit_plugins(app)
     event_bus.subscribe_all(ws_dispatcher)
     try:
         yield
@@ -132,6 +134,15 @@ async def lifespan(app: FastAPI):
 
 
 MIN_BOOTSTRAP_KEY_LENGTH = 32
+
+
+async def _audit_plugins(app: FastAPI) -> None:
+    """Third-party code runs with server privileges: record exactly what was loaded."""
+    report = plugin_report()
+    for name, source in report.loaded.items():
+        await app.state.audit.record(SYSTEM, "plugin.loaded", name, details={"source": source})
+    for name, reason in report.errors.items():
+        await app.state.audit.record(SYSTEM, "plugin.rejected", name, outcome="failure", details={"reason": reason})
 
 
 async def _bootstrap_admin_key(app: FastAPI) -> None:
@@ -323,9 +334,16 @@ async def list_modules(_: Principal = VIEWER):
             "active": m.active,
             "requires": list(m.requires_settings),
             "configured": m.is_configured(),
+            "origin": m.origin,
         }
         for m in get_module_catalog().values()
     ]
+
+
+@app.get("/api/plugins")
+async def list_plugins(_: Principal = ADMIN):
+    """Plugin status: allowlisted, loaded, rejected (with reasons) and installed-but-inactive."""
+    return asdict(plugin_report())
 
 
 @app.get("/api/investigations")

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.5.0] — Phase 5: Intelligence features
+
+### Added
+- MITRE ATT&CK mapping (Reconnaissance, TA0043): findings classified by technique with defensive
+  guidance; every module declares the techniques it emulates and whether it is active or passive;
+  ATT&CK Navigator layer export; ATT&CK panel in the web UI.
+- STIX 2.1 export: observables with deterministic IDs, identities, CVE vulnerabilities, attack
+  patterns and relationships in a TLP:AMBER report; strictly validated with the `stix2` library.
+- Optional API-key modules: VirusTotal reputation, Have I Been Pwned breaches (new `breach` entity,
+  T1589.001) and the Shodan host API (products and versions per port). They load only when their
+  key is configured and respect each service's quota via per-host rate limits.
+- Secret redaction: API keys are scrubbed from every recorded error and log message Argus stores.
+- Plugin system via the `argus.modules` entry-point group: allowlist-only (`ARGUS_PLUGINS`),
+  validated (no shadowing built-ins, real ATT&CK IDs only), failure-isolated, audited at startup;
+  `GET /api/plugins`.
+- `docs/explained/05-intelligence-features.md`; tests 147 → 178.
+
+### Changed
+- `/api/modules` reports ATT&CK techniques, active/passive, required settings, configuration
+  status and origin (built-in or plugin).
+
 ## [1.4.0] — Phase 4: Engineering quality & delivery
 
 ### Added

@@ -93,6 +93,17 @@ Every investigation is stored in a database (SQLite by default, PostgreSQL via `
 
 ---
 
+### Intelligence Outputs
+
+| Output | What it gives you |
+|---|---|
+| **MITRE ATT&CK mapping** | Findings classified by Reconnaissance (TA0043) technique, with defensive guidance; every module labelled active or passive |
+| **ATT&CK Navigator layer** | Heat-map for MITRE's official [Navigator](https://mitre-attack.github.io/attack-navigator/) |
+| **STIX 2.1 bundle** | Import into OpenCTI, MISP or any STIX platform (TLP:AMBER) |
+| **Maltego CSV / JSON graph** | Link analysis in Maltego or your own tooling |
+
+Optional modules unlock with an API key — `ARGUS_VIRUSTOTAL_API_KEY`, `ARGUS_HIBP_API_KEY`, `ARGUS_SHODAN_API_KEY` — and third-party plugins load only when allowlisted in `ARGUS_PLUGINS`. See [`docs/explained/05-intelligence-features.md`](docs/explained/05-intelligence-features.md).
+
 ### Security Model
 
 Argus ingests attacker-controlled data and makes outbound connections on a user's behalf, so the platform itself is treated as attack surface.

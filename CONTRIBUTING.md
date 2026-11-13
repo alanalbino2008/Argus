@@ -53,6 +53,17 @@ Subclass `argus.modules.base.BaseModule`, implement `run()` as an async generato
 and the SSRF guard come for free), call `self.report_error()` / `self.report_ok()` for non-HTTP
 sources, and add a parsing test with recorded responses.
 
+## Writing a plugin (separate package)
+
+```toml
+# your-plugin/pyproject.toml
+[project.entry-points."argus.modules"]
+my_collector = "my_package.module:MyCollectorModule"
+```
+
+Then enable it explicitly: `ARGUS_PLUGINS='["my_collector"]'`. The class must subclass `BaseModule`,
+use a unique lowercase name, and declare only real ATT&CK technique IDs. Check `GET /api/plugins`.
+
 ## Releasing
 
 1. Bump `__version__` in `argus/__init__.py` (the single source of truth).

@@ -33,6 +33,8 @@ class BaseModule(ABC):
     requires_settings: ClassVar[tuple[str, ...]] = ()
     # Minimum seconds between requests to specific hosts (third-party API quotas).
     rate_limits: ClassVar[dict[str, float]] = {}
+    # "builtin", or "plugin:<package:object>" for third-party modules (see argus/modules/plugins.py).
+    origin: ClassVar[str] = "builtin"
 
     @classmethod
     def is_configured(cls) -> bool:

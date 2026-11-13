@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     virustotal_api_key: SecretStr | None = Field(default=None, description="VirusTotal v3 API key")
     hibp_api_key: SecretStr | None = Field(default=None, description="Have I Been Pwned v3 API key")
     shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
+    plugins: list[str] = Field(
+        default_factory=list,
+        description='Entry-point names of third-party plugin modules to load, e.g. ["crtsh_plus"]. Empty = none.',
+    )
     ws_ticket_ttl_seconds: int = Field(default=30, ge=5, description="Lifetime of one-time WebSocket tickets")
 
 
