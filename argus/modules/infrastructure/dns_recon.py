@@ -35,11 +35,15 @@ class DnsReconModule(BaseModule):
         resolver = dns.asyncresolver.Resolver()
         resolver.lifetime = config.timeout_seconds
 
+        spf_record: str | None = None
+        txt_answered = False
+
         # Query standard records
         for rtype in self.RECORD_TYPES:
             try:
                 answers = await resolver.resolve(domain, rtype)
                 self.report_ok()
+                txt_answered = txt_answered or rtype == "TXT"
                 for rdata in answers:
                     text_val = rdata.to_text().strip('"')
 
@@ -121,6 +125,7 @@ class DnsReconModule(BaseModule):
                         )
 
                     elif rtype == "TXT" and "v=spf1" in text_val.lower():  # SPF policy
+                        spf_record = text_val
                         rec_entity = Entity.create(
                             entity_type=EntityType.DNS_RECORD,
                             value=f"SPF: {text_val[:80]}...",
@@ -145,13 +150,16 @@ class DnsReconModule(BaseModule):
                 logger.debug("DNS query %s for %s error: %s", rtype, domain, e)
                 self.report_error(f"dns:{rtype}", e)
 
-        # Query DMARC policy
+        # Query DMARC policy. Three-valued on purpose: "missing" (authoritative answer: none
+        # published) must never be confused with "unknown" (the lookup failed).
+        dmarc_policy = "unknown"
         try:
             dmarc_domain = f"_dmarc.{domain}"
             answers = await resolver.resolve(dmarc_domain, "TXT")
             for rdata in answers:
                 text_val = rdata.to_text().strip('"')
                 if "v=dmarc1" in text_val.lower():
+                    dmarc_policy = _dmarc_policy(text_val)
                     dmarc_entity = Entity.create(
                         entity_type=EntityType.DNS_RECORD,
                         value=f"DMARC: {text_val[:80]}...",
@@ -168,7 +176,24 @@ class DnsReconModule(BaseModule):
                         rel_type=RelationType.HAS_DNS_RECORD,
                         label="DMARC Record",
                     )
+            if dmarc_policy == "unknown":
+                dmarc_policy = "missing"  # TXT records exist but none is DMARC
         except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
-            pass  # no DMARC record published - surfaced later by the risk analyzer
+            dmarc_policy = "missing"
         except Exception as e:
             self.report_error("dns:DMARC", e)
+
+        # Facts other components reason over (e.g. the attack path engine), set on the domain itself.
+        entity.metadata["dns_checked"] = True
+        entity.metadata["dmarc_policy"] = dmarc_policy
+        entity.metadata["spf"] = spf_record or ("missing" if txt_answered else "unknown")
+
+
+def _dmarc_policy(record: str) -> str:
+    """Extract the p= tag: "reject", "quarantine" or "none" ("none" also if malformed)."""
+    for tag in record.split(";"):
+        key, _, value = tag.strip().partition("=")
+        if key.strip().lower() == "p":
+            policy = value.strip().lower()
+            return policy if policy in ("reject", "quarantine", "none") else "none"
+    return "none"

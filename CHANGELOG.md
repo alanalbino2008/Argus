@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.6.0] — Phase 6: Attack Path Engine
+
+### Added
+- **Attack Path Engine** (`argus/intel/paths.py`): nine explainable rules chain findings into ranked
+  attack scenarios (credential exposure, spoofable email domain, exploitable public service, exposed
+  sensitive service, identity correlation, TLS interception, subdomain takeover candidate, malicious
+  reputation, web information leak), each with a risk score, the ATT&CK route from Reconnaissance to
+  Initial/Credential Access, narrative, evidence and remediation. `GET /api/investigation/{id}/paths`.
+- **Attack Paths tab**: severity-coloured cards, entity chain, ATT&CK route; "Show on graph"
+  highlights the whole path and fades everything else. Paths also appear in the executive report.
+- **Built-in demo investigation** (`argus --load-demo`, `POST /api/demo`): a fictional company using
+  only reserved `.example` domains and TEST-NET IPs that exercises every rule.
+- DNS module records explicit three-valued facts on domains (`dns_checked`, `dmarc_policy`,
+  `spf`: present / missing / unknown) so reasoning never treats a failed lookup as a missing control.
+- `docs/explained/06-attack-path-engine.md`; tests 178 → 196.
+
+### Fixed
+- Executive report claimed all collection was passive; it now states that the TLS and HTTP modules
+  contact the target and that attack paths are assessments, not confirmed exploitation.
+
 ## [1.5.0] — Phase 5: Intelligence features
 
 ### Added

@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupAuth();
   setupRulesOfEngagement();
   setupExports();
+  setupAttackPaths();
   // Deep link: /?inv=<investigation_id> reopens a saved investigation.
   const deepLink = new URLSearchParams(window.location.search).get("inv");
   ensureSignedIn().then((ok) => { if (ok && deepLink) openInvestigation(deepLink); });
@@ -118,6 +119,19 @@ function initCytoscape() {
           "line-color": "#00f0ff",
           "target-arrow-color": "#00f0ff",
           "width": 2.5
+        }
+      },
+      // Attack path highlighting: everything else fades, the chain glows.
+      { selector: ".dimmed", style: { "opacity": 0.12 } },
+      {
+        selector: "node.on-path",
+        style: { "border-width": 4, "border-color": "#ff4d6d", "opacity": 1, "z-index": 20 }
+      },
+      {
+        selector: "edge.on-path",
+        style: {
+          "line-color": "#ff4d6d", "target-arrow-color": "#ff4d6d", "width": 4,
+          "opacity": 1, "z-index": 20, "line-style": "solid"
         }
       }
     ],
@@ -211,7 +225,8 @@ function setupUIEventListeners() {
   });
 }
 
-function openExecutiveReport() {
+async function openExecutiveReport() {
+  if (!currentPaths.length) await loadAttackPaths();
   const nodes = cy.nodes();
   const edges = cy.edges();
   const targetVal = document.getElementById("target-input")?.value || "Unknown Target";
@@ -263,7 +278,21 @@ function openExecutiveReport() {
       </tbody>
     </table>
 
-    <h2>3. Topology Breakdown by Intelligence Category</h2>
+    <h2>3. Prioritised Attack Paths</h2>
+    ${currentPaths.length ? `
+    <table class="report-table">
+      <thead><tr><th>Risk</th><th>Scenario</th><th>Attack route (MITRE ATT&amp;CK)</th><th>First fix</th></tr></thead>
+      <tbody>${currentPaths.slice(0, 8).map((p) => `
+        <tr>
+          <td><strong>${p.score}</strong><br>${escapeHtml(p.severity.toUpperCase())}</td>
+          <td><strong>${escapeHtml(p.title)}</strong><br>${escapeHtml(p.narrative)}</td>
+          <td>${p.techniques.map((t) => `${escapeHtml(t.id)} ${escapeHtml(t.name)}`).join(" →<br>")}</td>
+          <td>${escapeHtml(p.remediation[0] || "")}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>` : "<p>No attack paths were identified.</p>"}
+
+    <h2>4. Topology Breakdown by Intelligence Category</h2>
     <table class="report-table">
       <thead>
         <tr><th>Entity Category</th><th>Total Nodes</th><th>Discovered Assets (Sample)</th></tr>
@@ -286,11 +315,13 @@ function openExecutiveReport() {
       </tbody>
     </table>
 
-    <h2>4. Methodology & Compliance Notice</h2>
+    <h2>5. Methodology & Compliance Notice</h2>
     <p style="font-size: 0.8rem; color: #94a3b8;">
-      All findings in this report were gathered via non-intrusive, passive Open Source Intelligence (OSINT) 
-      methods conforming to industry standard guidelines. Protocols queried include public DNS records, Certificate 
-      Transparency logs, standardized RDAP queries (RFC 7480), and public service fingerprints.
+      Findings were gathered from public Open Source Intelligence: DNS, Certificate Transparency logs, RDAP (RFC 7480),
+      public scan databases and public profiles. Two modules are <em>active</em> and contacted the target directly with
+      ordinary, single requests: a TLS handshake (certificate inspection) and an HTTP request (header fingerprinting).
+      No exploitation, credential testing or brute forcing was performed. Attack paths are rule-based assessments of
+      plausible attacker routes, not confirmed exploitation; verify before acting.
     </p>
   `;
 
@@ -670,6 +701,7 @@ async function loadAttackMapping() {
 
 function renderAnalytics(analytics) {
   loadAttackMapping();
+  loadAttackPaths();
   // Threat Score
   const scoreNum = document.getElementById("threat-score-num");
   if (scoreNum) scoreNum.textContent = analytics.threat_exposure_score || "10";
@@ -842,4 +874,88 @@ function setupExports() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
   }
+}
+
+// ================================================================ attack paths
+const SEVERITY_ORDER = ["critical", "high", "medium", "low"];
+let currentPaths = [];
+
+async function loadAttackPaths() {
+  if (!currentInvestigationId) return;
+  try {
+    const res = await authFetch(`/api/investigation/${encodeURIComponent(currentInvestigationId)}/paths`);
+    const data = await res.json();
+    currentPaths = data.paths;
+    renderAttackPaths(data);
+  } catch (err) {
+    /* leave previous state */
+  }
+}
+
+function renderAttackPaths(data) {
+  const badge = document.getElementById("paths-badge");
+  badge.textContent = data.summary.total;
+  badge.hidden = data.summary.total === 0;
+  badge.className = "tab-badge" + (data.summary.by_severity.critical ? " sev-critical" : data.summary.by_severity.high ? " sev-high" : "");
+
+  document.getElementById("paths-summary").innerHTML = SEVERITY_ORDER
+    .map((s) => `<span class="sev-pill sev-${s}">${data.summary.by_severity[s]} ${s}</span>`).join("");
+
+  const list = document.getElementById("paths-list");
+  if (!data.paths.length) {
+    list.innerHTML = `<div class="history-empty">No attack paths found across ${data.summary.rules_evaluated} rules. 🎉</div>`;
+    return;
+  }
+  list.innerHTML = data.paths.map((p, i) => `
+    <article class="path-card sev-border-${escapeHtml(p.severity)}" data-index="${i}">
+      <div class="path-head">
+        <span class="sev-pill sev-${escapeHtml(p.severity)}">${escapeHtml(p.severity)}</span>
+        <span class="path-score" title="Risk = impact ${p.impact}/5 × likelihood ${p.likelihood}">${p.score}</span>
+      </div>
+      <h3 class="path-title">${escapeHtml(p.title)}</h3>
+      <div class="path-chain">${p.steps.map((s) => `
+        <span class="chain-step" style="border-color:${ENTITY_COLORS[s.type] || "#64748b"}" title="${escapeHtml(s.role)}">
+          <span class="chain-role">${escapeHtml(s.role)}</span>${escapeHtml(s.label)}
+        </span>`).join('<span class="chain-arrow">→</span>')}
+      </div>
+      <p class="path-narrative">${escapeHtml(p.narrative)}</p>
+      <div class="path-ttps">${p.techniques.map((t) => `
+        <a class="ttp" href="${escapeHtml(t.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(t.name)}">
+          <span class="ttp-tactic">${escapeHtml(t.tactic)}</span>${escapeHtml(t.id)}
+        </a>`).join('<span class="chain-arrow">›</span>')}
+      </div>
+      <details class="path-details">
+        <summary>Evidence &amp; remediation</summary>
+        <ul class="path-evidence">${p.evidence.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+        <ol class="path-fixes">${p.remediation.map((r) => `<li>${escapeHtml(r)}</li>`).join("")}</ol>
+      </details>
+      <button class="btn-secondary path-show">Show on graph</button>
+    </article>`).join("");
+}
+
+function highlightPath(path) {
+  cy.elements().removeClass("on-path").addClass("dimmed");
+  const nodes = cy.collection(path.steps.map((s) => cy.getElementById(s.entity_id)).filter((n) => n.length));
+  const edges = cy.collection(path.edges.map((id) => cy.getElementById(id)).filter((e) => e.length));
+  nodes.union(edges).removeClass("dimmed").addClass("on-path");
+  cy.animate({ fit: { eles: nodes, padding: 120 } }, { duration: 500 });
+  document.getElementById("btn-clear-path").hidden = false;
+}
+
+function clearPathHighlight() {
+  cy.elements().removeClass("dimmed on-path");
+  document.getElementById("btn-clear-path").hidden = true;
+  document.querySelectorAll(".path-card.selected").forEach((c) => c.classList.remove("selected"));
+}
+
+function setupAttackPaths() {
+  document.getElementById("paths-list").addEventListener("click", (e) => {
+    const card = e.target.closest(".path-card");
+    if (!card || !e.target.closest(".path-show")) return;
+    document.querySelectorAll(".path-card.selected").forEach((c) => c.classList.remove("selected"));
+    card.classList.add("selected");
+    highlightPath(currentPaths[Number(card.dataset.index)]);
+  });
+  document.getElementById("btn-clear-path").addEventListener("click", clearPathHighlight);
+  document.querySelector('.tab-btn[data-tab="tab-paths"]').addEventListener("click", loadAttackPaths);
 }

@@ -159,7 +159,8 @@
     <aside class="sidebar">
       <div class="sidebar-tabs">
         <button class="tab-btn active" data-tab="tab-inspector">Inspector</button>
-        <button class="tab-btn" data-tab="tab-activity">Activity Feed</button>
+        <button class="tab-btn" data-tab="tab-paths">Attack Paths <span id="paths-badge" class="tab-badge" hidden>0</span></button>
+        <button class="tab-btn" data-tab="tab-activity">Activity</button>
         <button class="tab-btn" data-tab="tab-analytics">Threat Intel</button>
         <button class="tab-btn" data-tab="tab-history">History</button>
       </div>
@@ -180,6 +181,18 @@
             <div style="text-align: center; color: var(--text-muted); margin-top: 20px; font-size: 0.85rem;">
               Telemetry will stream live as reconnaissance executes.
             </div>
+          </div>
+        </div>
+
+        <!-- Attack Paths Pane (signature capability) -->
+        <div id="tab-paths" class="tab-pane">
+          <div class="paths-intro">
+            Findings chained into realistic attacker scenarios, ranked by risk. Select one to light it up on the graph.
+          </div>
+          <div id="paths-summary" class="paths-summary"></div>
+          <button id="btn-clear-path" class="btn-secondary" hidden>Clear highlight</button>
+          <div id="paths-list">
+            <div class="history-empty">Attack paths appear once findings arrive.</div>
           </div>
         </div>
 

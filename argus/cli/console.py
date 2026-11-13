@@ -176,6 +176,23 @@ async def run_cli_scan(
     )
 
 
+async def load_demo_cli() -> None:
+    from argus.core.settings import get_settings
+    from argus.demo import DEMO_TARGET, load_demo
+    from argus.storage.db import Database
+    from argus.storage.migrate import upgrade_database
+    from argus.storage.repository import InvestigationRepository
+
+    db = Database(get_settings().database_url)
+    try:
+        await upgrade_database(db)
+        inv_id = await load_demo(InvestigationRepository(db))
+    finally:
+        await db.dispose()
+    console.print(f"[bold green]✓ Demo investigation loaded:[/bold green] {DEMO_TARGET} ({inv_id})")
+    console.print(f"[dim]Open the web UI → History, or visit /?inv={inv_id}[/dim]")
+
+
 async def create_api_key_cli(name: str, role: str) -> None:
     """Out-of-band key creation (first setup, or recovery if every admin key is lost)."""
     from argus.core.settings import get_settings
@@ -226,6 +243,11 @@ def cli_entrypoint():
         "--create-api-key", metavar="NAME", help="Create an API key in the configured database and print it once"
     )
     parser.add_argument(
+        "--load-demo",
+        action="store_true",
+        help="Load the built-in fictional demo investigation into the database",
+    )
+    parser.add_argument(
         "--role",
         choices=["viewer", "analyst", "admin"],
         default="analyst",
@@ -233,6 +255,10 @@ def cli_entrypoint():
     )
 
     args = parser.parse_args()
+
+    if args.load_demo:
+        asyncio.run(load_demo_cli())
+        return
 
     if args.create_api_key:
         asyncio.run(create_api_key_cli(args.create_api_key, args.role))

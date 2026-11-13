@@ -38,7 +38,9 @@ from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import get_settings
+from argus.demo import load_demo
 from argus.intel.attack import map_investigation, to_navigator_layer
+from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
 from argus.modules import get_default_modules, get_module_catalog, plugin_report
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
@@ -346,6 +348,14 @@ async def list_plugins(_: Principal = ADMIN):
     return asdict(plugin_report())
 
 
+@app.post("/api/demo")
+async def load_demo_investigation(request: Request, principal: Principal = ADMIN):
+    """Load the built-in fictional demo investigation (reserved .example domains, TEST-NET IPs)."""
+    inv_id = await load_demo(get_repo(request))
+    await audit(request, principal, "demo.load", inv_id)
+    return {"investigation_id": inv_id}
+
+
 @app.get("/api/investigations")
 async def list_investigations(
     request: Request,
@@ -530,6 +540,12 @@ async def get_attack_mapping(inv_id: str, request: Request, _: Principal = VIEWE
     """Findings classified by MITRE ATT&CK reconnaissance technique, with defensive guidance."""
     graph = await _resolve_graph(inv_id, get_repo(request))
     return map_investigation(graph, _modules_for(inv_id))
+
+
+@app.get("/api/investigation/{inv_id}/paths")
+async def get_attack_paths(inv_id: str, request: Request, _: Principal = VIEWER):
+    """Attack Path Engine: findings chained into ranked, explained attack scenarios."""
+    return find_attack_paths(await _resolve_graph(inv_id, get_repo(request)))
 
 
 @app.get("/api/investigation/{inv_id}/export/navigator")

@@ -93,6 +93,14 @@ Every investigation is stored in a database (SQLite by default, PostgreSQL via `
 
 ---
 
+### ⭐ Attack Path Engine — Argus's Signature Capability
+
+Most OSINT tools return a list of findings. Argus **chains them into the attack scenarios an adversary would actually use** — *leaked password → corporate mailbox → credential stuffing*, *no DMARC + known staff → convincing phishing*, *public hostname → VPN appliance → known CVE* — ranks them by risk, maps each to its MITRE ATT&CK route (Reconnaissance → Initial Access) and gives prioritised fixes. Select a path and it lights up on the graph.
+
+![Attack paths highlighted on the intelligence graph](docs/img/attack-paths.jpg)
+
+Try it without scanning anything: `python -m argus.cli.console --load-demo` loads a fictional company (reserved `.example` domains and TEST-NET IPs) that triggers every rule. How it works: [`docs/explained/06-attack-path-engine.md`](docs/explained/06-attack-path-engine.md).
+
 ### Intelligence Outputs
 
 | Output | What it gives you |

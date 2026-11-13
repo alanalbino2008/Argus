@@ -788,3 +788,60 @@ body.theme-soc {
 .attack-name { color: var(--text-primary); }
 .attack-count { font-family: var(--font-mono); color: var(--accent-amber); font-weight: 700; }
 .attack-defence { grid-column: 1 / -1; color: var(--text-muted); font-size: 0.72rem; line-height: 1.4; }
+
+/* ---------------------------------------------------------- Attack paths */
+.tab-badge {
+  display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 4px;
+  border-radius: 8px; font-size: 0.65rem; line-height: 16px; text-align: center;
+  background: var(--accent-cyan); color: #000;
+}
+.tab-badge[hidden] { display: none; }
+.tab-badge.sev-high { background: var(--accent-amber); }
+.tab-badge.sev-critical { background: var(--accent-crimson); color: #fff; }
+.paths-intro { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 10px; line-height: 1.5; }
+.paths-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+#btn-clear-path { width: 100%; margin-bottom: 10px; }
+#btn-clear-path[hidden] { display: none; }
+
+.sev-pill {
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 2px 8px; border-radius: 10px; border: 1px solid currentColor;
+}
+.sev-critical { color: #ff4d6d; background: rgba(255, 77, 109, 0.12); }
+.sev-high { color: var(--accent-amber); background: rgba(245, 158, 11, 0.12); }
+.sev-medium { color: #facc15; background: rgba(250, 204, 21, 0.10); }
+.sev-low { color: var(--text-secondary); background: rgba(148, 163, 184, 0.10); }
+
+.path-card {
+  background: var(--bg-card); border: 1px solid var(--border-color); border-left: 4px solid var(--border-color);
+  border-radius: 8px; padding: 12px; margin-bottom: 10px; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.path-card.selected { box-shadow: 0 0 0 1px #ff4d6d, 0 0 16px rgba(255, 77, 109, 0.25); }
+.sev-border-critical { border-left-color: #ff4d6d; }
+.sev-border-high { border-left-color: var(--accent-amber); }
+.sev-border-medium { border-left-color: #facc15; }
+.sev-border-low { border-left-color: var(--text-muted); }
+.path-head { display: flex; justify-content: space-between; align-items: center; }
+.path-score { font-family: var(--font-mono); font-weight: 800; font-size: 1.1rem; color: var(--text-primary); }
+.path-title { font-size: 0.88rem; margin: 6px 0 8px; color: var(--text-primary); }
+.path-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.chain-step {
+  display: inline-flex; flex-direction: column; border: 1px solid; border-radius: 6px; padding: 3px 7px;
+  font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-primary); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chain-role { font-family: var(--font-sans); font-size: 0.58rem; text-transform: uppercase; color: var(--text-muted); }
+.chain-arrow { color: var(--text-muted); font-size: 0.8rem; }
+.path-narrative { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; margin: 0 0 8px; }
+.path-ttps { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; }
+.ttp {
+  display: inline-flex; flex-direction: column; text-decoration: none; font-family: var(--font-mono);
+  font-size: 0.72rem; color: var(--accent-cyan); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 6px;
+}
+.ttp:hover { border-color: var(--accent-cyan); }
+.ttp-tactic { font-family: var(--font-sans); font-size: 0.58rem; color: var(--text-muted); text-transform: uppercase; }
+.path-details { font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 8px; }
+.path-details summary { cursor: pointer; color: var(--text-primary); }
+.path-evidence, .path-fixes { margin: 6px 0 0 16px; padding: 0; line-height: 1.5; }
+.path-show { width: 100%; }
+.user-pill span { white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
