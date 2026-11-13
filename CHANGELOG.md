@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.7.0] — Phase 7: Continuous monitoring & drift detection
+
+### Added
+- Drift detection (`argus/intel/diff.py`): compare two scans of a target — assets added/removed,
+  security-relevant fact changes, attack paths new/escalated/reduced/resolved, risk trend and a
+  one-line headline. `GET /api/investigation/{id}/diff[?against=]`.
+- Monitors: scheduled re-scans (`/api/monitors`) under the same rules of engagement and scope checks
+  as manual scans; the scheduler re-validates scope before each run, respects the concurrent-scan
+  cap and is fully audited.
+- Alerts on material drift (`/api/alerts`, acknowledge); unread badge on the History tab.
+- UI: Alerts and Monitors panels, Compare and Watch on every investigation, "What changed" view, new
+  assets highlighted on the graph.
+- Demo now includes an earlier snapshot so drift can be explored offline.
+- Alembic migration 0002 (`monitors`, `alerts`); `docs/explained/07-continuous-monitoring.md`;
+  tests 196 → 204.
+
+### Changed
+- Attack-path identity is now rule + subject, so a worsening scenario is reported as escalated rather
+  than as one path resolved and another opened.
+- Manual and scheduled scans share a single launch function.
+
 ## [1.6.0] — Phase 6: Attack Path Engine
 
 ### Added

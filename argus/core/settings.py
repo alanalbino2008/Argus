@@ -48,6 +48,10 @@ class Settings(BaseSettings):
         default_factory=list,
         description='Entry-point names of third-party plugin modules to load, e.g. ["crtsh_plus"]. Empty = none.',
     )
+    monitors_enabled: bool = Field(default=True, description="Run the scheduler that re-scans monitored targets")
+    monitor_poll_seconds: float = Field(
+        default=60.0, ge=1, description="How often the scheduler checks for due monitors"
+    )
     ws_ticket_ttl_seconds: int = Field(default=30, ge=5, description="Lifetime of one-time WebSocket tickets")
 
 

@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupRulesOfEngagement();
   setupExports();
   setupAttackPaths();
+  setupMonitoring();
   // Deep link: /?inv=<investigation_id> reopens a saved investigation.
   const deepLink = new URLSearchParams(window.location.search).get("inv");
   ensureSignedIn().then((ok) => { if (ok && deepLink) openInvestigation(deepLink); });
@@ -121,6 +122,8 @@ function initCytoscape() {
           "width": 2.5
         }
       },
+      // Drift: assets that appeared since the previous scan.
+      { selector: "node.is-new", style: { "border-width": 4, "border-color": "#22c55e", "border-style": "double" } },
       // Attack path highlighting: everything else fades, the chain glows.
       { selector: ".dimmed", style: { "opacity": 0.12 } },
       {
@@ -470,6 +473,10 @@ async function loadHistory() {
           ${escapeHtml(r.target_type)} · ${r.nodes_count} nodes · ${new Date(r.created_at).toLocaleString()}
           ${r.threat_exposure_score != null ? ` · score ${r.threat_exposure_score}` : ""}
         </div>
+        <div class="history-actions">
+          <button class="link-btn history-compare" data-id="${escapeHtml(r.id)}" title="Compare with the previous scan of this target">Compare</button>
+          <button class="link-btn history-watch" data-target="${escapeHtml(r.target)}" data-type="${escapeHtml(r.target_type)}" title="Re-scan on a schedule and alert on changes">Watch</button>
+        </div>
         <button class="history-delete" title="Delete investigation" data-id="${escapeHtml(r.id)}">✕</button>
       </div>`).join("");
   } catch (err) {
@@ -495,6 +502,18 @@ async function deleteInvestigation(invId) {
 function setupHistoryPanel() {
   const list = document.getElementById("history-list");
   list.addEventListener("click", (e) => {
+    const compareBtn = e.target.closest(".history-compare");
+    if (compareBtn) {
+      e.stopPropagation();
+      openDiff(compareBtn.dataset.id);
+      return;
+    }
+    const watchBtn = e.target.closest(".history-watch");
+    if (watchBtn) {
+      e.stopPropagation();
+      openRulesOfEngagement(watchBtn.dataset.target, watchBtn.dataset.type, 2, "monitor");
+      return;
+    }
     const del = e.target.closest(".history-delete");
     if (del) {
       e.stopPropagation();
@@ -509,7 +528,10 @@ function setupHistoryPanel() {
     clearTimeout(debounce);
     debounce = setTimeout(loadHistory, 250);
   });
-  document.querySelector('.tab-btn[data-tab="tab-history"]').addEventListener("click", loadHistory);
+  document.querySelector('.tab-btn[data-tab="tab-history"]').addEventListener("click", () => {
+    loadHistory();
+    loadMonitoring();
+  });
 }
 
 // Cross-investigation pivot: has this value appeared in any other investigation?
@@ -772,6 +794,7 @@ function setUser(me) {
   document.getElementById("user-name").textContent = `${me.name} · ${me.role}`;
   document.getElementById("user-pill").hidden = false;
   document.body.dataset.role = me.role;
+  loadMonitoring();  // alerts badge as soon as we know who you are
 }
 
 async function ensureSignedIn() {
@@ -814,8 +837,10 @@ function setupAuth() {
 // ================================================================ rules of engagement
 let pendingScan = null;
 
-function openRulesOfEngagement(target, ttype, depth) {
-  pendingScan = { target, ttype, depth };
+function openRulesOfEngagement(target, ttype, depth, mode = "scan") {
+  pendingScan = { target, ttype, depth, mode };
+  document.getElementById("roe-interval-row").hidden = mode !== "monitor";
+  document.querySelector("#roe-form button[type=submit]").textContent = mode === "monitor" ? "Start Monitoring" : "Launch Recon";
   document.getElementById("roe-target").textContent = target;
   try { document.getElementById("roe-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch (e) { /* ignore */ }
   document.getElementById("roe-authorized").checked = false;
@@ -844,8 +869,12 @@ function setupRulesOfEngagement() {
     }
     try { sessionStorage.setItem("argus_last_purpose", purpose); } catch (err) { /* ignore */ }
     modal.classList.remove("active");
-    const { target, ttype, depth } = pendingScan;
-    startInvestigation(target, ttype, depth, purpose);
+    const { target, ttype, depth, mode } = pendingScan;
+    if (mode === "monitor") {
+      createMonitor(target, ttype, depth, purpose, Number(document.getElementById("roe-interval").value));
+    } else {
+      startInvestigation(target, ttype, depth, purpose);
+    }
   });
 }
 
@@ -958,4 +987,155 @@ function setupAttackPaths() {
   });
   document.getElementById("btn-clear-path").addEventListener("click", clearPathHighlight);
   document.querySelector('.tab-btn[data-tab="tab-paths"]').addEventListener("click", loadAttackPaths);
+}
+
+// ================================================================ monitoring & drift
+function timeAgo(iso) {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1440) return `${Math.round(mins / 60)} h ago`;
+  return `${Math.round(mins / 1440)} d ago`;
+}
+
+async function loadMonitoring() {
+  try {
+    const [alerts, monitors] = await Promise.all([
+      authFetch("/api/alerts?limit=20").then((r) => r.json()),
+      authFetch("/api/monitors").then((r) => r.json()),
+    ]);
+    const open = alerts.filter((a) => !a.acknowledged_at);
+    const badge = document.getElementById("alerts-badge");
+    badge.textContent = open.length;
+    badge.hidden = open.length === 0;
+
+    document.getElementById("alerts-list").innerHTML = alerts.length ? alerts.map((a) => `
+      <div class="alert-item${a.acknowledged_at ? " acked" : ""}">
+        <div class="alert-head">
+          <span class="sev-pill sev-${escapeHtml(a.severity)}">${escapeHtml(a.severity)}</span>
+          <span class="alert-time">${timeAgo(a.created_at)}</span>
+        </div>
+        <div class="alert-headline">${escapeHtml(a.headline)}</div>
+        <div class="alert-actions">
+          <button class="link-btn alert-view" data-inv="${escapeHtml(a.investigation_id)}" data-prev="${escapeHtml(a.previous_investigation_id)}">View changes</button>
+          ${a.acknowledged_at ? `<span class="alert-acked">✓ ${escapeHtml(a.acknowledged_by || "")}</span>`
+            : `<button class="link-btn alert-ack" data-id="${escapeHtml(a.id)}">Acknowledge</button>`}
+        </div>
+      </div>`).join("") : '<div class="history-empty small">No alerts. Watch a target to be told when it changes.</div>';
+
+    document.getElementById("monitors-list").innerHTML = monitors.length ? monitors.map((m) => `
+      <div class="monitor-item${m.enabled ? "" : " paused"}">
+        <div class="history-main">
+          <span class="history-target">${escapeHtml(m.target)}</span>
+          <span class="history-status">${m.enabled ? `every ${m.interval_hours} h` : "paused"}</span>
+        </div>
+        <div class="history-meta">
+          ${m.last_run_at ? `last run ${timeAgo(m.last_run_at)}` : "first scan pending"} ·
+          <button class="link-btn monitor-toggle" data-id="${escapeHtml(m.id)}" data-enabled="${m.enabled}">${m.enabled ? "Pause" : "Resume"}</button> ·
+          <button class="link-btn monitor-delete" data-id="${escapeHtml(m.id)}">Stop watching</button>
+        </div>
+      </div>`).join("") : '<div class="history-empty small">No monitored targets.</div>';
+  } catch (err) {
+    /* monitoring is optional; leave the panels as they are */
+  }
+}
+
+async function createMonitor(target, targetType, depth, purpose, intervalHours) {
+  const res = await authFetch("/api/monitors", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, target_type: targetType || null, max_depth: depth, purpose,
+                           interval_hours: intervalHours, authorized: true }),
+  });
+  const body = await res.json();
+  addEventToFeed(res.ok ? `Now monitoring ${target} every ${intervalHours} h` : `Monitor rejected: ${describeError(body)}`);
+  loadMonitoring();
+  loadHistory();
+}
+
+async function openDiff(invId, againstId) {
+  const qs = againstId ? `?against=${encodeURIComponent(againstId)}` : "";
+  const res = await authFetch(`/api/investigation/${encodeURIComponent(invId)}/diff${qs}`);
+  const d = await res.json();
+  const body = document.getElementById("diff-body");
+  document.getElementById("diff-subtitle").textContent = res.ok
+    ? `${d.headline.split(":")[0]} · compared with the scan of ${new Date(d.previous_completed_at).toLocaleString()}`
+    : "";
+  if (!res.ok) {
+    body.innerHTML = `<p>${escapeHtml(describeError(d))}</p>`;
+  } else {
+    const s = d.summary;
+    const trendClass = s.trend === "worse" ? "sev-critical" : s.trend === "better" ? "trend-better" : "sev-low";
+    const pathList = (items, cls, fmt) => items.length
+      ? `<ul class="diff-list">${items.map((p) => `<li><span class="sev-pill sev-${escapeHtml(p.severity)}">${escapeHtml(p.severity)}</span> ${escapeHtml(p.title)} ${fmt(p)}</li>`).join("")}</ul>`
+      : '<p class="diff-none">None</p>';
+    const assetList = (groups) => {
+      const entries = Object.entries(groups);
+      return entries.length ? entries.map(([type, items]) => `
+        <div class="diff-group"><strong>${escapeHtml(type)}</strong> ${items.map((i) => `<code>${escapeHtml(i.value)}</code>`).join(" ")}</div>`).join("")
+        : '<p class="diff-none">None</p>';
+    };
+    body.innerHTML = `
+      <div class="diff-stats">
+        <div class="diff-stat"><span class="sev-pill ${trendClass}">${escapeHtml(s.trend)}</span><small>risk ${s.risk_before} → ${s.risk_after} (${s.risk_delta >= 0 ? "+" : ""}${s.risk_delta})</small></div>
+        <div class="diff-stat"><b>${s.new_paths}</b><small>new paths</small></div>
+        <div class="diff-stat"><b>${s.escalated_paths}</b><small>escalated</small></div>
+        <div class="diff-stat"><b>${s.resolved_paths}</b><small>resolved</small></div>
+        <div class="diff-stat"><b>${s.added}</b><small>new assets</small></div>
+        <div class="diff-stat"><b>${s.removed}</b><small>gone</small></div>
+      </div>
+      <h2>New attack paths</h2>${pathList(d.new_paths, "", () => "")}
+      <h2>Escalated</h2>${pathList(d.escalated_paths, "", (p) => `<small>(${p.score_before} → ${p.score})</small>`)}
+      <h2>Resolved ✓</h2>${pathList(d.resolved_paths, "", () => "")}
+      <h2>New assets</h2>${assetList(d.added)}
+      <h2>No longer seen</h2>${assetList(d.removed)}
+      <h2>Security-relevant changes</h2>${d.changed.length ? `<ul class="diff-list">${d.changed.map((c) =>
+        `<li><code>${escapeHtml(c.value)}</code> ${Object.entries(c.changes).map(([k, v]) =>
+          `${escapeHtml(k)}: ${escapeHtml(JSON.stringify(v.before))} → <b>${escapeHtml(JSON.stringify(v.after))}</b>`).join("; ")}</li>`).join("")}</ul>`
+        : '<p class="diff-none">None</p>'}`;
+    if (currentInvestigationId === invId) markNewOnGraph(d.added);
+  }
+  document.getElementById("diff-modal").classList.add("active");
+}
+
+function markNewOnGraph(added) {
+  cy.nodes().removeClass("is-new");
+  Object.values(added).flat().forEach((e) => cy.getElementById(e.id).addClass("is-new"));
+}
+
+function setupMonitoring() {
+  document.getElementById("btn-close-diff").addEventListener("click", () =>
+    document.getElementById("diff-modal").classList.remove("active"));
+  document.getElementById("alerts-list").addEventListener("click", async (e) => {
+    const view = e.target.closest(".alert-view");
+    if (view) {
+      openInvestigation(view.dataset.inv);
+      setTimeout(() => openDiff(view.dataset.inv, view.dataset.prev), 600);
+      return;
+    }
+    const ack = e.target.closest(".alert-ack");
+    if (ack) {
+      await authFetch(`/api/alerts/${encodeURIComponent(ack.dataset.id)}/acknowledge`, { method: "POST" });
+      loadMonitoring();
+    }
+  });
+  document.getElementById("monitors-list").addEventListener("click", async (e) => {
+    const toggle = e.target.closest(".monitor-toggle");
+    if (toggle) {
+      await authFetch(`/api/monitors/${encodeURIComponent(toggle.dataset.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: toggle.dataset.enabled !== "true" }),
+      });
+      loadMonitoring();
+      return;
+    }
+    const del = e.target.closest(".monitor-delete");
+    if (del && confirm("Stop monitoring this target? Past investigations and alerts are kept.")) {
+      await authFetch(`/api/monitors/${encodeURIComponent(del.dataset.id)}`, { method: "DELETE" });
+      loadMonitoring();
+    }
+  });
+  // Initial load happens in setUser(), i.e. only once signed in.
+  setInterval(() => { if (storedKey()) loadMonitoring(); }, 60000);  // alert badge stays current
 }

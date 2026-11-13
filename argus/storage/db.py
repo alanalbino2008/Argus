@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, event
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, event
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -102,6 +102,43 @@ class AuditEventRow(Base):
     details: Mapped[dict[str, Any]] = mapped_column(JSON)
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
+
+
+class MonitorRow(Base):
+    """A target re-scanned on a schedule; material changes between scans raise alerts."""
+
+    __tablename__ = "monitors"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target: Mapped[str] = mapped_column(String(512))
+    target_type: Mapped[str] = mapped_column(String(32))
+    max_depth: Mapped[int] = mapped_column(Integer, default=2)
+    interval_hours: Mapped[int] = mapped_column(Integer)
+    purpose: Mapped[str] = mapped_column(String(500))
+    created_by: Mapped[str] = mapped_column(String(128))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_investigation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class AlertRow(Base):
+    """Material attack-surface drift detected by a monitor."""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    monitor_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
+    investigation_id: Mapped[str] = mapped_column(String(64))
+    previous_investigation_id: Mapped[str] = mapped_column(String(64))
+    target: Mapped[str] = mapped_column(String(512))
+    severity: Mapped[str] = mapped_column(String(16))
+    headline: Mapped[str] = mapped_column(String(1024))
+    summary: Mapped[dict[str, Any]] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class Database:

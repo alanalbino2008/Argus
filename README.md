@@ -101,6 +101,10 @@ Most OSINT tools return a list of findings. Argus **chains them into the attack 
 
 Try it without scanning anything: `python -m argus.cli.console --load-demo` loads a fictional company (reserved `.example` domains and TEST-NET IPs) that triggers every rule. How it works: [`docs/explained/06-attack-path-engine.md`](docs/explained/06-attack-path-engine.md).
 
+### Continuous Monitoring
+
+Watch a target and Argus re-scans it on a schedule, compares each scan with the last and raises an **alert** when the attack surface changes materially — *"3 new attack paths, worst: Redis exposed to the internet; 1 path escalated; risk up +132"*. Compare any two scans to see exactly what appeared, what disappeared and which attack paths opened, escalated or were fixed. See [`docs/explained/07-continuous-monitoring.md`](docs/explained/07-continuous-monitoring.md).
+
 ### Intelligence Outputs
 
 | Output | What it gives you |

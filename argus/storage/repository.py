@@ -158,6 +158,24 @@ class InvestigationRepository:
             for r in rows
         ]
 
+    async def find_previous(self, inv: Investigation) -> Investigation | None:
+        """Most recent *completed* investigation of the same target that finished before this one started."""
+        stmt = (
+            select(InvestigationRow)
+            .where(
+                func.lower(InvestigationRow.target) == inv.config.target.lower(),
+                InvestigationRow.target_type == inv.config.target_type.value,
+                InvestigationRow.status == InvestigationStatus.COMPLETED.value,
+                InvestigationRow.id != inv.id,
+                InvestigationRow.created_at < inv.created_at,
+            )
+            .order_by(InvestigationRow.created_at.desc())
+            .limit(1)
+        )
+        async with self.db.session() as s:
+            row = (await s.execute(stmt)).scalars().first()
+        return Investigation.model_validate(row.data) if row else None
+
     async def load_graph(self, investigation_id: str) -> IntelligenceGraph | None:
         async with self.db.session() as s:
             if await s.get(InvestigationRow, investigation_id) is None:

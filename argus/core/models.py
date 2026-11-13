@@ -199,6 +199,7 @@ class Investigation(BaseModel):
     analytics: dict[str, Any] | None = None
     created_by: str | None = None
     purpose: str | None = None
+    monitor_id: str | None = None
 
 
 class SystemMetrics(BaseModel):

@@ -96,6 +96,15 @@
     <form id="roe-form" class="auth-card">
       <h2 class="auth-title">Rules of Engagement</h2>
       <p class="auth-hint">Target: <code id="roe-target"></code></p>
+      <div id="roe-interval-row" hidden>
+        <label class="form-label" for="roe-interval">Re-scan every</label>
+        <select id="roe-interval" class="scan-select form-input">
+          <option value="6">6 hours</option>
+          <option value="24" selected>24 hours</option>
+          <option value="168">7 days</option>
+          <option value="720">30 days</option>
+        </select>
+      </div>
       <label class="form-label" for="roe-purpose">Purpose / engagement reference</label>
       <textarea id="roe-purpose" class="scan-input form-input" rows="3" maxlength="500"
         placeholder="e.g. HackerOne program ACME, report #1234 · CTF challenge · own infrastructure audit" required></textarea>
@@ -162,7 +171,7 @@
         <button class="tab-btn" data-tab="tab-paths">Attack Paths <span id="paths-badge" class="tab-badge" hidden>0</span></button>
         <button class="tab-btn" data-tab="tab-activity">Activity</button>
         <button class="tab-btn" data-tab="tab-analytics">Threat Intel</button>
-        <button class="tab-btn" data-tab="tab-history">History</button>
+        <button class="tab-btn" data-tab="tab-history">History <span id="alerts-badge" class="tab-badge sev-critical" hidden>0</span></button>
       </div>
 
       <div class="sidebar-content">
@@ -198,6 +207,15 @@
 
         <!-- Investigation History Pane -->
         <div id="tab-history" class="tab-pane">
+          <section class="monitor-section">
+            <div class="section-title">🔔 Alerts</div>
+            <div id="alerts-list" class="alerts-list"></div>
+          </section>
+          <section class="monitor-section">
+            <div class="section-title">👁 Monitors</div>
+            <div id="monitors-list" class="monitors-list"></div>
+          </section>
+          <div class="section-title">🗂 Investigations</div>
           <input type="search" id="history-filter" class="scan-input history-filter" placeholder="Filter by target..." autocomplete="off">
           <div id="history-list" class="history-list"></div>
         </div>
@@ -255,6 +273,20 @@
       </div>
     </aside>
   </main>
+
+  <!-- Attack-surface drift (compare two scans) -->
+  <div id="diff-modal" class="modal-overlay">
+    <div class="report-card">
+      <div class="report-header">
+        <div>
+          <h2 style="font-size: 1.1rem; color: #fff; margin: 0;">What changed</h2>
+          <div id="diff-subtitle" style="font-size: 0.75rem; color: #94a3b8;"></div>
+        </div>
+        <button id="btn-close-diff" class="link-btn" style="font-size: 1.2rem;" aria-label="Close">✕</button>
+      </div>
+      <div id="diff-body" class="report-body diff-body"></div>
+    </div>
+  </div>
 
   <!-- Executive Dossier Printable Modal -->
   <div id="report-modal" class="modal-overlay">

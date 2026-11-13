@@ -32,6 +32,8 @@ from sqlalchemy import text
 
 from argus import __version__
 from argus.api.deps import WebSocketTickets, audit, require
+from argus.api.monitor_routes import router as monitor_router
+from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
@@ -40,6 +42,7 @@ from argus.core.models import EntityType, Investigation, InvestigationStatus, Sc
 from argus.core.settings import get_settings
 from argus.demo import load_demo
 from argus.intel.attack import map_investigation, to_navigator_layer
+from argus.intel.diff import compare, headline
 from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
 from argus.modules import get_default_modules, get_module_catalog, plugin_report
@@ -50,6 +53,7 @@ from argus.security.network import validate_scan_target
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from argus.storage.migrate import upgrade_database
+from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog
 
 logger = logging.getLogger("argus.api")
@@ -119,10 +123,26 @@ async def lifespan(app: FastAPI):
     app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
     await _bootstrap_admin_key(app)
     await _audit_plugins(app)
+    app.state.monitors = MonitorRepository(db)
+    app.state.scheduler = MonitorScheduler(
+        app.state.monitors,
+        app.state.audit,
+        settings,
+        launch=lambda config, by, purpose, monitor_id: _launch_for_scheduler(app, config, by, purpose, monitor_id),
+        running_scans=_running_scans,
+    )
+    scheduler_task = (
+        asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
+        if settings.monitors_enabled
+        else None
+    )
     event_bus.subscribe_all(ws_dispatcher)
     try:
         yield
     finally:
+        if scheduler_task:
+            scheduler_task.cancel()
+            await asyncio.gather(scheduler_task, return_exceptions=True)
         event_bus.unsubscribe_all(ws_dispatcher)
         for engine in INVESTIGATIONS.values():
             engine.cancel()
@@ -198,6 +218,7 @@ if _cors_origins:
         allow_headers=["Authorization", "X-API-Key", "Content-Type"],
     )
 app.include_router(security_router)
+app.include_router(monitor_router)
 
 VIEWER = Depends(require(Role.VIEWER))
 ANALYST = Depends(require(Role.ANALYST))
@@ -293,6 +314,83 @@ async def _run_scan(engine: ArgusEngine, recorder: InvestigationRecorder) -> Non
             logger.exception("Failed to persist final state of %s", inv_id)
         INVESTIGATIONS.pop(inv_id, None)
         SCAN_TASKS.pop(inv_id, None)
+
+
+BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _spawn(coro: Any, name: str) -> None:
+    task = asyncio.create_task(coro, name=name)
+    BACKGROUND_TASKS.add(task)  # strong reference until done
+    task.add_done_callback(BACKGROUND_TASKS.discard)
+
+
+def _running_scans() -> int:
+    return sum(1 for e in INVESTIGATIONS.values() if e.is_running or e.investigation.status.value == "initializing")
+
+
+async def launch_scan(
+    app: FastAPI, config: ScanConfig, *, created_by: str, purpose: str, monitor_id: str | None = None
+) -> ArgusEngine:
+    """Single code path for every scan (manual or scheduled): record, register, run in background."""
+    repo: InvestigationRepository = app.state.repo
+    engine = ArgusEngine(config)
+    engine.investigation.created_by = created_by
+    engine.investigation.purpose = purpose
+    engine.investigation.monitor_id = monitor_id
+    await repo.save_investigation(engine.investigation)  # fail before running if it cannot be recorded
+
+    recorder = InvestigationRecorder(repo, engine, flush_interval=app.state.settings.persist_flush_interval)
+    INVESTIGATIONS[engine.investigation_id] = engine
+    # Keep a strong reference to the task (asyncio only holds weak refs) and log failures.
+    task = asyncio.create_task(_run_scan(engine, recorder), name=f"scan-{engine.investigation_id}")
+    task.add_done_callback(_on_scan_done)
+    if monitor_id:
+        task.add_done_callback(lambda _t: _spawn(_evaluate_drift(app, engine), f"drift-{engine.investigation_id}"))
+    SCAN_TASKS[engine.investigation_id] = task
+    return engine
+
+
+async def _launch_for_scheduler(app: FastAPI, config: ScanConfig, by: str, purpose: str, monitor_id: str) -> str:
+    engine = await launch_scan(app, config, created_by=by, purpose=purpose, monitor_id=monitor_id)
+    return engine.investigation_id
+
+
+SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+
+async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:
+    """After a monitored scan: compare with the previous scan and raise an alert if anything material changed."""
+    inv = engine.investigation
+    if inv.status != InvestigationStatus.COMPLETED:
+        return
+    repo: InvestigationRepository = app.state.repo
+    previous = await repo.find_previous(inv)
+    if previous is None:
+        return  # first scan is the baseline
+    old_graph = await repo.load_graph(previous.id)
+    if old_graph is None:
+        return
+    diff = compare(old_graph, engine.graph)
+    if not diff["summary"]["material"]:
+        return
+    worst = max(
+        (p["severity"] for p in diff["new_paths"] + diff["escalated_paths"]),
+        key=lambda s: SEVERITY_RANK.get(s, 0),
+        default="low",
+    )
+    alert = await app.state.monitors.create_alert(
+        monitor_id=inv.monitor_id,
+        investigation_id=inv.id,
+        previous_investigation_id=previous.id,
+        target=inv.config.target,
+        severity=worst,
+        headline=headline(diff, inv.config.target),
+        summary={k: diff[k] for k in ("summary", "new_paths", "escalated_paths", "resolved_paths")},
+    )
+    await app.state.audit.record(
+        SCHEDULER, "alert.raised", alert["id"], details={"severity": worst, "target": inv.config.target}
+    )
 
 
 def _on_scan_done(task: asyncio.Task[None]) -> None:
@@ -407,8 +505,7 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
             await audit(request, principal, "scan.start", target, "denied", {"reason": str(exc)})
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    running = sum(1 for e in INVESTIGATIONS.values() if e.is_running or e.investigation.status.value == "initializing")
-    if running >= settings.max_concurrent_scans:
+    if _running_scans() >= settings.max_concurrent_scans:
         raise HTTPException(
             status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
         )
@@ -432,22 +529,11 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
 
-    repo = get_repo(request)
-    engine = ArgusEngine(config)
-    engine.investigation.created_by = principal.name
-    engine.investigation.purpose = req.purpose
     try:  # fail fast (503) if we cannot record the scan, rather than run it unsaved
-        await repo.save_investigation(engine.investigation)
+        engine = await launch_scan(request.app, config, created_by=principal.name, purpose=req.purpose)
     except Exception as exc:
         logger.exception("Database unavailable")
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
-
-    recorder = InvestigationRecorder(repo, engine, flush_interval=request.app.state.settings.persist_flush_interval)
-    INVESTIGATIONS[engine.investigation_id] = engine
-    # Keep a strong reference to the task (asyncio only holds weak refs) and log failures.
-    task = asyncio.create_task(_run_scan(engine, recorder), name=f"scan-{engine.investigation_id}")
-    task.add_done_callback(_on_scan_done)
-    SCAN_TASKS[engine.investigation_id] = task
     await audit(
         request,
         principal,
@@ -546,6 +632,28 @@ async def get_attack_mapping(inv_id: str, request: Request, _: Principal = VIEWE
 async def get_attack_paths(inv_id: str, request: Request, _: Principal = VIEWER):
     """Attack Path Engine: findings chained into ranked, explained attack scenarios."""
     return find_attack_paths(await _resolve_graph(inv_id, get_repo(request)))
+
+
+@app.get("/api/investigation/{inv_id}/diff")
+async def diff_investigation(
+    inv_id: str, request: Request, against: str | None = Query(None, max_length=64), _: Principal = VIEWER
+):
+    """What changed since an earlier scan of the same target (default: the previous completed one)."""
+    repo = get_repo(request)
+    inv = await _resolve(inv_id, repo)
+    previous = await _resolve(against, repo) if against else await repo.find_previous(inv)
+    if previous is None:
+        raise HTTPException(status_code=404, detail="No earlier completed investigation of this target to compare with")
+    if previous.config.target.lower() != inv.config.target.lower():
+        raise HTTPException(status_code=422, detail="Investigations are of different targets")
+    diff = compare(await _resolve_graph(previous.id, repo), await _resolve_graph(inv_id, repo))
+    return {
+        "investigation_id": inv_id,
+        "previous_investigation_id": previous.id,
+        "previous_completed_at": previous.completed_at.isoformat() if previous.completed_at else None,
+        "headline": headline(diff, inv.config.target),
+        **diff,
+    }
 
 
 @app.get("/api/investigation/{inv_id}/export/navigator")

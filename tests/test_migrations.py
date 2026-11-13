@@ -38,8 +38,12 @@ async def test_upgrade_is_idempotent(db):
 
 
 async def test_pre_migration_database_is_adopted_without_data_loss(db):
-    """Argus 1.2-1.3 created tables with create_all() and no alembic_version table."""
-    await db.create_all()
+    """Argus 1.2-1.3 created its (baseline) tables with create_all() and no alembic_version table."""
+    baseline = [
+        Base.metadata.tables[t] for t in ("investigations", "entities", "relations", "api_keys", "audit_events")
+    ]
+    async with db.engine.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=baseline))
     async with db.engine.begin() as conn:
         await conn.execute(
             text(
@@ -51,6 +55,9 @@ async def test_pre_migration_database_is_adopted_without_data_loss(db):
     async with db.engine.connect() as conn:
         count = (await conn.execute(text("SELECT COUNT(*) FROM investigations"))).scalar_one()
     assert count == 1
+    async with db.engine.connect() as conn:  # later migrations were applied on top of the adopted baseline
+        tables = await conn.run_sync(lambda c: set(inspect(c).get_table_names()))
+    assert {"monitors", "alerts"} <= tables
 
 
 async def test_downgrade_to_base_and_back(db):

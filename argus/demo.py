@@ -31,6 +31,7 @@ from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.storage.repository import InvestigationRepository
 
 DEMO_ID = "inv_demo_acme"
+DEMO_PREVIOUS_ID = "inv_demo_acme_prev"
 DEMO_TARGET = "acme-corp.example"
 
 E, R = EntityType, RelationType
@@ -210,19 +211,41 @@ _RELATIONS: list[tuple[str, str, RelationType, str]] = [
 ]
 
 
-def build_demo() -> tuple[Investigation, IntelligenceGraph]:
-    graph = IntelligenceGraph(DEMO_ID)
-    made: dict[str, Entity] = {}
-    for key, (etype, value, label, depth, module, md) in _ENTITIES.items():
-        made[key] = Entity.create(etype, value, label=label, metadata=dict(md), source_module=module, depth=depth)
-        graph.add_entity(made[key], is_seed=depth == 0)
-    for a, b, rtype, label in _RELATIONS:
-        graph.add_relation(Relation.create(made[a].id, made[b].id, rtype, label=label))
+# A month earlier the surface looked different - used to demonstrate drift detection.
+_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1"}
+_ONLY_PREVIOUSLY: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
+    "p21": (E.PORT, "203.0.113.30:21", "Port 21 (FTP)", 3, "shodan_internetdb", {"port_number": 21}),
+}
+_PREVIOUS_METADATA: dict[str, dict] = {
+    "legacy": {"virustotal": {"malicious": 0, "suspicious": 0, "harmless": 64, "undetected": 21}},
+    "email_ceo": {"breach_count": 1},
+}
 
-    finished = datetime.now(timezone.utc)
+
+def _build(inv_id: str, previous: bool) -> IntelligenceGraph:
+    graph = IntelligenceGraph(inv_id)
+    entities = dict(_ENTITIES)
+    if previous:
+        entities = {k: v for k, v in entities.items() if k not in _ABSENT_PREVIOUSLY} | _ONLY_PREVIOUSLY
+    made: dict[str, Entity] = {}
+    for key, (etype, value, label, depth, module, md) in entities.items():
+        metadata = {**md, **(_PREVIOUS_METADATA.get(key, {}) if previous else {})}
+        made[key] = Entity.create(etype, value, label=label, metadata=metadata, source_module=module, depth=depth)
+        graph.add_entity(made[key], is_seed=depth == 0)
+    relations = list(_RELATIONS) + ([("ip_db", "p21", R.EXPOSES, "Exposes Port 21")] if previous else [])
+    for a, b, rtype, label in relations:
+        if a in made and b in made:
+            graph.add_relation(Relation.create(made[a].id, made[b].id, rtype, label=label))
+    return graph
+
+
+def build_demo(previous: bool = False) -> tuple[Investigation, IntelligenceGraph]:
+    inv_id = DEMO_PREVIOUS_ID if previous else DEMO_ID
+    graph = _build(inv_id, previous)
+    finished = datetime.now(timezone.utc) - (timedelta(days=30) if previous else timedelta())
     investigation = Investigation(
-        id=DEMO_ID,
-        name=f"Demo: {DEMO_TARGET} (fictional organisation)",
+        id=inv_id,
+        name=f"Demo: {DEMO_TARGET} (fictional organisation{', 30 days earlier' if previous else ''})",
         config=ScanConfig(target=DEMO_TARGET, target_type=EntityType.DOMAIN, max_depth=3),
         status=InvestigationStatus.COMPLETED,
         created_at=finished - timedelta(minutes=2),
@@ -237,8 +260,9 @@ def build_demo() -> tuple[Investigation, IntelligenceGraph]:
 
 
 async def load_demo(repo: InvestigationRepository) -> str:
-    """Save (or refresh) the demo investigation; returns its id."""
-    investigation, graph = build_demo()
-    await repo.save_investigation(investigation)
-    await repo.save_graph(graph)
-    return investigation.id
+    """Save (or refresh) the demo investigation and its earlier snapshot; returns the latest id."""
+    for previous in (True, False):
+        investigation, graph = build_demo(previous)
+        await repo.save_investigation(investigation)
+        await repo.save_graph(graph)
+    return DEMO_ID

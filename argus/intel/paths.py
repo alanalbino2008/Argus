@@ -99,6 +99,7 @@ class PathStep:
 class AttackPath:
     id: str
     rule: str
+    anchor_id: str
     title: str
     severity: str
     score: int
@@ -123,6 +124,9 @@ class _Draft:
     techniques: list[str]
     evidence: list[str] = field(default_factory=list)
     remediation: list[str] = field(default_factory=list)
+    # The path's subject (the email, domain, IP...). Identity = rule + anchor, so the same scenario
+    # keeps its ID across scans even when its details change (e.g. a second breach appears).
+    anchor: Entity | None = None
 
 
 class _GraphView:
@@ -192,6 +196,7 @@ def _credential_exposure(view: _GraphView, seed: Entity | None) -> Iterable[_Dra
         top = (with_passwords or breaches)[:2]
         yield _Draft(
             rule="credential_exposure",
+            anchor=email,
             title=f"Leaked credentials for {email.value}",
             likelihood=0.8 if with_passwords else 0.4,
             impact=5 if corporate else 4,
@@ -226,6 +231,7 @@ def _spoofable_domain(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]
         people = [p for e in staff for p in view.neighbors(e, EntityType.PERSON)][:1]
         yield _Draft(
             rule="spoofable_email_domain",
+            anchor=domain,
             title=f"{domain.value} can be spoofed in phishing emails",
             likelihood=(0.7 if policy == "missing" else 0.5) + (0.1 if staff else 0.0),
             impact=4,
@@ -265,6 +271,7 @@ def _exploitable_service(view: _GraphView, seed: Entity | None) -> Iterable[_Dra
         cves = sorted({v.value for v in vulns})
         yield _Draft(
             rule="exploitable_public_service",
+            anchor=ip,
             title=f"Known vulnerabilities exposed on {ip.value}",
             likelihood=0.6,
             impact=5,
@@ -301,6 +308,7 @@ def _exposed_admin_service(view: _GraphView, seed: Entity | None) -> Iterable[_D
         ip = ips[0]
         yield _Draft(
             rule="exposed_sensitive_service",
+            anchor=port,
             title=f"{service} exposed to the internet on {ip.value}",
             likelihood=0.5,
             impact=impact,
@@ -331,6 +339,7 @@ def _identity_correlation(view: _GraphView, seed: Entity | None) -> Iterable[_Dr
             continue
         yield _Draft(
             rule="identity_correlation",
+            anchor=username,
             title=f"Handle '{username.value}' links to a real identity",
             likelihood=0.6,
             impact=3,
@@ -363,6 +372,7 @@ def _tls_weakness(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
         problem = "an expired" if expired else "a self-signed"
         yield _Draft(
             rule="tls_interception",
+            anchor=cert,
             title=f"Untrusted TLS certificate on {hosts[0].value if hosts else cert.label}",
             likelihood=0.3,
             impact=3,
@@ -388,6 +398,7 @@ def _takeover_candidate(view: _GraphView, seed: Entity | None) -> Iterable[_Draf
         source = sources[0]
         yield _Draft(
             rule="subdomain_takeover_candidate",
+            anchor=source,
             title=f"Possible subdomain takeover: {source.value}",
             likelihood=0.3,
             impact=4,
@@ -413,6 +424,7 @@ def _bad_reputation(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
             continue
         yield _Draft(
             rule="malicious_reputation",
+            anchor=entity,
             title=f"{entity.value} is flagged as malicious",
             likelihood=0.6,
             impact=4,
@@ -440,6 +452,7 @@ def _web_information_leak(view: _GraphView, seed: Entity | None) -> Iterable[_Dr
             continue
         yield _Draft(
             rule="web_information_leak",
+            anchor=site,
             title=f"{site.value} leaks software versions with weak browser protections",
             likelihood=0.3,
             impact=3,
@@ -489,10 +502,12 @@ def _finalise(view: _GraphView, draft: _Draft) -> AttackPath:
     )
     likelihood = min(draft.likelihood, 1.0)
     score = round(draft.impact / 5 * likelihood * 100)
-    digest = hashlib.sha256((draft.rule + "|" + "|".join(s.entity_id for s in steps)).encode()).hexdigest()
+    anchor_id = draft.anchor.id if draft.anchor else "|".join(s.entity_id for s in steps)
+    digest = hashlib.sha256(f"{draft.rule}|{anchor_id}".encode()).hexdigest()
     return AttackPath(
         id=f"path_{digest[:12]}",
         rule=draft.rule,
+        anchor_id=anchor_id,
         title=draft.title,
         severity=_severity(score),
         score=score,
