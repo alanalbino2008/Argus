@@ -12,6 +12,9 @@ from argus.modules.infrastructure.shodan_internetdb import ShodanInternetDbModul
 from argus.modules.infrastructure.subdomain_finder import SubdomainFinderModule
 from argus.modules.infrastructure.tls_analyzer import TlsAnalyzerModule
 from argus.modules.infrastructure.whois_lookup import WhoisLookupModule
+from argus.modules.threat_intel.hibp import HibpModule
+from argus.modules.threat_intel.shodan_host import ShodanHostModule
+from argus.modules.threat_intel.virustotal import VirusTotalModule
 
 ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     UsernameHunterModule,
@@ -25,9 +28,18 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     WhoisLookupModule,
     TlsAnalyzerModule,
     HttpFingerprintModule,
+    # Optional: enabled only when their API key is configured
+    VirusTotalModule,
+    HibpModule,
+    ShodanHostModule,
 ]
 
 
 def get_default_modules() -> dict[str, BaseModule]:
-    """Instantiate and return mapping of all active reconnaissance modules."""
+    """Instantiate every module that can run (API-key modules only when their key is set)."""
+    return {cls.name: cls() for cls in ALL_MODULE_CLASSES if cls.is_configured()}
+
+
+def get_module_catalog() -> dict[str, BaseModule]:
+    """Every known module, configured or not (for listings and validation)."""
     return {cls.name: cls() for cls in ALL_MODULE_CLASSES}

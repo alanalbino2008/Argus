@@ -19,6 +19,8 @@ from __future__ import annotations
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 
+from argus.security.secrets import redact
+
 MAX_RECORDED_ERRORS = 10
 
 
@@ -37,7 +39,7 @@ class ModuleRunReport:
         self.source_errors += 1
         if len(self.errors) < MAX_RECORDED_ERRORS:
             text = error if isinstance(error, str) else f"{type(error).__name__}: {error}"
-            self.errors.append(f"{source}: {text}".strip())
+            self.errors.append(redact(f"{source}: {text}".strip()))
 
     def record_ok(self) -> None:
         self.source_ok += 1

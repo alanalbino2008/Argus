@@ -76,6 +76,16 @@ class GraphIntelligenceAnalyzer:
             if entity.type == EntityType.DOMAIN and entity.metadata.get("has_valid_mx") is False:
                 risk_flags.append(f"Domain {entity.label} lacks operational MX records")
 
+            # Third-party reputation and breach exposure
+            vt = entity.metadata.get("virustotal") or {}
+            if vt.get("malicious", 0) > 0:
+                exposure_points += 15
+                risk_flags.append(f"{entity.label} flagged malicious by {vt['malicious']} VirusTotal engine(s)")
+            if entity.type == EntityType.BREACH:
+                exposure_points += 8
+                classes = ", ".join(entity.metadata.get("data_classes", [])[:4]) or "unknown data"
+                risk_flags.append(f"Exposed in {entity.value} breach ({classes})")
+
             # Flag broken TLS hygiene
             if entity.type == EntityType.CERTIFICATE:
                 host = entity.metadata.get("observed_on", entity.label)

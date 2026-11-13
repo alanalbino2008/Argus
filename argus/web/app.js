@@ -9,6 +9,7 @@ let currentGraphData = { nodes: [], edges: [] };
 
 // Entity Category Color Palette
 const ENTITY_COLORS = {
+  breach: "#f43f5e",        // Rose
   domain: "#00f0ff",        // Cyan
   subdomain: "#38bdf8",     // Sky Blue
   ip_address: "#10b981",    // Emerald

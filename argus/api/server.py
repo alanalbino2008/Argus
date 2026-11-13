@@ -39,7 +39,7 @@ from argus.core.models import EntityType, Investigation, InvestigationStatus, Sc
 from argus.core.settings import get_settings
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.stix import build_bundle
-from argus.modules import get_default_modules
+from argus.modules import get_default_modules, get_module_catalog
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.headers import SecurityHeadersMiddleware
@@ -321,8 +321,10 @@ async def list_modules(_: Principal = VIEWER):
             "supported_types": [t.value for t in m.supported_entity_types],
             "attack_techniques": list(m.attack_techniques),
             "active": m.active,
+            "requires": list(m.requires_settings),
+            "configured": m.is_configured(),
         }
-        for m in get_default_modules().values()
+        for m in get_module_catalog().values()
     ]
 
 
@@ -361,9 +363,13 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
         await audit(request, principal, "scan.start", target, "denied", {"reason": "authorisation not confirmed"})
         raise HTTPException(status_code=422, detail="You must confirm you are authorised to investigate this target")
     if req.enabled_modules:
-        unknown = set(req.enabled_modules) - set(get_default_modules())
+        catalog = get_module_catalog()
+        unknown = set(req.enabled_modules) - set(catalog)
         if unknown:
             raise HTTPException(status_code=422, detail=f"Unknown modules: {sorted(unknown)}")
+        unconfigured = sorted(n for n in req.enabled_modules if not catalog[n].is_configured())
+        if unconfigured:
+            raise HTTPException(status_code=422, detail=f"Modules need an API key first: {unconfigured}")
 
     ttype = req.target_type or detect_target_type(target)
     if not settings.allow_private_targets:

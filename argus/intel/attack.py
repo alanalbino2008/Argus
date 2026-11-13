@@ -144,6 +144,16 @@ TECHNIQUES: dict[str, Technique] = {
             "CT logs are public: prefer wildcard certificates for internal names and keep certificates valid.",
         ),
         _T(
+            "T1597",
+            "Search Closed Sources",
+            "Assume paid and closed intelligence sources also hold your data; monitor your reputation.",
+        ),
+        _T(
+            "T1597.001",
+            "Threat Intel Vendors",
+            "Investigate and remediate anything vendors flag as malicious; it may indicate compromise.",
+        ),
+        _T(
             "T1596.005",
             "Scan Databases",
             "Close unneeded ports and patch the CVEs that scan databases already report for your IPs.",
@@ -168,6 +178,7 @@ ENTITY_TECHNIQUES: dict[EntityType, tuple[str, ...]] = {
     EntityType.TECHNOLOGY: ("T1592.002",),
     EntityType.PORT: ("T1596.005",),
     EntityType.VULNERABILITY: ("T1596.005",),
+    EntityType.BREACH: ("T1589.001",),
 }
 
 MAX_EXAMPLES = 5

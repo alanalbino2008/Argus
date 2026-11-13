@@ -77,6 +77,11 @@ class HostRateLimiter:
         self._semaphores: dict[str, asyncio.Semaphore] = {}
         self._next_slot: dict[str, float] = {}
         self._penalty_until: dict[str, float] = {}
+        self.host_intervals: dict[str, float] = {}
+
+    def set_host_interval(self, host: str, seconds: float) -> None:
+        """Slower spacing for a specific host (e.g. an API with a per-minute quota)."""
+        self.host_intervals[host] = max(seconds, self.host_intervals.get(host, 0.0))
 
     def semaphore(self, host: str) -> asyncio.Semaphore:
         if host not in self._semaphores:
@@ -89,7 +94,7 @@ class HostRateLimiter:
         async with lock:
             now = time.monotonic()
             start = max(now, self._next_slot.get(host, 0.0), self._penalty_until.get(host, 0.0))
-            self._next_slot[host] = start + self.min_interval
+            self._next_slot[host] = start + self.host_intervals.get(host, self.min_interval)
         delay = start - now
         if delay > 0:
             await asyncio.sleep(delay)

@@ -48,6 +48,7 @@ from argus.modules import get_default_modules
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.modules.base import BaseModule
 from argus.security.network import GuardedResolver, configured_proxy_hosts
+from argus.security.secrets import redact
 
 logger = logging.getLogger("argus.engine")
 
@@ -204,6 +205,9 @@ class ArgusEngine:
             global_concurrency=max(self.config.concurrency_limit * 4, 20),
             allow_private=self.config.allow_private_targets,
         )
+        for module in self.modules.values():  # third-party API quotas (e.g. VirusTotal: 4/minute)
+            for host, interval in module.rate_limits.items():
+                self.http.limiter.set_host_interval(host, interval)
         workers = [
             asyncio.create_task(self._worker(i), name=f"argus-worker-{i}") for i in range(self.config.concurrency_limit)
         ]
@@ -358,7 +362,7 @@ class ArgusEngine:
         stats = self.module_stats[module.name]
         stats.failed += 1
         stats.consecutive_failures += 1
-        msg = f"Module {module.name} failed on {entity.value}: {reason}"
+        msg = redact(f"Module {module.name} failed on {entity.value}: {reason}")
         logger.warning(msg)
         self.investigation.errors.append(msg)
         await self._emit(EventType.LOG_MESSAGE, {"level": "ERROR", "message": msg})

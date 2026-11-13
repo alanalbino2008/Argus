@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     )
     max_concurrent_scans: int = Field(default=5, ge=1, description="Scans allowed to run at once (whole server)")
     scans_per_minute: int = Field(default=10, ge=1, description="Scan launches allowed per API key per minute")
+    # --- Optional intelligence sources (modules stay disabled until a key is set) ---------
+    virustotal_api_key: SecretStr | None = Field(default=None, description="VirusTotal v3 API key")
+    hibp_api_key: SecretStr | None = Field(default=None, description="Have I Been Pwned v3 API key")
+    shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
     ws_ticket_ttl_seconds: int = Field(default=30, ge=5, description="Lifetime of one-time WebSocket tickets")
 
 
