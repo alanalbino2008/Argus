@@ -27,10 +27,10 @@ jobs:
           echo "VERSION=${version}" >> "$GITHUB_ENV"
 
       - name: Test
-        run: pip install -r requirements.txt && pytest -q
+        run: pip install -r requirements-dev.txt && pytest -q
 
       - name: Build sdist and wheel
-        run: pip install build && python -m build
+        run: python -m build
 
       - name: Extract release notes from CHANGELOG.md
         run: |

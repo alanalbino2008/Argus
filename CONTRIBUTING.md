@@ -4,11 +4,13 @@
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]" ruff mypy pytest-cov pre-commit
+pip install -r requirements-dev.txt && pip install -e . --no-deps
 pre-commit install          # ruff, formatting, mypy and secret checks before every commit
 ```
 
 ## Quality gates (all enforced in CI)
+
+Tool versions are pinned in `requirements-dev.txt` so local runs, pre-commit and CI agree.
 
 ```bash
 ruff check argus tests      # lint, incl. bandit security rules

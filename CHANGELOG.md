@@ -14,6 +14,7 @@
 - Offline parsing tests for every collector (fake HTTP session + real dnspython records) and CLI tests;
   coverage 68 % → 87 %.
 - `.pre-commit-config.yaml`, `CONTRIBUTING.md`, `docs/explained/04-engineering-quality.md`.
+- `requirements-dev.txt` pins ruff, mypy and other tooling so local, pre-commit and CI results match.
 
 ### Changed
 - Version is single-sourced from `argus/__init__.py` (package metadata, API, User-Agent).

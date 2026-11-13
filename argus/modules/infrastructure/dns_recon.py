@@ -119,25 +119,23 @@ class DnsReconModule(BaseModule):
                             label="CNAME Alias",
                         )
 
-                    elif rtype == "TXT":
-                        # Detect SPF
-                        if "v=spf1" in text_val.lower():
-                            rec_entity = Entity.create(
-                                entity_type=EntityType.DNS_RECORD,
-                                value=f"SPF: {text_val[:80]}...",
-                                label="SPF Policy",
-                                metadata={"full_record": text_val, "type": "SPF"},
-                                source_module=self.name,
-                                confidence=1.0,
-                                depth=entity.depth + 1,
-                            )
-                            yield rec_entity
-                            yield Relation.create(
-                                source_id=entity.id,
-                                target_id=rec_entity.id,
-                                rel_type=RelationType.HAS_DNS_RECORD,
-                                label="SPF Record",
-                            )
+                    elif rtype == "TXT" and "v=spf1" in text_val.lower():  # SPF policy
+                        rec_entity = Entity.create(
+                            entity_type=EntityType.DNS_RECORD,
+                            value=f"SPF: {text_val[:80]}...",
+                            label="SPF Policy",
+                            metadata={"full_record": text_val, "type": "SPF"},
+                            source_module=self.name,
+                            confidence=1.0,
+                            depth=entity.depth + 1,
+                        )
+                        yield rec_entity
+                        yield Relation.create(
+                            source_id=entity.id,
+                            target_id=rec_entity.id,
+                            rel_type=RelationType.HAS_DNS_RECORD,
+                            label="SPF Record",
+                        )
 
             except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):  # noqa: PERF203 - isolate each record type
                 self.report_ok()  # authoritative "no such record" is a valid answer

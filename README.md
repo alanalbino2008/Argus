@@ -229,7 +229,7 @@ Every push runs the full pipeline in GitHub Actions:
 Run the same checks locally:
 
 ```bash
-pip install -r requirements.txt ruff mypy pytest-cov
+pip install -r requirements-dev.txt
 ruff check argus tests && ruff format --check argus tests && mypy argus
 pytest --cov=argus
 ```

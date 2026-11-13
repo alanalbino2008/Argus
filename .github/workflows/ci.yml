@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements.txt ruff mypy
+      - run: pip install -r requirements-dev.txt
       - name: Ruff (lint, incl. bandit security rules)
         run: ruff check argus tests --output-format=github
       - name: Ruff (format)
@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - run: pip install -r requirements.txt pytest-cov
+      - run: pip install -r requirements-dev.txt
       - name: pytest (coverage gate in pyproject.toml)
         run: pytest --cov=argus --cov-report=term --cov-report=xml --durations=5
       - name: Upload coverage report
@@ -64,7 +64,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Build sdist and wheel
-        run: pip install build && python -m build
+        run: pip install -r requirements-dev.txt && python -m build
       # Installing into an empty venv catches undeclared dependencies and missing package data,
       # which the test job cannot (it installs requirements.txt directly).
       - name: Install wheel into a clean virtualenv and boot the server
@@ -88,9 +88,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pip-audit
-      - name: pip-audit (known CVEs in dependencies)
-        run: pip-audit -r requirements.txt --strict
+      - run: pip install -r requirements-dev.txt
+      - name: pip-audit (known CVEs in runtime and tooling dependencies)
+        run: pip-audit -r requirements-dev.txt --strict
 
   docker:
     name: Docker image build & health check
