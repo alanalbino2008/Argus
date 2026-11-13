@@ -7,8 +7,10 @@ from collections.abc import AsyncIterator
 
 import aiohttp
 
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
+from argus.security.network import is_public_ip
 
 logger = logging.getLogger("argus.module.shodan_internetdb")
 
@@ -45,13 +47,17 @@ class ShodanInternetDbModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         ip = entity.value.strip()
 
-        # Skip private IPs
-        if entity.metadata.get("is_private"):
+        # Check the address itself: ip_intelligence (which sets "is_private") runs concurrently,
+        # and internal addresses must never be disclosed to a third-party API.
+        try:
+            if not is_public_ip(ip):
+                return
+        except ValueError:
             return
 
         api_url = f"https://internetdb.shodan.io/{ip}"

@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 
-import aiohttp
 import dns.asyncresolver
 import dns.resolver
 
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
 
@@ -27,7 +27,7 @@ class DnsReconModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         domain = entity.value.strip().lower()

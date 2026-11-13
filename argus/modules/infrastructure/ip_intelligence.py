@@ -11,6 +11,7 @@ import dns.asyncresolver
 import dns.resolver
 import dns.reversename
 
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
 
@@ -27,7 +28,7 @@ class IpIntelligenceModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         ip_str = entity.value.strip()

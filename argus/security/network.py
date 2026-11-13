@@ -93,7 +93,8 @@ async def resolve_public(host: str, port: int) -> list[str]:
         return [str(ip)]
     assert_public_host(host)
     infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    public = [info[4][0] for info in infos if is_public_ip(info[4][0])]
+    addresses = [str(info[4][0]) for info in infos]
+    public = [a for a in addresses if is_public_ip(a)]
     if not public:
         raise BlockedDestinationError(f"{host} resolves only to non-public addresses")
     return public
@@ -107,7 +108,7 @@ class GuardedResolver(AbstractResolver):
         # The operator-configured outbound proxy may legitimately be internal.
         self._trusted = {h.lower() for h in trusted_hosts}
 
-    async def resolve(self, host: str, port: int = 0, family: int = socket.AF_INET) -> list[Any]:
+    async def resolve(self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET) -> list[Any]:
         if host.lower() in self._trusted:
             return await self._inner.resolve(host, port, family)
         assert_public_host(host)

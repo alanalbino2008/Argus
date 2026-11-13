@@ -135,13 +135,13 @@ class IntelligenceGraph:
 
         top_hubs = []
         for node_id, degree in sorted_nodes[:8]:
-            entity = self._entities.get(node_id)
-            if entity:
+            hub = self._entities.get(node_id)
+            if hub:
                 top_hubs.append(
                     {
-                        "id": entity.id,
-                        "label": entity.label,
-                        "type": entity.type.value,
+                        "id": hub.id,
+                        "label": hub.label,
+                        "type": hub.type.value,
                         "degree": degree,
                     }
                 )

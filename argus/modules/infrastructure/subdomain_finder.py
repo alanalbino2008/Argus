@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator
 
 import aiohttp
 
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
 
@@ -24,7 +25,7 @@ class SubdomainFinderModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         domain = entity.value.strip().lower()

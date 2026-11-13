@@ -43,6 +43,7 @@ from argus.security.headers import SecurityHeadersMiddleware
 from argus.security.network import validate_scan_target
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from argus.storage.migrate import upgrade_database
 from argus.storage.security_repo import ApiKeyRepository, AuditLog
 
 logger = logging.getLogger("argus.api")
@@ -99,7 +100,7 @@ async def ws_dispatcher(event: Event) -> None:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     db = Database(settings.database_url, echo=settings.db_echo)
-    await db.create_all()
+    await upgrade_database(db)
     repo = InvestigationRepository(db)
     interrupted = await repo.mark_interrupted()
     if interrupted:

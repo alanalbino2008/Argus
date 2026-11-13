@@ -6,8 +6,7 @@ import logging
 import re
 from collections.abc import AsyncIterator
 
-import aiohttp
-
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
 
@@ -40,7 +39,7 @@ class PhoneReconModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         raw_phone = entity.value.strip()
@@ -59,7 +58,7 @@ class PhoneReconModule(BaseModule):
                 matched_prefix = prefix
                 break
 
-        if matched_country:
+        if matched_country and matched_prefix:
             national_part = digits_only[len(matched_prefix) :]
             entity.metadata.update(
                 {

@@ -20,7 +20,7 @@ from typing import Any
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from cryptography.x509.oid import ExtensionOID, NameOID
+from cryptography.x509.oid import NameOID
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -42,7 +42,7 @@ def parse_certificate(der: bytes, now: datetime | None = None) -> dict[str, Any]
     not_before, not_after = cert.not_valid_before_utc, cert.not_valid_after_utc
 
     try:
-        san_ext = cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
         sans = san_ext.value.get_values_for_type(x509.DNSName)
     except x509.ExtensionNotFound:
         sans = []

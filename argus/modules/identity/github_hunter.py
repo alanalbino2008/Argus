@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import AsyncIterator
+from urllib.parse import urlsplit
 
 import aiohttp
 
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
 
@@ -24,7 +26,7 @@ class GitHubHunterModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         username = entity.value.strip()
@@ -86,7 +88,8 @@ class GitHubHunterModule(BaseModule):
                     # Personal Blog / Website -> Domain entity
                     blog = user_data.get("blog")
                     if blog:
-                        clean_blog = re.sub(r"^https?://", "", blog).strip().rstrip("/")
+                        # "https://site.com/blog" -> "site.com": a domain entity must be a bare hostname
+                        clean_blog = (urlsplit(blog if "://" in blog else f"http://{blog}").hostname or "").lower()
                         if clean_blog and "." in clean_blog:
                             domain_entity = Entity.create(
                                 entity_type=EntityType.DOMAIN,

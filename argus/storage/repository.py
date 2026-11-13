@@ -10,9 +10,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import Table, delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.core.graph import IntelligenceGraph
@@ -69,20 +72,20 @@ class InvestigationRepository:
     async def save_investigation(self, inv: Investigation) -> None:
         """Insert or update the investigation record."""
         async with self.db.session() as s, s.begin():
-            await self._upsert(s, InvestigationRow.__table__, [_investigation_row(inv)], ["id"])
+            await self._upsert(s, _table(InvestigationRow), [_investigation_row(inv)], ["id"])
 
     async def upsert_entities(self, investigation_id: str, entities: Iterable[dict[str, Any]]) -> int:
         rows = [_entity_row(investigation_id, e) for e in entities]
         if rows:
             async with self.db.session() as s, s.begin():
-                await self._upsert(s, EntityRow.__table__, rows, ["investigation_id", "entity_id"])
+                await self._upsert(s, _table(EntityRow), rows, ["investigation_id", "entity_id"])
         return len(rows)
 
     async def upsert_relations(self, investigation_id: str, relations: Iterable[dict[str, Any]]) -> int:
         rows = [_relation_row(investigation_id, r) for r in relations]
         if rows:
             async with self.db.session() as s, s.begin():
-                await self._upsert(s, RelationRow.__table__, rows, ["investigation_id", "relation_id"])
+                await self._upsert(s, _table(RelationRow), rows, ["investigation_id", "relation_id"])
         return len(rows)
 
     async def save_graph(self, graph: IntelligenceGraph) -> None:
@@ -100,7 +103,7 @@ class InvestigationRepository:
             await s.execute(delete(RelationRow).where(RelationRow.investigation_id == investigation_id))
             await s.execute(delete(EntityRow).where(EntityRow.investigation_id == investigation_id))
             result = await s.execute(delete(InvestigationRow).where(InvestigationRow.id == investigation_id))
-        return (result.rowcount or 0) > 0
+        return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
     async def mark_interrupted(self) -> int:
         """Investigations left 'running' by a crash/restart can never finish: mark them failed."""
@@ -206,10 +209,11 @@ class InvestigationRepository:
     # -------------------------------------------------------------- helpers
     async def _upsert(self, s: AsyncSession, table: Table, rows: Sequence[dict[str, Any]], keys: list[str]) -> None:
         dialect = self.db.dialect
+        insert: Any
         if dialect == "sqlite":
-            from sqlalchemy.dialects.sqlite import insert
+            insert = sqlite_insert
         elif dialect == "postgresql":
-            from sqlalchemy.dialects.postgresql import insert
+            insert = pg_insert
         else:  # pragma: no cover - generic fallback for other backends
             for row in rows:
                 await s.merge(_row_to_orm(table, row))
@@ -225,6 +229,11 @@ class InvestigationRepository:
 def _row_to_orm(table: Table, row: dict[str, Any]):  # pragma: no cover
     model = {t.__table__: t for t in (InvestigationRow, EntityRow, RelationRow)}[table]
     return model(**row)
+
+
+def _table(model: type[Any]) -> Table:
+    """ORM class -> its Table (typed, so the upsert helper can accept it)."""
+    return cast(Table, model.__table__)
 
 
 def _iso(value: datetime | None) -> str | None:

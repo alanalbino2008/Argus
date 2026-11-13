@@ -11,6 +11,7 @@ import aiohttp
 import dns.asyncresolver
 import dns.resolver
 
+from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
 
@@ -41,7 +42,7 @@ class EmailReconModule(BaseModule):
     async def run(
         self,
         entity: Entity,
-        session: aiohttp.ClientSession,
+        session: HttpClient,
         config: ScanConfig,
     ) -> AsyncIterator[Entity | Relation]:
         email = entity.value.strip().lower()

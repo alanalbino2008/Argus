@@ -204,10 +204,11 @@ class HttpClient:
                     async with self._global:
                         resp = await self.session.request(method, url, **kwargs)
                 except RETRYABLE_EXCEPTIONS as exc:
-                    if isinstance(getattr(exc, "os_error", None), BlockedDestinationError):
+                    os_error = getattr(exc, "os_error", None)
+                    if isinstance(os_error, BlockedDestinationError):
                         # Egress guard refused the resolved address: retrying cannot help.
                         self.stats.blocked += 1
-                        report_error(host, exc.os_error)
+                        report_error(host, os_error)
                         raise
                     if attempt >= self.max_retries:
                         self.stats.failures += 1

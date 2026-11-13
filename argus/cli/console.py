@@ -181,11 +181,12 @@ async def create_api_key_cli(name: str, role: str) -> None:
     from argus.core.settings import get_settings
     from argus.security.auth import SYSTEM, Role
     from argus.storage.db import Database
+    from argus.storage.migrate import upgrade_database
     from argus.storage.security_repo import ApiKeyRepository, AuditLog
 
     db = Database(get_settings().database_url)
     try:
-        await db.create_all()
+        await upgrade_database(db)
         record, key = await ApiKeyRepository(db).create(name, Role(role), created_by="cli")
         await AuditLog(db).record(
             SYSTEM, "key.create", record["id"], details={"name": name, "role": role, "via": "cli"}

@@ -8,9 +8,10 @@ import hashlib
 import json
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 
 from argus.security.auth import Principal, Role, generate_api_key, hash_api_key, key_display_prefix
 from argus.storage.db import ApiKeyRow, AuditEventRow, Database
@@ -87,7 +88,7 @@ class ApiKeyRepository:
                 .where(ApiKeyRow.id == key_id, ApiKeyRow.revoked_at.is_(None))
                 .values(revoked_at=_now())
             )
-        return (result.rowcount or 0) > 0
+        return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
     async def count_active(self, role: Role | None = None) -> int:
         stmt = select(func.count()).select_from(ApiKeyRow).where(ApiKeyRow.revoked_at.is_(None))
