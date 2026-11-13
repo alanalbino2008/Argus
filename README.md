@@ -47,6 +47,22 @@ graph TD
     Bus --> CLI[Rich Terminal Output]
 ```
 
+### Reliability & Resilience Engineering
+
+| Concern | How Argus handles it |
+|---|---|
+| **Throughput** | A pool of async workers (`concurrency_limit`) expands entities in parallel; every eligible module runs concurrently per entity. |
+| **Slow / hung data sources** | Hard per-module wall-clock timeout (`module_timeout_seconds`). |
+| **Transient failures** | Shared `HttpClient` retries 429/5xx and connection errors with exponential backoff + full jitter, honouring `Retry-After`. |
+| **Being a good network citizen** | Per-host rate limiting and per-host concurrency caps; a 429 slows *all* callers for that host. |
+| **Repeatedly broken modules** | Circuit breaker disables a module after N consecutive failures. |
+| **Graph explosions** | `max_entities` safety cap with explicit `truncated` flag. |
+| **Control** | Cooperative cancellation (`POST /api/investigation/{id}/cancel`) and explicit `completed` / `cancelled` / `failed` states. |
+| **Observability** | Per-module stats (runs, failures, timeouts, latency) and HTTP stats (requests, retries, throttles, status codes) on every investigation. |
+| **Corporate networks** | Honours `HTTP(S)_PROXY` / `NO_PROXY`. |
+
+A plain-English walkthrough lives in [`docs/explained/01-engine-and-reliability.md`](docs/explained/01-engine-and-reliability.md).
+
 ---
 
 ## 🚀 Quickstart & Installation
@@ -55,8 +71,8 @@ graph TD
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/yourusername/argus.git
-cd argus
+git clone https://github.com/alanalbino2008/Argus.git
+cd Argus
 
 # 2. Create and activate virtual environment
 python -m venv venv

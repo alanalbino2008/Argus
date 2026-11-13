@@ -1,23 +1,43 @@
 """Recursive OSINT Orchestration Engine for Argus.
 
 Automates Spiderfoot-like multi-hop data enrichment, Sherlock-like rapid
-credential/handle hunting, and Maltego-like graph relationship synthesis.
+handle hunting, and Maltego-like graph relationship synthesis.
+
+Execution model
+---------------
+The seed entity is placed on an ``asyncio.Queue``. A pool of worker coroutines
+pulls entities off the queue *in parallel*; for each entity every eligible
+module runs concurrently. Newly discovered entities (within ``max_depth``) are
+pushed back onto the queue. The scan finishes when the queue has been fully
+drained (``Queue.join``), or when it is cancelled.
+
+Robustness features
+-------------------
+* Per-module wall-clock timeouts - one slow data source cannot stall a scan.
+* Circuit breaker - a module that fails repeatedly is disabled for the rest
+  of the investigation instead of wasting time and requests.
+* Entity cap (``max_entities``) - protects memory against graph explosions.
+* Cooperative cancellation and explicit COMPLETED / CANCELLED / FAILED states.
+* Per-module and HTTP telemetry recorded on the Investigation.
 """
 
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import logging
+import time
 import uuid
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, Optional, Set
+
 import aiohttp
 
 from argus.core.events import Event, EventBus, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
+from argus.core.http import HttpClient
 from argus.core.models import (
     Entity,
-    EntityType,
     Investigation,
     InvestigationStatus,
     Relation,
@@ -30,6 +50,27 @@ from argus.modules.base import BaseModule
 logger = logging.getLogger("argus.engine")
 
 
+@dataclass
+class ModuleStats:
+    """Execution telemetry for one module across an investigation."""
+
+    runs: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    timed_out: int = 0
+    entities_found: int = 0
+    relations_found: int = 0
+    total_seconds: float = 0.0
+    consecutive_failures: int = 0
+    disabled: bool = False
+
+    def as_dict(self) -> Dict[str, Any]:
+        data = asdict(self)
+        data["total_seconds"] = round(self.total_seconds, 3)
+        data["avg_seconds"] = round(self.total_seconds / self.runs, 3) if self.runs else 0.0
+        return data
+
+
 class ArgusEngine:
     """Core asynchronous recursive intelligence gathering orchestrator."""
 
@@ -38,14 +79,15 @@ class ArgusEngine:
         config: ScanConfig,
         investigation_id: Optional[str] = None,
         bus: Optional[EventBus] = None,
+        modules: Optional[Dict[str, BaseModule]] = None,
+        session: Optional[aiohttp.ClientSession] = None,
     ):
         self.investigation_id = investigation_id or f"inv_{uuid.uuid4().hex[:8]}"
         self.config = config
         self.bus = bus or event_bus
         self.graph = IntelligenceGraph(self.investigation_id)
-        self.modules: Dict[str, BaseModule] = get_default_modules()
+        self.modules: Dict[str, BaseModule] = modules if modules is not None else get_default_modules()
 
-        # Filter modules if specific subset was requested
         if config.enabled_modules:
             self.modules = {
                 name: mod for name, mod in self.modules.items()
@@ -59,30 +101,40 @@ class ArgusEngine:
             status=InvestigationStatus.INITIALIZING,
         )
 
+        self.module_stats: Dict[str, ModuleStats] = {name: ModuleStats() for name in self.modules}
+        self.http: Optional[HttpClient] = None
+        self.truncated = False
+
+        self._external_session = session
         self._queue: asyncio.Queue[Entity] = asyncio.Queue()
         self._enqueued_ids: Set[str] = set()
         self._processed_ids: Set[str] = set()
-        self._session: Optional[aiohttp.ClientSession] = None
+        self._cancel_event = asyncio.Event()
         self._is_running = False
 
+    # ------------------------------------------------------------------ public
+    @property
+    def is_running(self) -> bool:
+        return self._is_running
+
+    def cancel(self) -> None:
+        """Request cooperative cancellation; ``start()`` returns with CANCELLED status."""
+        self._cancel_event.set()
+
     async def start(self) -> IntelligenceGraph:
-        """Execute full recursive intelligence investigation."""
+        """Execute the full recursive investigation and return the knowledge graph."""
         self._is_running = True
         self.investigation.status = InvestigationStatus.RUNNING
+        started = time.monotonic()
 
-        await self.bus.emit(Event(
-            type=EventType.SCAN_STARTED,
-            investigation_id=self.investigation_id,
-            data={
-                "target": self.config.target,
-                "target_type": self.config.target_type.value,
-                "max_depth": self.config.max_depth,
-                "active_modules": list(self.modules.keys()),
-            },
-        ))
+        await self._emit(EventType.SCAN_STARTED, {
+            "target": self.config.target,
+            "target_type": self.config.target_type.value,
+            "max_depth": self.config.max_depth,
+            "active_modules": list(self.modules.keys()),
+        })
 
-        # Seed entity creation
-        seed_entity = Entity.create(
+        seed = Entity.create(
             entity_type=self.config.target_type,
             value=self.config.target,
             label=self.config.target,
@@ -90,127 +142,194 @@ class ArgusEngine:
             confidence=1.0,
             depth=0,
         )
-        self.graph.add_entity(seed_entity, is_seed=True)
-        self._queue.put_nowait(seed_entity)
-        self._enqueued_ids.add(seed_entity.id)
-
-        # HTTP Session initialization
-        connector = aiohttp.TCPConnector(limit=50, ttl_dns_cache=300)
-        async with aiohttp.ClientSession(connector=connector) as session:
-            self._session = session
-            await self._run_enrichment_loop()
-
-        self._is_running = False
-        self.investigation.status = InvestigationStatus.COMPLETED
-        self.investigation.completed_at = datetime.now(timezone.utc)
-        self.investigation.node_count = self.graph.node_count
-        self.investigation.edge_count = self.graph.edge_count
-
-        # Run final graph analytics
-        analytics = GraphIntelligenceAnalyzer.analyze(self.graph)
-
-        await self.bus.emit(Event(
-            type=EventType.SCAN_COMPLETED,
-            investigation_id=self.investigation_id,
-            data={
-                "node_count": self.graph.node_count,
-                "edge_count": self.graph.edge_count,
-                "analytics": analytics,
-            },
-        ))
-
-        return self.graph
-
-    async def _run_enrichment_loop(self):
-        """Processes queued entities up to max_depth."""
-        while not self._queue.empty() and self._is_running:
-            entity = await self._queue.get()
-            if entity.id in self._processed_ids:
-                self._queue.task_done()
-                continue
-
-            self._processed_ids.add(entity.id)
-
-            # Discover eligible modules
-            matching_modules = [m for m in self.modules.values() if m.can_handle(entity)]
-            if not matching_modules:
-                self._queue.task_done()
-                continue
-
-            # Run all eligible modules on this entity concurrently
-            tasks = [self._execute_module(mod, entity) for mod in matching_modules]
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-            self._queue.task_done()
-
-            # Broadcast progress
-            await self.bus.emit(Event(
-                type=EventType.SCAN_PROGRESS,
-                investigation_id=self.investigation_id,
-                data={
-                    "processed_nodes": len(self._processed_ids),
-                    "queued_nodes": self._queue.qsize(),
-                    "total_nodes": self.graph.node_count,
-                    "total_edges": self.graph.edge_count,
-                },
-            ))
-
-    async def _execute_module(self, module: BaseModule, entity: Entity):
-        """Safely executes a single reconnaissance module against an entity."""
-        if not self._session:
-            return
+        self.graph.add_entity(seed, is_seed=True)
+        self._enqueue(seed)
 
         try:
-            await self.bus.emit(Event(
-                type=EventType.MODULE_STARTED,
-                investigation_id=self.investigation_id,
-                data={"module": module.name, "entity": entity.label},
-            ))
+            if self._external_session is not None:
+                await self._run(self._external_session)
+            else:
+                connector = aiohttp.TCPConnector(limit=100, limit_per_host=self.config.per_host_concurrency, ttl_dns_cache=300)
+                # trust_env: honour HTTP(S)_PROXY / NO_PROXY, as required on corporate networks.
+                async with aiohttp.ClientSession(connector=connector, trust_env=True) as session:
+                    await self._run(session)
+        except asyncio.CancelledError:
+            # Externally cancelled (e.g. server shutdown): record it, then propagate.
+            self._finalize(InvestigationStatus.CANCELLED, started)
+            raise
+        except Exception as exc:
+            logger.exception("Investigation %s crashed", self.investigation_id)
+            self.investigation.errors.append(f"Engine failure: {exc!r}")
+            self._finalize(InvestigationStatus.FAILED, started)
+            await self._emit(EventType.SCAN_FAILED, {"error": repr(exc), **self._summary(started)})
+            raise
 
-            async for item in module.run(entity, self._session, self.config):
-                if isinstance(item, Entity):
-                    is_new = self.graph.add_entity(item)
-                    if is_new:
-                        await self.bus.emit(Event(
-                            type=EventType.ENTITY_DISCOVERED,
-                            investigation_id=self.investigation_id,
-                            data={
-                                "entity": item.model_dump(mode="json"),
-                                "source_module": module.name,
-                            },
-                        ))
+        if self._cancel_event.is_set():
+            self._finalize(InvestigationStatus.CANCELLED, started)
+            await self._emit(EventType.SCAN_CANCELLED, self._summary(started))
+        else:
+            self._finalize(InvestigationStatus.COMPLETED, started)
+            await self._emit(EventType.SCAN_COMPLETED, {
+                **self._summary(started),
+                "analytics": GraphIntelligenceAnalyzer.analyze(self.graph),
+            })
+        return self.graph
 
-                        # Queue for recursive enrichment if within depth limits
-                        if item.depth < self.config.max_depth and item.id not in self._enqueued_ids:
-                            self._enqueued_ids.add(item.id)
-                            self._queue.put_nowait(item)
+    # ---------------------------------------------------------------- internals
+    async def _run(self, session: aiohttp.ClientSession) -> None:
+        self.http = HttpClient(
+            session,
+            max_retries=self.config.max_retries,
+            min_host_interval=self.config.rate_limit_delay,
+            per_host_concurrency=self.config.per_host_concurrency,
+            global_concurrency=max(self.config.concurrency_limit * 4, 20),
+        )
+        workers = [
+            asyncio.create_task(self._worker(i), name=f"argus-worker-{i}")
+            for i in range(self.config.concurrency_limit)
+        ]
+        drained = asyncio.create_task(self._queue.join())
+        cancelled = asyncio.create_task(self._cancel_event.wait())
+        try:
+            await asyncio.wait({drained, cancelled}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in (*workers, drained, cancelled):
+                task.cancel()
+            await asyncio.gather(*workers, drained, cancelled, return_exceptions=True)
 
-                elif isinstance(item, Relation):
-                    is_new = self.graph.add_relation(item)
-                    if is_new:
-                        await self.bus.emit(Event(
-                            type=EventType.RELATION_DISCOVERED,
-                            investigation_id=self.investigation_id,
-                            data={
-                                "relation": item.model_dump(mode="json"),
-                                "source_module": module.name,
-                            },
-                        ))
+    async def _worker(self, worker_id: int) -> None:
+        while True:
+            entity = await self._queue.get()
+            try:
+                await self._process_entity(entity)
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # defensive: a bug here must never kill the pool
+                logger.exception("Worker %d failed processing %s", worker_id, entity.id)
+            finally:
+                self._queue.task_done()
 
-            await self.bus.emit(Event(
-                type=EventType.MODULE_FINISHED,
-                investigation_id=self.investigation_id,
-                data={"module": module.name, "entity": entity.label},
-            ))
+    async def _process_entity(self, entity: Entity) -> None:
+        if entity.id in self._processed_ids:
+            return
+        self._processed_ids.add(entity.id)
 
+        eligible = [
+            m for m in self.modules.values()
+            if not self.module_stats[m.name].disabled and m.can_handle(entity)
+        ]
+        if eligible:
+            await asyncio.gather(*(self._execute_module(m, entity) for m in eligible))
+
+        await self._emit(EventType.SCAN_PROGRESS, {
+            "processed_nodes": len(self._processed_ids),
+            "queued_nodes": self._queue.qsize(),
+            "total_nodes": self.graph.node_count,
+            "total_edges": self.graph.edge_count,
+        })
+
+    async def _execute_module(self, module: BaseModule, entity: Entity) -> None:
+        stats = self.module_stats[module.name]
+        stats.runs += 1
+        started = time.monotonic()
+        await self._emit(EventType.MODULE_STARTED, {"module": module.name, "entity": entity.label})
+
+        try:
+            await asyncio.wait_for(
+                self._consume_module(module, entity, stats),
+                timeout=self.config.module_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            stats.timed_out += 1
+            await self._record_failure(module, entity, f"timed out after {self.config.module_timeout_seconds:.0f}s")
         except asyncio.CancelledError:
             raise
-        except Exception as e:
-            err_msg = f"Module {module.name} failed on {entity.value}: {e}"
-            logger.error(err_msg)
-            self.investigation.errors.append(err_msg)
-            await self.bus.emit(Event(
-                type=EventType.LOG_MESSAGE,
-                investigation_id=self.investigation_id,
-                data={"level": "ERROR", "message": err_msg},
-            ))
+        except Exception as exc:
+            await self._record_failure(module, entity, repr(exc))
+        else:
+            stats.succeeded += 1
+            stats.consecutive_failures = 0
+        finally:
+            stats.total_seconds += time.monotonic() - started
+
+        await self._emit(EventType.MODULE_FINISHED, {"module": module.name, "entity": entity.label})
+
+    async def _consume_module(self, module: BaseModule, entity: Entity, stats: ModuleStats) -> None:
+        async for item in module.run(entity, self.http, self.config):  # type: ignore[arg-type]
+            if self._cancel_event.is_set():
+                return
+            if isinstance(item, Entity):
+                await self._ingest_entity(item, module.name, stats)
+            elif isinstance(item, Relation):
+                if self.graph.get_entity(item.source_id) is None or self.graph.get_entity(item.target_id) is None:
+                    continue  # endpoint dropped (e.g. entity cap reached)
+                if self.graph.add_relation(item):
+                    stats.relations_found += 1
+                    await self._emit(EventType.RELATION_DISCOVERED, {
+                        "relation": item.model_dump(mode="json"),
+                        "source_module": module.name,
+                    })
+
+    async def _ingest_entity(self, item: Entity, module_name: str, stats: ModuleStats) -> None:
+        if self.graph.get_entity(item.id) is None and self.graph.node_count >= self.config.max_entities:
+            if not self.truncated:
+                self.truncated = True
+                msg = f"Entity cap of {self.config.max_entities} reached; further discoveries are dropped."
+                self.investigation.errors.append(msg)
+                await self._emit(EventType.LOG_MESSAGE, {"level": "WARNING", "message": msg})
+            return
+
+        if not self.graph.add_entity(item):
+            return
+        stats.entities_found += 1
+        await self._emit(EventType.ENTITY_DISCOVERED, {
+            "entity": item.model_dump(mode="json"),
+            "source_module": module_name,
+        })
+        if item.depth < self.config.max_depth:
+            self._enqueue(item)
+
+    def _enqueue(self, entity: Entity) -> None:
+        if entity.id not in self._enqueued_ids:
+            self._enqueued_ids.add(entity.id)
+            self._queue.put_nowait(entity)
+
+    async def _record_failure(self, module: BaseModule, entity: Entity, reason: str) -> None:
+        stats = self.module_stats[module.name]
+        stats.failed += 1
+        stats.consecutive_failures += 1
+        msg = f"Module {module.name} failed on {entity.value}: {reason}"
+        logger.warning(msg)
+        self.investigation.errors.append(msg)
+        await self._emit(EventType.LOG_MESSAGE, {"level": "ERROR", "message": msg})
+        if not stats.disabled and stats.consecutive_failures >= self.config.circuit_breaker_threshold:
+            stats.disabled = True
+            notice = (
+                f"Circuit breaker opened: {module.name} disabled after "
+                f"{stats.consecutive_failures} consecutive failures."
+            )
+            self.investigation.errors.append(notice)
+            await self._emit(EventType.LOG_MESSAGE, {"level": "WARNING", "message": notice})
+
+    def _summary(self, started: float) -> Dict[str, Any]:
+        return {
+            "node_count": self.graph.node_count,
+            "edge_count": self.graph.edge_count,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "truncated": self.truncated,
+            "module_stats": self.investigation.module_stats,
+            "http_stats": self.investigation.http_stats,
+        }
+
+    def _finalize(self, status: InvestigationStatus, started: float) -> None:
+        self._is_running = False
+        inv = self.investigation
+        inv.status = status
+        inv.completed_at = datetime.now(timezone.utc)
+        inv.node_count = self.graph.node_count
+        inv.edge_count = self.graph.edge_count
+        inv.module_stats = {name: s.as_dict() for name, s in self.module_stats.items()}
+        inv.http_stats = self.http.stats.as_dict() if self.http else {}
+
+    async def _emit(self, event_type: EventType, data: Dict[str, Any]) -> None:
+        await self.bus.emit(Event(type=event_type, investigation_id=self.investigation_id, data=data))

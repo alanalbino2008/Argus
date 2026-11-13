@@ -32,9 +32,6 @@ class UsernameHunterModule(BaseModule):
 
         async def check_platform(plat: dict):
             async with sem:
-                if config.rate_limit_delay > 0:
-                    await asyncio.sleep(config.rate_limit_delay)
-
                 check_url = plat["check_url"].format(username)
                 profile_url = plat["url_template"].format(username)
                 headers = plat.get("headers", {

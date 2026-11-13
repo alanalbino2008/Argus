@@ -140,6 +140,11 @@ class ScanConfig(BaseModel):
     concurrency_limit: int = Field(default=15, ge=1, le=50, description="Max concurrent async workers")
     rate_limit_delay: float = Field(default=0.05, ge=0.0, description="Sleep interval between queries per worker in seconds")
     timeout_seconds: float = Field(default=12.0, ge=1.0, description="Network timeout per request")
+    module_timeout_seconds: float = Field(default=120.0, ge=1.0, description="Hard wall-clock limit for one module run on one entity")
+    max_retries: int = Field(default=3, ge=0, le=10, description="Retries for transient HTTP failures (429/5xx/connection errors)")
+    per_host_concurrency: int = Field(default=6, ge=1, le=50, description="Max simultaneous requests to any single host")
+    max_entities: int = Field(default=2000, ge=1, le=100000, description="Safety cap on total graph nodes per investigation")
+    circuit_breaker_threshold: int = Field(default=5, ge=1, description="Consecutive failures before a module is disabled for the rest of the scan")
 
 
 class InvestigationStatus(str, Enum):
@@ -147,6 +152,7 @@ class InvestigationStatus(str, Enum):
     RUNNING = "running"
     PAUSED = "paused"
     COMPLETED = "completed"
+    CANCELLED = "cancelled"
     FAILED = "failed"
 
 
@@ -161,6 +167,8 @@ class Investigation(BaseModel):
     node_count: int = 0
     edge_count: int = 0
     errors: List[str] = Field(default_factory=list)
+    module_stats: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+    http_stats: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SystemMetrics(BaseModel):
