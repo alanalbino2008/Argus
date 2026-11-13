@@ -1,12 +1,11 @@
 """Module run outcome classification: success / degraded / failed."""
 
-import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus
-from argus.core.models import Entity, EntityType, ScanConfig
+from argus.core.models import EntityType, ScanConfig
 from argus.core.runctx import ModuleRunReport, report_error
 from argus.modules.base import BaseModule
 from tests.test_engine import FanOutModule
@@ -62,7 +61,9 @@ def make_engine(modules, **cfg):
 async def test_swallowed_errors_now_count_as_failures_and_trip_breaker():
     engine = make_engine(
         [FanOutModule(fan=6), SilentlyBrokenModule()],
-        max_depth=2, concurrency_limit=1, circuit_breaker_threshold=3,
+        max_depth=2,
+        concurrency_limit=1,
+        circuit_breaker_threshold=3,
     )
     await engine.start()
     stats = engine.module_stats["silently_broken"]

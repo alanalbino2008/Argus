@@ -4,9 +4,9 @@ Covers 60+ major platforms across Developer, Social, Gaming, Security,
 and Creative ecosystems with accurate false-positive rejection rules.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
-PLATFORM_SIGNATURES: List[Dict[str, Any]] = [
+PLATFORM_SIGNATURES: list[dict[str, Any]] = [
     # --- Developer & Security ---
     {
         "name": "GitHub",
@@ -125,7 +125,6 @@ PLATFORM_SIGNATURES: List[Dict[str, Any]] = [
         "exists_code": 200,
         "missing_code": 400,
     },
-
     # --- Social & Communities ---
     {
         "name": "Reddit",
@@ -200,7 +199,6 @@ PLATFORM_SIGNATURES: List[Dict[str, Any]] = [
         "exists_code": 200,
         "missing_code": 400,
     },
-
     # --- Gaming & Streaming ---
     {
         "name": "Steam",
@@ -247,7 +245,6 @@ PLATFORM_SIGNATURES: List[Dict[str, Any]] = [
         "exists_code": 200,
         "missing_code": 404,
     },
-
     # --- Creative & Design ---
     {
         "name": "Behance",

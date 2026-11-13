@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, event
 from sqlalchemy.engine import make_url
@@ -22,7 +22,7 @@ SCHEMA_VERSION = 1
 
 
 class Base(DeclarativeBase):
-    type_annotation_map = {Dict[str, Any]: JSON}
+    type_annotation_map: ClassVar[dict[Any, Any]] = {dict[str, Any]: JSON}
 
 
 class InvestigationRow(Base):
@@ -33,10 +33,10 @@ class InvestigationRow(Base):
     target_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     node_count: Mapped[int] = mapped_column(Integer, default=0)
     edge_count: Mapped[int] = mapped_column(Integer, default=0)
-    data: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
 class EntityRow(Base):
@@ -49,7 +49,7 @@ class EntityRow(Base):
     type: Mapped[str] = mapped_column(String(32))
     value: Mapped[str] = mapped_column(String(2048))
     label: Mapped[str] = mapped_column(String(2048))
-    data: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
 
     __table_args__ = (
         Index("ix_entities_type_value", "type", "value"),
@@ -67,7 +67,7 @@ class RelationRow(Base):
     source_id: Mapped[str] = mapped_column(String(64))
     target_id: Mapped[str] = mapped_column(String(64))
     type: Mapped[str] = mapped_column(String(32))
-    data: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
 
 
 class ApiKeyRow(Base):
@@ -81,9 +81,9 @@ class ApiKeyRow(Base):
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     role: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    created_by: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AuditEventRow(Base):
@@ -96,10 +96,10 @@ class AuditEventRow(Base):
     actor_id: Mapped[str] = mapped_column(String(64), index=True)
     actor_name: Mapped[str] = mapped_column(String(128))
     action: Mapped[str] = mapped_column(String(64), index=True)
-    resource: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    resource: Mapped[str | None] = mapped_column(String(256), nullable=True)
     outcome: Mapped[str] = mapped_column(String(16))
-    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    details: Mapped[Dict[str, Any]] = mapped_column(JSON)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON)
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
 
@@ -109,7 +109,7 @@ class Database:
 
     def __init__(self, url: str, echo: bool = False):
         self.url = make_url(url)
-        kwargs: Dict[str, Any] = {"echo": echo, "pool_pre_ping": True}
+        kwargs: dict[str, Any] = {"echo": echo, "pool_pre_ping": True}
         if self.url.get_backend_name() == "sqlite":
             database = self.url.database
             if database and database != ":memory:":
@@ -136,7 +136,7 @@ class Database:
 
 def _sqlite_pragmas(dbapi_conn, _record) -> None:
     cur = dbapi_conn.cursor()
-    cur.execute("PRAGMA foreign_keys=ON")      # enforce ON DELETE CASCADE
-    cur.execute("PRAGMA journal_mode=WAL")     # readers don't block the writer
-    cur.execute("PRAGMA synchronous=NORMAL")   # safe with WAL, much faster
+    cur.execute("PRAGMA foreign_keys=ON")  # enforce ON DELETE CASCADE
+    cur.execute("PRAGMA journal_mode=WAL")  # readers don't block the writer
+    cur.execute("PRAGMA synchronous=NORMAL")  # safe with WAL, much faster
     cur.close()

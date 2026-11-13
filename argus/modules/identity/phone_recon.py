@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import AsyncIterator, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -41,7 +42,7 @@ class PhoneReconModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         raw_phone = entity.value.strip()
         # Normalize: keep plus and digits
         digits_only = re.sub(r"[^\d+]", "", raw_phone)
@@ -59,14 +60,16 @@ class PhoneReconModule(BaseModule):
                 break
 
         if matched_country:
-            national_part = digits_only[len(matched_prefix):]
-            entity.metadata.update({
-                "country": matched_country["country"],
-                "country_code": matched_country["code"],
-                "dial_code": matched_prefix,
-                "national_number": national_part,
-                "e164_formatted": digits_only,
-            })
+            national_part = digits_only[len(matched_prefix) :]
+            entity.metadata.update(
+                {
+                    "country": matched_country["country"],
+                    "country_code": matched_country["code"],
+                    "dial_code": matched_prefix,
+                    "national_number": national_part,
+                    "e164_formatted": digits_only,
+                }
+            )
 
             # Create country/operator entity
             country_entity = Entity.create(

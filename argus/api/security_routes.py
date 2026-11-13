@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
@@ -61,8 +59,8 @@ async def revoke_key(key_id: str, request: Request, principal: Principal = Depen
 async def list_audit_events(
     request: Request,
     limit: int = Query(100, ge=1, le=1000),
-    action: Optional[str] = Query(None, max_length=64),
-    actor_id: Optional[str] = Query(None, max_length=64),
+    action: str | None = Query(None, max_length=64),
+    actor_id: str | None = Query(None, max_length=64),
     _: Principal = Depends(require(Role.ADMIN)),
 ):
     """Most recent audit events first."""

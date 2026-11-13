@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import AsyncIterator, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -26,7 +27,7 @@ class UsernameHunterModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         username = entity.value.strip()
         sem = asyncio.Semaphore(config.concurrency_limit)
 
@@ -34,10 +35,13 @@ class UsernameHunterModule(BaseModule):
             async with sem:
                 check_url = plat["check_url"].format(username)
                 profile_url = plat["url_template"].format(username)
-                headers = plat.get("headers", {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Accept-Language": "en-US,en;q=0.9",
-                })
+                headers = plat.get(
+                    "headers",
+                    {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                )
 
                 try:
                     timeout = aiohttp.ClientTimeout(total=config.timeout_seconds)
@@ -66,11 +70,10 @@ class UsernameHunterModule(BaseModule):
                                 text = (await resp.text(errors="ignore")).strip()
                                 if text and text != "null":
                                     is_found = True
-                        elif check_type == "message_json":
-                            if status == 200:
-                                data = await resp.json()
-                                if plat.get("check_key") in data and data[plat["check_key"]]:
-                                    is_found = True
+                        elif check_type == "message_json" and status == 200:
+                            data = await resp.json()
+                            if plat.get("check_key") in data and data[plat["check_key"]]:
+                                is_found = True
 
                         if is_found:
                             return plat["name"], profile_url, extra_meta
@@ -78,7 +81,7 @@ class UsernameHunterModule(BaseModule):
                 except asyncio.CancelledError:
                     raise
                 except Exception as ex:
-                    logger.debug("Failed probe for %s on %s: %s", username, plat['name'], ex)
+                    logger.debug("Failed probe for %s on %s: %s", username, plat["name"], ex)
                 return None
 
         # Execute all platform probes concurrently

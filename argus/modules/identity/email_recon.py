@@ -5,10 +5,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from typing import AsyncIterator, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
-import dns.resolver
 import dns.asyncresolver
+import dns.resolver
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.modules.base import BaseModule
@@ -16,9 +17,17 @@ from argus.modules.base import BaseModule
 logger = logging.getLogger("argus.module.email_recon")
 
 DISPOSABLE_DOMAINS = {
-    "mailinator.com", "guerrillamail.com", "10minutemail.com", "tempmail.com",
-    "trashmail.com", "yopmail.com", "sharklasers.com", "throwawaymail.com",
-    "dispostable.com", "getairmail.com", "fakemailgenerator.com"
+    "mailinator.com",
+    "guerrillamail.com",
+    "10minutemail.com",
+    "tempmail.com",
+    "trashmail.com",
+    "yopmail.com",
+    "sharklasers.com",
+    "throwawaymail.com",
+    "dispostable.com",
+    "getairmail.com",
+    "fakemailgenerator.com",
 }
 
 
@@ -34,7 +43,7 @@ class EmailReconModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         email = entity.value.strip().lower()
         if not re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
             return
@@ -95,8 +104,8 @@ class EmailReconModule(BaseModule):
             self.report_error("dns:MX", e)
 
         # 4. Check Gravatar Profile via MD5 hash
-        email_hash = hashlib.md5(email.encode("utf-8")).hexdigest()
-        gravatar_url = f"https://www.gravatar.com/avatar/{email_hash}?d=404"
+        # Gravatar's public API is keyed by MD5; this is an identifier, not a security control.
+        email_hash = hashlib.md5(email.encode("utf-8"), usedforsecurity=False).hexdigest()
         gravatar_profile_url = f"https://en.gravatar.com/{email_hash}.json"
 
         try:

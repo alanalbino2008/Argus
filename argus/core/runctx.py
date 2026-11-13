@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 MAX_RECORDED_ERRORS = 10
 
@@ -32,7 +31,7 @@ class ModuleRunReport:
     source_ok: int = 0
     source_errors: int = 0
     items: int = 0
-    errors: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     def record_error(self, source: str, error: object) -> None:
         self.source_errors += 1
@@ -53,7 +52,7 @@ class ModuleRunReport:
         return "failed"
 
 
-current_run: ContextVar[Optional[ModuleRunReport]] = ContextVar("argus_module_run", default=None)
+current_run: ContextVar[ModuleRunReport | None] = ContextVar("argus_module_run", default=None)
 
 
 def report_error(source: str, error: object) -> None:

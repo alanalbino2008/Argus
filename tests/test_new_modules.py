@@ -1,8 +1,7 @@
 """Tests for new modules: Shodan InternetDB, GitHub hunter, and phone recon."""
 
-import pytest
 from argus.cli.console import detect_target_type
-from argus.core.models import Entity, EntityType
+from argus.core.models import EntityType
 from argus.modules.identity.phone_recon import PhoneReconModule
 from argus.modules.infrastructure.shodan_internetdb import ShodanInternetDbModule
 

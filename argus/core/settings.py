@@ -9,7 +9,6 @@ variable or a local ``.env`` file, e.g.::
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import List, Optional
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,11 +26,13 @@ class Settings(BaseSettings):
     ws_queue_size: int = Field(default=2000, ge=10, description="Max buffered messages per WebSocket client")
 
     # --- Security (Phase 3) ---------------------------------------------------------
-    auth_enabled: bool = Field(default=True, description="Require API keys. Disable ONLY for isolated local development.")
-    bootstrap_admin_key: Optional[SecretStr] = Field(
+    auth_enabled: bool = Field(
+        default=True, description="Require API keys. Disable ONLY for isolated local development."
+    )
+    bootstrap_admin_key: SecretStr | None = Field(
         default=None, description="Admin key to install on first start (otherwise one is generated and logged once)"
     )
-    cors_origins: List[str] = Field(
+    cors_origins: list[str] = Field(
         default_factory=list, description='Extra browser origins allowed to call the API, e.g. ["https://soc.example"]'
     )
     allow_private_targets: bool = Field(

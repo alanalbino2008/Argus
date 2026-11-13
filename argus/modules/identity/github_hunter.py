@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import AsyncIterator, Set, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -25,7 +26,7 @@ class GitHubHunterModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         username = entity.value.strip()
         headers = {
             "Accept": "application/vnd.github.v3+json",
@@ -129,7 +130,7 @@ class GitHubHunterModule(BaseModule):
 
         # 2. Public Events & Commit Email Unmasking (Legendary OSINT technique)
         events_url = f"https://api.github.com/users/{username}/events/public"
-        found_emails: Set[str] = set()
+        found_emails: set[str] = set()
 
         try:
             async with session.get(events_url, headers=headers, timeout=timeout) as resp:
@@ -143,9 +144,12 @@ class GitHubHunterModule(BaseModule):
                                     author = commit.get("author", {})
                                     email = author.get("email", "").strip().lower()
                                     # Ignore GitHub anonymous noreply emails
-                                    if email and "noreply.github.com" not in email:
-                                        if re.match(r"^[^@]+@[^@]+\.[^@]+$", email):
-                                            found_emails.add(email)
+                                    if (
+                                        email
+                                        and "noreply.github.com" not in email
+                                        and re.match(r"^[^@]+@[^@]+\.[^@]+$", email)
+                                    ):
+                                        found_emails.add(email)
         except Exception as e:
             logger.debug("GitHub events mining failed for %s: %s", username, e)
 

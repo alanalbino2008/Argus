@@ -30,6 +30,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.30",
     "aiosqlite>=0.20.0",
     "pydantic-settings>=2.2.0",
+    "cryptography>=42.0.0",
 ]
 
 [project.optional-dependencies]
@@ -43,3 +44,41 @@ argus = "argus.cli.console:cli_entrypoint"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+# ----------------------------------------------------------------------------- quality tooling
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["argus/web/vendor"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F",   # pycodestyle + pyflakes
+    "I",             # import sorting
+    "B",             # bugbear: likely bugs
+    "UP",            # modern Python syntax
+    "SIM", "C4", "PERF", "FLY",
+    "ASYNC",         # asyncio pitfalls (blocking calls in coroutines...)
+    "S",             # bandit: security smells
+    "BLE",           # blind `except Exception`
+    "RUF",
+    "PT",            # pytest style
+]
+ignore = [
+    "B008",    # FastAPI's Depends()/Query() in argument defaults is the framework's idiom
+    "S311",    # `random` is used for retry jitter, never for security
+    "E501",    # long lines are handled by the formatter where it can
+]
+
+[tool.ruff.lint.per-file-ignores]
+# asserts, fake secrets, compound assertions and fake-module class attributes are fine in tests
+"tests/**" = ["S101", "S104", "S105", "S106", "BLE001", "ASYNC230", "PT018", "RUF012"]
+# Collectors deliberately isolate each data source's failure (reported via report_error),
+# and declare their capabilities as class attributes.
+"argus/modules/**" = ["BLE001", "RUF012"]
+
+[tool.ruff.lint.flake8-pytest-style]
+parametrize-names-type = "csv"
+
+[tool.ruff.format]
+quote-style = "double"

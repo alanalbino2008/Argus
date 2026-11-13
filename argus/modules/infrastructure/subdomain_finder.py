@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import AsyncIterator, Set, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -25,9 +26,9 @@ class SubdomainFinderModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         domain = entity.value.strip().lower()
-        subdomains: Set[str] = set()
+        subdomains: set[str] = set()
 
         # 1. Certificate Transparency via crt.sh
         crt_url = f"https://crt.sh/?q=%.{domain}&output=json"
@@ -44,10 +45,12 @@ class SubdomainFinderModule(BaseModule):
                             # May contain multiline entries
                             for sub in name_val.split("\n"):
                                 clean_sub = sub.strip().lower().lstrip("*.")
-                                if clean_sub.endswith(f".{domain}") and clean_sub != domain:
-                                    # Simple regex validation
-                                    if re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", clean_sub):
-                                        subdomains.add(clean_sub)
+                                if (
+                                    clean_sub.endswith(f".{domain}")
+                                    and clean_sub != domain
+                                    and re.match(r"^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", clean_sub)
+                                ):
+                                    subdomains.add(clean_sub)
         except Exception as e:
             logger.debug("crt.sh passive lookup failed for %s: %s", domain, e)
 

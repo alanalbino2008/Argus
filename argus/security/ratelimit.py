@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections import defaultdict, deque
 import time
-from typing import Deque, Dict
+from collections import defaultdict, deque
 
 
 class SlidingWindowLimiter:
@@ -16,7 +15,7 @@ class SlidingWindowLimiter:
     def __init__(self, limit: int, window: float):
         self.limit = limit
         self.window = window
-        self._events: Dict[str, Deque[float]] = defaultdict(deque)
+        self._events: dict[str, deque[float]] = defaultdict(deque)
 
     def hit(self, key: str) -> bool:
         """Record an attempt. Returns False (and records nothing) if over the limit."""

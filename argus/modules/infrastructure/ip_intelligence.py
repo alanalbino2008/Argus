@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import ipaddress
 import logging
-from typing import AsyncIterator, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
-import dns.resolver
 import dns.asyncresolver
+import dns.resolver
 import dns.reversename
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -28,7 +29,7 @@ class IpIntelligenceModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         ip_str = entity.value.strip()
 
         # Check if valid and not private / bogon
@@ -79,16 +80,18 @@ class IpIntelligenceModule(BaseModule):
                 if resp.status == 200:
                     data = await resp.json()
                     if data.get("status") == "success":
-                        entity.metadata.update({
-                            "country": data.get("country"),
-                            "countryCode": data.get("countryCode"),
-                            "city": data.get("city"),
-                            "lat": data.get("lat"),
-                            "lon": data.get("lon"),
-                            "isp": data.get("isp"),
-                            "org": data.get("org"),
-                            "as": data.get("as"),
-                        })
+                        entity.metadata.update(
+                            {
+                                "country": data.get("country"),
+                                "countryCode": data.get("countryCode"),
+                                "city": data.get("city"),
+                                "lat": data.get("lat"),
+                                "lon": data.get("lon"),
+                                "isp": data.get("isp"),
+                                "org": data.get("org"),
+                                "as": data.get("as"),
+                            }
+                        )
 
                         # Yield ASN entity
                         as_full = data.get("as", "")

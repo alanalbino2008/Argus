@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -46,7 +47,7 @@ class ShodanInternetDbModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         ip = entity.value.strip()
 
         # Skip private IPs

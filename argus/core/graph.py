@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
+
 import networkx as nx
 
-from argus.core.models import Entity, EntityType, Relation, RelationType
+from argus.core.models import Entity, Relation
 
 logger = logging.getLogger("argus.graph")
 
@@ -24,9 +24,9 @@ class IntelligenceGraph:
     def __init__(self, investigation_id: str = "default"):
         self.investigation_id = investigation_id
         self._graph = nx.MultiDiGraph()
-        self._entities: Dict[str, Entity] = {}
-        self._relations: Dict[str, Relation] = {}
-        self._seed_ids: Set[str] = set()
+        self._entities: dict[str, Entity] = {}
+        self._relations: dict[str, Relation] = {}
+        self._seed_ids: set[str] = set()
 
     @property
     def node_count(self) -> int:
@@ -66,11 +66,11 @@ class IntelligenceGraph:
 
         return is_new
 
-    def get_entity(self, entity_id: str) -> Optional[Entity]:
+    def get_entity(self, entity_id: str) -> Entity | None:
         """Retrieve an entity by its unique ID."""
         return self._entities.get(entity_id)
 
-    def get_all_entities(self) -> List[Entity]:
+    def get_all_entities(self) -> list[Entity]:
         """Return all entities in the graph."""
         return list(self._entities.values())
 
@@ -101,18 +101,18 @@ class IntelligenceGraph:
         )
         return True
 
-    def get_all_relations(self) -> List[Relation]:
+    def get_all_relations(self) -> list[Relation]:
         """Return all relations in the graph."""
         return list(self._relations.values())
 
-    def get_neighbors(self, entity_id: str) -> List[Entity]:
+    def get_neighbors(self, entity_id: str) -> list[Entity]:
         """Get all entities directly connected to this entity (both in and out)."""
         if entity_id not in self._graph:
             return []
         neighbor_ids = set(self._graph.predecessors(entity_id)) | set(self._graph.successors(entity_id))
         return [self._entities[nid] for nid in neighbor_ids if nid in self._entities]
 
-    def compute_analytics(self) -> Dict[str, Any]:
+    def compute_analytics(self) -> dict[str, Any]:
         """Calculate graph metrics: degree centrality, hubs, and clustering."""
         if self.node_count == 0:
             return {
@@ -124,7 +124,7 @@ class IntelligenceGraph:
             }
 
         # Entities distribution by type
-        by_type: Dict[str, int] = {}
+        by_type: dict[str, int] = {}
         for entity in self._entities.values():
             t = entity.type.value
             by_type[t] = by_type.get(t, 0) + 1
@@ -137,12 +137,14 @@ class IntelligenceGraph:
         for node_id, degree in sorted_nodes[:8]:
             entity = self._entities.get(node_id)
             if entity:
-                top_hubs.append({
-                    "id": entity.id,
-                    "label": entity.label,
-                    "type": entity.type.value,
-                    "degree": degree,
-                })
+                top_hubs.append(
+                    {
+                        "id": entity.id,
+                        "label": entity.label,
+                        "type": entity.type.value,
+                        "degree": degree,
+                    }
+                )
 
         density = nx.density(self._graph) if self.node_count > 1 else 0.0
 
@@ -154,9 +156,9 @@ class IntelligenceGraph:
             "density": round(density, 4),
         }
 
-    def to_cytoscape_elements(self) -> List[Dict[str, Any]]:
+    def to_cytoscape_elements(self) -> list[dict[str, Any]]:
         """Serialize graph to Cytoscape.js format for interactive frontend rendering."""
-        elements: List[Dict[str, Any]] = []
+        elements: list[dict[str, Any]] = []
 
         # Nodes
         for entity_id, entity in self._entities.items():
@@ -176,7 +178,7 @@ class IntelligenceGraph:
             elements.append({"group": "nodes", "data": node_data})
 
         # Edges
-        for rel_id, rel in self._relations.items():
+        for rel in self._relations.values():
             edge_data = {
                 "id": rel.id,
                 "source": rel.source_id,
@@ -189,7 +191,7 @@ class IntelligenceGraph:
 
         return elements
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Export full graph as JSON-serializable dictionary."""
         return {
             "investigation_id": self.investigation_id,
@@ -208,12 +210,14 @@ class IntelligenceGraph:
             src = self._entities.get(rel.source_id)
             tgt = self._entities.get(rel.target_id)
             if src and tgt:
-                writer.writerow([
-                    src.type.value,
-                    src.value,
-                    rel.type.value,
-                    tgt.type.value,
-                    tgt.value,
-                ])
+                writer.writerow(
+                    [
+                        src.type.value,
+                        src.value,
+                        rel.type.value,
+                        tgt.type.value,
+                        tgt.value,
+                    ]
+                )
 
         return output.getvalue()

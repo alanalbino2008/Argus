@@ -18,14 +18,14 @@ context manager), so modules can switch between the two without changes.
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-from dataclasses import dataclass, field
-from email.utils import parsedate_to_datetime
-from datetime import datetime, timezone
 import logging
 import random
 import time
-from typing import Any, Dict, Optional
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Any
 from urllib.parse import urlsplit
 
 import aiohttp
@@ -53,9 +53,9 @@ class HttpStats:
     throttled: int = 0
     failures: int = 0
     blocked: int = 0
-    status_counts: Dict[int, int] = field(default_factory=lambda: defaultdict(int))
+    status_counts: dict[int, int] = field(default_factory=lambda: defaultdict(int))
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "requests": self.requests,
             "retries": self.retries,
@@ -72,10 +72,10 @@ class HostRateLimiter:
     def __init__(self, min_interval: float, per_host_concurrency: int):
         self.min_interval = max(0.0, min_interval)
         self.per_host_concurrency = max(1, per_host_concurrency)
-        self._locks: Dict[str, asyncio.Lock] = {}
-        self._semaphores: Dict[str, asyncio.Semaphore] = {}
-        self._next_slot: Dict[str, float] = {}
-        self._penalty_until: Dict[str, float] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._semaphores: dict[str, asyncio.Semaphore] = {}
+        self._next_slot: dict[str, float] = {}
+        self._penalty_until: dict[str, float] = {}
 
     def semaphore(self, host: str) -> asyncio.Semaphore:
         if host not in self._semaphores:
@@ -100,7 +100,7 @@ class HostRateLimiter:
             self._penalty_until[host] = until
 
 
-def _parse_retry_after(value: Optional[str]) -> Optional[float]:
+def _parse_retry_after(value: str | None) -> float | None:
     if not value:
         return None
     value = value.strip()
@@ -118,12 +118,12 @@ def _parse_retry_after(value: Optional[str]) -> Optional[float]:
 class _RetryingRequest:
     """Async context manager returned by ``HttpClient.request``."""
 
-    def __init__(self, client: "HttpClient", method: str, url: str, kwargs: Dict[str, Any]):
+    def __init__(self, client: HttpClient, method: str, url: str, kwargs: dict[str, Any]):
         self._client = client
         self._method = method
         self._url = url
         self._kwargs = kwargs
-        self._response: Optional[aiohttp.ClientResponse] = None
+        self._response: aiohttp.ClientResponse | None = None
 
     async def __aenter__(self) -> aiohttp.ClientResponse:
         self._response = await self._client._send(self._method, self._url, self._kwargs)
@@ -178,10 +178,10 @@ class HttpClient:
 
     # internals ---------------------------------------------------------------
     def _backoff(self, attempt: int) -> float:
-        exp = min(self.backoff_cap, self.backoff_base * (2 ** attempt))
+        exp = min(self.backoff_cap, self.backoff_base * (2**attempt))
         return random.uniform(0, exp)  # "full jitter" (AWS architecture blog)
 
-    async def _send(self, method: str, url: str, kwargs: Dict[str, Any]) -> aiohttp.ClientResponse:
+    async def _send(self, method: str, url: str, kwargs: dict[str, Any]) -> aiohttp.ClientResponse:
         host = urlsplit(url).hostname or "unknown"
         headers = dict(kwargs.pop("headers", None) or {})
         headers.setdefault("User-Agent", DEFAULT_USER_AGENT)
@@ -213,7 +213,7 @@ class HttpClient:
                         self.stats.failures += 1
                         report_error(host, exc)
                         raise
-                    error: Optional[BaseException] = exc
+                    error: BaseException | None = exc
                     resp = None
                 except Exception as exc:
                     # Non-transient (TLS failure, proxy refusal, bad URL...): count and surface.

@@ -3,8 +3,6 @@
 import asyncio
 import time
 
-import pytest
-
 from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus, EventType
 from argus.core.models import Entity, EntityType, InvestigationStatus, Relation, RelationType, ScanConfig
@@ -13,8 +11,11 @@ from argus.modules.base import BaseModule
 
 def child(parent: Entity, value: str, module: str) -> Entity:
     return Entity.create(
-        entity_type=EntityType.SUBDOMAIN, value=value, label=value,
-        source_module=module, depth=parent.depth + 1,
+        entity_type=EntityType.SUBDOMAIN,
+        value=value,
+        label=value,
+        source_module=module,
+        depth=parent.depth + 1,
     )
 
 
@@ -113,8 +114,10 @@ async def test_module_timeout_does_not_stall_scan():
 async def test_circuit_breaker_disables_flaky_module():
     failing = FailingModule()
     engine = make_engine(
-        [FanOutModule(fan=6), failing], max_depth=2,
-        concurrency_limit=1, circuit_breaker_threshold=2,
+        [FanOutModule(fan=6), failing],
+        max_depth=2,
+        concurrency_limit=1,
+        circuit_breaker_threshold=2,
     )
     await engine.start()
     assert failing.calls == 2

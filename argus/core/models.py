@@ -9,12 +9,14 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class EntityType(str, Enum):
     """Supported entity categories in the Argus knowledge graph."""
+
     DOMAIN = "domain"
     SUBDOMAIN = "subdomain"
     IP_ADDRESS = "ip_address"
@@ -35,6 +37,7 @@ class EntityType(str, Enum):
 
 class RelationType(str, Enum):
     """Semantic relation types between entities."""
+
     RESOLVES_TO = "RESOLVES_TO"
     SUBDOMAIN_OF = "SUBDOMAIN_OF"
     HOSTED_ON = "HOSTED_ON"
@@ -59,11 +62,12 @@ def generate_entity_id(entity_type: EntityType, value: str) -> str:
 
 class Entity(BaseModel):
     """Node in the intelligence graph."""
+
     id: str = Field(description="Deterministic unique identifier")
     type: EntityType = Field(description="Category of intelligence entity")
     value: str = Field(description="Primary value / name / identifier")
     label: str = Field(description="Human-readable label for graph display")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Arbitrary enriched attributes")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Arbitrary enriched attributes")
     first_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     source_module: str = Field(default="core", description="Identifier of the module that discovered this entity")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Confidence score of entity validity")
@@ -74,8 +78,8 @@ class Entity(BaseModel):
         cls,
         entity_type: EntityType,
         value: str,
-        label: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        label: str | None = None,
+        metadata: dict[str, Any] | None = None,
         source_module: str = "core",
         confidence: float = 1.0,
         depth: int = 0,
@@ -98,12 +102,13 @@ class Entity(BaseModel):
 
 class Relation(BaseModel):
     """Directed edge between two entities in the intelligence graph."""
+
     id: str = Field(description="Deterministic edge identifier")
     source_id: str = Field(description="Origin entity ID")
     target_id: str = Field(description="Destination entity ID")
     type: RelationType = Field(description="Semantic link type")
     label: str = Field(description="Display label on edge")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     discovered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -113,8 +118,8 @@ class Relation(BaseModel):
         source_id: str,
         target_id: str,
         rel_type: RelationType,
-        label: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        label: str | None = None,
+        metadata: dict[str, Any] | None = None,
         confidence: float = 1.0,
     ) -> Relation:
         rel_label = label or rel_type.value
@@ -133,19 +138,36 @@ class Relation(BaseModel):
 
 class ScanConfig(BaseModel):
     """Configuration passed to the Argus engine to execute an investigation."""
+
     target: str = Field(description="Target seed value (e.g., domain, username, email, IP)")
     target_type: EntityType = Field(description="Entity type of the target seed")
     max_depth: int = Field(default=2, ge=0, le=4, description="Maximum recursive enrichment hops")
-    enabled_modules: Optional[List[str]] = Field(default=None, description="Subset of module names to execute, or None for all")
+    enabled_modules: list[str] | None = Field(
+        default=None, description="Subset of module names to execute, or None for all"
+    )
     concurrency_limit: int = Field(default=15, ge=1, le=50, description="Max concurrent async workers")
-    rate_limit_delay: float = Field(default=0.05, ge=0.0, description="Sleep interval between queries per worker in seconds")
+    rate_limit_delay: float = Field(
+        default=0.05, ge=0.0, description="Sleep interval between queries per worker in seconds"
+    )
     timeout_seconds: float = Field(default=12.0, ge=1.0, description="Network timeout per request")
-    module_timeout_seconds: float = Field(default=120.0, ge=1.0, description="Hard wall-clock limit for one module run on one entity")
-    max_retries: int = Field(default=3, ge=0, le=10, description="Retries for transient HTTP failures (429/5xx/connection errors)")
-    per_host_concurrency: int = Field(default=6, ge=1, le=50, description="Max simultaneous requests to any single host")
-    max_entities: int = Field(default=2000, ge=1, le=100000, description="Safety cap on total graph nodes per investigation")
-    allow_private_targets: bool = Field(default=False, description="Permit connections to private/internal networks (authorised internal tests only)")
-    circuit_breaker_threshold: int = Field(default=5, ge=1, description="Consecutive failures before a module is disabled for the rest of the scan")
+    module_timeout_seconds: float = Field(
+        default=120.0, ge=1.0, description="Hard wall-clock limit for one module run on one entity"
+    )
+    max_retries: int = Field(
+        default=3, ge=0, le=10, description="Retries for transient HTTP failures (429/5xx/connection errors)"
+    )
+    per_host_concurrency: int = Field(
+        default=6, ge=1, le=50, description="Max simultaneous requests to any single host"
+    )
+    max_entities: int = Field(
+        default=2000, ge=1, le=100000, description="Safety cap on total graph nodes per investigation"
+    )
+    allow_private_targets: bool = Field(
+        default=False, description="Permit connections to private/internal networks (authorised internal tests only)"
+    )
+    circuit_breaker_threshold: int = Field(
+        default=5, ge=1, description="Consecutive failures before a module is disabled for the rest of the scan"
+    )
 
 
 class InvestigationStatus(str, Enum):
@@ -159,28 +181,30 @@ class InvestigationStatus(str, Enum):
 
 class Investigation(BaseModel):
     """State of an ongoing or completed investigation."""
+
     id: str
     name: str
     config: ScanConfig
     status: InvestigationStatus = InvestigationStatus.INITIALIZING
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
     node_count: int = 0
     edge_count: int = 0
-    errors: List[str] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    module_stats: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
-    http_stats: Dict[str, Any] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    module_stats: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    http_stats: dict[str, Any] = Field(default_factory=dict)
     truncated: bool = False
-    analytics: Optional[Dict[str, Any]] = None
-    created_by: Optional[str] = None
-    purpose: Optional[str] = None
+    analytics: dict[str, Any] | None = None
+    created_by: str | None = None
+    purpose: str | None = None
 
 
 class SystemMetrics(BaseModel):
     """Real-time performance and graph analytics metrics."""
+
     total_nodes: int = 0
     total_edges: int = 0
-    entities_by_type: Dict[str, int] = Field(default_factory=dict)
+    entities_by_type: dict[str, int] = Field(default_factory=dict)
     active_tasks: int = 0
     completed_modules: int = 0

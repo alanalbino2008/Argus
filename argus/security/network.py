@@ -26,7 +26,8 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
-from typing import Any, Iterable, List, Optional, Set, Union
+from collections.abc import Iterable
+from typing import Any
 from urllib.parse import urlsplit
 from urllib.request import getproxies
 
@@ -35,11 +36,18 @@ from aiohttp.resolver import DefaultResolver
 
 from argus.core.models import EntityType
 
-IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
 
 # Hostnames that never resolve to the public internet.
 INTERNAL_SUFFIXES = (
-    "localhost", ".localhost", ".local", ".internal", ".intranet", ".corp", ".home.arpa", ".lan",
+    "localhost",
+    ".localhost",
+    ".local",
+    ".internal",
+    ".intranet",
+    ".corp",
+    ".home.arpa",
+    ".lan",
 )
 
 
@@ -47,7 +55,7 @@ class BlockedDestinationError(OSError):
     """Raised when a connection would reach a private, loopback or otherwise non-public address."""
 
 
-def is_public_ip(ip: Union[str, IPAddress]) -> bool:
+def is_public_ip(ip: str | IPAddress) -> bool:
     """True only for globally routable unicast addresses."""
     addr = ipaddress.ip_address(ip) if isinstance(ip, str) else ip
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
@@ -55,7 +63,7 @@ def is_public_ip(ip: Union[str, IPAddress]) -> bool:
     return addr.is_global and not addr.is_multicast
 
 
-def _as_ip(host: str) -> Optional[IPAddress]:
+def _as_ip(host: str) -> IPAddress | None:
     try:
         return ipaddress.ip_address(host.strip("[]"))
     except ValueError:
@@ -77,7 +85,7 @@ def assert_public_host(host: str) -> None:
         raise BlockedDestinationError(f"Destination {host} is an internal hostname")
 
 
-async def resolve_public(host: str, port: int) -> List[str]:
+async def resolve_public(host: str, port: int) -> list[str]:
     """Resolve ``host`` and return only public addresses (for raw-socket modules)."""
     ip = _as_ip(host)
     if ip is not None:
@@ -94,12 +102,12 @@ async def resolve_public(host: str, port: int) -> List[str]:
 class GuardedResolver(AbstractResolver):
     """aiohttp resolver that drops every non-public address after DNS resolution."""
 
-    def __init__(self, inner: Optional[AbstractResolver] = None, trusted_hosts: Iterable[str] = ()):
+    def __init__(self, inner: AbstractResolver | None = None, trusted_hosts: Iterable[str] = ()):
         self._inner = inner or DefaultResolver()
         # The operator-configured outbound proxy may legitimately be internal.
         self._trusted = {h.lower() for h in trusted_hosts}
 
-    async def resolve(self, host: str, port: int = 0, family: int = socket.AF_INET) -> List[Any]:
+    async def resolve(self, host: str, port: int = 0, family: int = socket.AF_INET) -> list[Any]:
         if host.lower() in self._trusted:
             return await self._inner.resolve(host, port, family)
         assert_public_host(host)
@@ -113,7 +121,7 @@ class GuardedResolver(AbstractResolver):
         await self._inner.close()
 
 
-def configured_proxy_hosts() -> Set[str]:
+def configured_proxy_hosts() -> set[str]:
     """Hostnames of proxies from HTTP(S)_PROXY / ALL_PROXY (trusted by the resolver)."""
     hosts = set()
     for scheme, url in getproxies().items():

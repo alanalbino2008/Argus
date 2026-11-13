@@ -7,12 +7,12 @@ import asyncio
 import ipaddress
 import re
 import sys
-from typing import Optional
+from pathlib import Path
+
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-from rich.text import Text
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, EventType, event_bus
@@ -23,9 +23,9 @@ console = Console()
 BANNER = r"""[bold cyan]
     ___     ____     ______  __  __   _____
    /   |   / __ \   / ____/ / / / /  / ___/
-  / /| |  / /_/ /  / / __  / / / /   \__ \ 
- / ___ | / _, _/  / /_/ / / /_/ /   ___/ / 
-/_/  |_|/_/ |_|   \____/  \____/   /____/  
+  / /| |  / /_/ /  / / __  / / / /   \__ \
+ / ___ | / _, _/  / /_/ / / /_/ /   ___/ /
+/_/  |_|/_/ |_|   \____/  \____/   /____/
 [/bold cyan]
 [dim cyan]» Next-Generation OSINT & Graph Link Analysis Platform «[/dim cyan]
 """
@@ -60,37 +60,39 @@ def detect_target_type(target: str) -> EntityType:
 
 async def run_cli_scan(
     target: str,
-    entity_type_str: Optional[str] = None,
+    entity_type_str: str | None = None,
     max_depth: int = 2,
-    enabled_modules: Optional[list] = None,
-    export_json: Optional[str] = None,
-    export_csv: Optional[str] = None,
+    enabled_modules: list | None = None,
+    export_json: str | None = None,
+    export_csv: str | None = None,
     allow_private: bool = False,
 ):
     """Run an investigation directly from the terminal with real-time Rich UI."""
     console.print(BANNER)
 
     # Detect entity type if not explicitly supplied
-    if entity_type_str:
-        entity_type = EntityType(entity_type_str.lower())
-    else:
-        entity_type = detect_target_type(target)
+    entity_type = EntityType(entity_type_str.lower()) if entity_type_str else detect_target_type(target)
 
     if not allow_private:
         from argus.security.network import validate_scan_target
+
         try:
             validate_scan_target(target, entity_type)
         except ValueError as exc:
-            console.print(f"[bold red]✗ {exc}[/bold red]\n[dim]Use --allow-private only for authorised internal assessments.[/dim]")
+            console.print(
+                f"[bold red]✗ {exc}[/bold red]\n[dim]Use --allow-private only for authorised internal assessments.[/dim]"
+            )
             sys.exit(2)
 
-    console.print(Panel(
-        f"[bold white]Target:[/bold white] [green]{target}[/green]   "
-        f"[bold white]Detected Type:[/bold white] [yellow]{entity_type.value.upper()}[/yellow]   "
-        f"[bold white]Max Recursion Depth:[/bold white] [magenta]{max_depth}[/magenta]",
-        title="[bold cyan]Investigation Parameters[/bold cyan]",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold white]Target:[/bold white] [green]{target}[/green]   "
+            f"[bold white]Detected Type:[/bold white] [yellow]{entity_type.value.upper()}[/yellow]   "
+            f"[bold white]Max Recursion Depth:[/bold white] [magenta]{max_depth}[/magenta]",
+            title="[bold cyan]Investigation Parameters[/bold cyan]",
+            border_style="cyan",
+        )
+    )
 
     config = ScanConfig(
         target=target,
@@ -111,12 +113,9 @@ async def run_cli_scan(
             etype = data.get("type", "entity").upper()
             label = data.get("label", "")
             mod = event.data.get("source_module", "")
-            console.print(f"[dim]{event.timestamp.strftime('%H:%M:%S')}[/dim] [bold green]+[/bold green] [{etype}] [white]{label}[/white] [dim](via {mod})[/dim]")
-        elif event.type == EventType.RELATION_DISCOVERED:
-            data = event.data.get("relation", {})
-            rtype = data.get("type", "LINK")
-            lbl = data.get("label", "")
-            # console.print(f"  [cyan]↳ {rtype}[/cyan] [dim]{lbl}[/dim]")
+            console.print(
+                f"[dim]{event.timestamp.strftime('%H:%M:%S')}[/dim] [bold green]+[/bold green] [{etype}] [white]{label}[/white] [dim](via {mod})[/dim]"
+            )
 
     event_bus.subscribe_all(cli_event_listener)
 
@@ -163,16 +162,18 @@ async def run_cli_scan(
     # Exports
     if export_json:
         import json
-        with open(export_json, "w", encoding="utf-8") as f:
-            json.dump(graph.to_dict(), f, indent=2)
+
+        # Write off the event loop: file I/O blocks.
+        await asyncio.to_thread(Path(export_json).write_text, json.dumps(graph.to_dict(), indent=2), "utf-8")
         console.print(f"\n[green]✓ Graph exported to JSON:[/green] {export_json}")
 
     if export_csv:
-        with open(export_csv, "w", encoding="utf-8") as f:
-            f.write(graph.to_maltego_csv())
+        await asyncio.to_thread(Path(export_csv).write_text, graph.to_maltego_csv(), "utf-8")
         console.print(f"[green]✓ Maltego CSV exported to:[/green] {export_csv}")
 
-    console.print(f"\n[bold green]Done.[/bold green] Discovered [bold]{graph.node_count}[/bold] entities and [bold]{graph.edge_count}[/bold] relationships.")
+    console.print(
+        f"\n[bold green]Done.[/bold green] Discovered [bold]{graph.node_count}[/bold] entities and [bold]{graph.edge_count}[/bold] relationships."
+    )
 
 
 async def create_api_key_cli(name: str, role: str) -> None:
@@ -186,13 +187,18 @@ async def create_api_key_cli(name: str, role: str) -> None:
     try:
         await db.create_all()
         record, key = await ApiKeyRepository(db).create(name, Role(role), created_by="cli")
-        await AuditLog(db).record(SYSTEM, "key.create", record["id"], details={"name": name, "role": role, "via": "cli"})
+        await AuditLog(db).record(
+            SYSTEM, "key.create", record["id"], details={"name": name, "role": role, "via": "cli"}
+        )
     finally:
         await db.dispose()
-    console.print(Panel(
-        f"[bold white]{key}[/bold white]\n\n[dim]id {record['id']} · role {role} · shown once, store it securely[/dim]",
-        title=f"[bold green]API key created: {name}[/bold green]", border_style="green",
-    ))
+    console.print(
+        Panel(
+            f"[bold white]{key}[/bold white]\n\n[dim]id {record['id']} · role {role} · shown once, store it securely[/dim]",
+            title=f"[bold green]API key created: {name}[/bold green]",
+            border_style="green",
+        )
+    )
 
 
 def cli_entrypoint():
@@ -210,12 +216,20 @@ def cli_entrypoint():
     parser.add_argument("--serve", action="store_true", help="Launch the interactive Web Dashboard & API server")
     parser.add_argument("--port", type=int, default=8000, help="Web server port (default: 8000)")
     parser.add_argument("--host", default="127.0.0.1", help="Web server host (default: 127.0.0.1)")
-    parser.add_argument("--allow-private", action="store_true",
-                        help="Permit private/internal targets (authorised internal assessments only)")
-    parser.add_argument("--create-api-key", metavar="NAME",
-                        help="Create an API key in the configured database and print it once")
-    parser.add_argument("--role", choices=["viewer", "analyst", "admin"], default="analyst",
-                        help="Role for --create-api-key (default: analyst)")
+    parser.add_argument(
+        "--allow-private",
+        action="store_true",
+        help="Permit private/internal targets (authorised internal assessments only)",
+    )
+    parser.add_argument(
+        "--create-api-key", metavar="NAME", help="Create an API key in the configured database and print it once"
+    )
+    parser.add_argument(
+        "--role",
+        choices=["viewer", "analyst", "admin"],
+        default="analyst",
+        help="Role for --create-api-key (default: analyst)",
+    )
 
     args = parser.parse_args()
 
@@ -225,9 +239,11 @@ def cli_entrypoint():
 
     if args.serve or (not args.target and "--serve" in sys.argv):
         import uvicorn
-        from argus.api.server import app
+
         console.print(BANNER)
-        console.print(f"[bold cyan]Starting Argus Web Interface & Graph Server on http://{args.host}:{args.port}[/bold cyan]")
+        console.print(
+            f"[bold cyan]Starting Argus Web Interface & Graph Server on http://{args.host}:{args.port}[/bold cyan]"
+        )
         uvicorn.run("argus.api.server:app", host=args.host, port=args.port, reload=False)
         return
 
@@ -236,15 +252,17 @@ def cli_entrypoint():
         sys.exit(1)
 
     mods = [m.strip() for m in args.modules.split(",")] if args.modules else None
-    asyncio.run(run_cli_scan(
-        target=args.target,
-        entity_type_str=args.type,
-        max_depth=args.depth,
-        enabled_modules=mods,
-        export_json=args.export_json,
-        export_csv=args.export_csv,
-        allow_private=args.allow_private,
-    ))
+    asyncio.run(
+        run_cli_scan(
+            target=args.target,
+            entity_type_str=args.type,
+            max_depth=args.depth,
+            enabled_modules=mods,
+            export_json=args.export_json,
+            export_csv=args.export_csv,
+            allow_private=args.allow_private,
+        )
+    )
 
 
 if __name__ == "__main__":

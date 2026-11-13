@@ -8,18 +8,7 @@ from starlette.requests import Request
 # Every script is served by Argus itself (Cytoscape is vendored), so scripts are locked
 # to 'self': even if an XSS bug slipped through, injected <script> or inline handlers
 # would be refused by the browser. Inline *styles* remain allowed (used by the UI markup).
-CONTENT_SECURITY_POLICY = "; ".join([
-    "default-src 'self'",
-    "script-src 'self'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: blob:",
-    "connect-src 'self'",
-    "object-src 'none'",
-    "base-uri 'none'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-])
+CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
 # Swagger/ReDoc pages load their own CDN assets and contain no investigation data.
 CSP_EXEMPT_PREFIXES = ("/docs", "/redoc")

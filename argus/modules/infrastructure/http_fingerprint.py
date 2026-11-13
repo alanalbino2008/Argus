@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator, Dict, List, Tuple, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -33,7 +34,7 @@ class HttpFingerprintModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         target = entity.value.strip()
         protocol = "http" if entity.type == EntityType.IP_ADDRESS else "https"
         url = f"{protocol}://{target}"
@@ -47,7 +48,7 @@ class HttpFingerprintModule(BaseModule):
             timeout = aiohttp.ClientTimeout(total=config.timeout_seconds)
             async with session.get(url, headers=headers, timeout=timeout, allow_redirects=True, ssl=False) as resp:
                 resp_headers = {k.lower(): v for k, v in resp.headers.items()}
-                tech_stack: List[Tuple[str, str]] = []  # (Tech Name, Category)
+                tech_stack: list[tuple[str, str]] = []  # (Tech Name, Category)
 
                 # 1. Server Header
                 server = resp_headers.get("server")

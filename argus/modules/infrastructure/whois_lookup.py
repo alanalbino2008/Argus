@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
@@ -24,7 +25,7 @@ class WhoisLookupModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         domain = entity.value.strip().lower()
         rdap_url = f"https://rdap.org/domain/{domain}"
         headers = {"Accept": "application/rdap+json, application/json", "User-Agent": "Argus-OSINT/1.0"}

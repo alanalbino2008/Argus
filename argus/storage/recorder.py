@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, EventType
@@ -30,9 +30,9 @@ class InvestigationRecorder:
         self.repo = repo
         self.engine = engine
         self.flush_interval = flush_interval
-        self._entities: Dict[str, Dict[str, Any]] = {}
-        self._relations: Dict[str, Dict[str, Any]] = {}
-        self._task: Optional[asyncio.Task[None]] = None
+        self._entities: dict[str, dict[str, Any]] = {}
+        self._relations: dict[str, dict[str, Any]] = {}
+        self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self.flushes = 0
 

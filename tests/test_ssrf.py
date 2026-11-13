@@ -19,32 +19,53 @@ from argus.security.network import (
 )
 
 
-@pytest.mark.parametrize("ip,public", [
-    ("8.8.8.8", True), ("2606:4700::1111", True),
-    ("10.1.2.3", False), ("172.16.0.1", False), ("192.168.1.1", False), ("127.0.0.1", False),
-    ("169.254.169.254", False),  # cloud metadata service
-    ("100.64.0.1", False),       # carrier-grade NAT
-    ("0.0.0.0", False), ("224.0.0.1", False), ("::1", False), ("fd00::1", False),
-    ("::ffff:127.0.0.1", False),  # IPv4-mapped loopback bypass attempt
-])
+@pytest.mark.parametrize(
+    "ip,public",
+    [
+        ("8.8.8.8", True),
+        ("2606:4700::1111", True),
+        ("10.1.2.3", False),
+        ("172.16.0.1", False),
+        ("192.168.1.1", False),
+        ("127.0.0.1", False),
+        ("169.254.169.254", False),  # cloud metadata service
+        ("100.64.0.1", False),  # carrier-grade NAT
+        ("0.0.0.0", False),
+        ("224.0.0.1", False),
+        ("::1", False),
+        ("fd00::1", False),
+        ("::ffff:127.0.0.1", False),  # IPv4-mapped loopback bypass attempt
+    ],
+)
 def test_ip_classification(ip, public):
     assert is_public_ip(ip) is public
 
 
-@pytest.mark.parametrize("target,etype", [
-    ("127.0.0.1", EntityType.IP_ADDRESS), ("169.254.169.254", EntityType.IP_ADDRESS),
-    ("localhost", EntityType.DOMAIN), ("db.internal", EntityType.DOMAIN), ("printer.local", EntityType.DOMAIN),
-    ("admin@intranet.corp", EntityType.EMAIL),
-])
+@pytest.mark.parametrize(
+    "target,etype",
+    [
+        ("127.0.0.1", EntityType.IP_ADDRESS),
+        ("169.254.169.254", EntityType.IP_ADDRESS),
+        ("localhost", EntityType.DOMAIN),
+        ("db.internal", EntityType.DOMAIN),
+        ("printer.local", EntityType.DOMAIN),
+        ("admin@intranet.corp", EntityType.EMAIL),
+    ],
+)
 def test_internal_seed_targets_rejected(target, etype):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"internal|private"):
         validate_scan_target(target, etype)
 
 
-@pytest.mark.parametrize("target,etype", [
-    ("example.com", EntityType.DOMAIN), ("8.8.8.8", EntityType.IP_ADDRESS),
-    ("user@example.com", EntityType.EMAIL), ("johndoe", EntityType.USERNAME),
-])
+@pytest.mark.parametrize(
+    "target,etype",
+    [
+        ("example.com", EntityType.DOMAIN),
+        ("8.8.8.8", EntityType.IP_ADDRESS),
+        ("user@example.com", EntityType.EMAIL),
+        ("johndoe", EntityType.USERNAME),
+    ],
+)
 def test_public_seed_targets_allowed(target, etype):
     validate_scan_target(target, etype)
 
@@ -56,8 +77,10 @@ class FakeResolver:
         self.answers = answers
 
     async def resolve(self, host, port=0, family=0):
-        return [{"hostname": host, "host": ip, "port": port, "family": family, "proto": 0, "flags": 0}
-                for ip in self.answers[host]]
+        return [
+            {"hostname": host, "host": ip, "port": port, "family": family, "proto": 0, "flags": 0}
+            for ip in self.answers[host]
+        ]
 
     async def close(self):
         pass

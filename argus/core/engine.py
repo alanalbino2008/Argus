@@ -24,20 +24,18 @@ Robustness features
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import logging
 import time
 import uuid
-from typing import Any, Dict, Optional, Set
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
+from typing import Any
 
 import aiohttp
 
 from argus.core.events import Event, EventBus, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.http import HttpClient
-from argus.core.runctx import ModuleRunReport, current_run
-from argus.security.network import GuardedResolver, configured_proxy_hosts
 from argus.core.models import (
     Entity,
     Investigation,
@@ -45,9 +43,11 @@ from argus.core.models import (
     Relation,
     ScanConfig,
 )
+from argus.core.runctx import ModuleRunReport, current_run
 from argus.modules import get_default_modules
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.modules.base import BaseModule
+from argus.security.network import GuardedResolver, configured_proxy_hosts
 
 logger = logging.getLogger("argus.engine")
 
@@ -70,7 +70,7 @@ class ModuleStats:
     consecutive_failures: int = 0
     disabled: bool = False
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["total_seconds"] = round(self.total_seconds, 3)
         data["avg_seconds"] = round(self.total_seconds / self.runs, 3) if self.runs else 0.0
@@ -83,22 +83,19 @@ class ArgusEngine:
     def __init__(
         self,
         config: ScanConfig,
-        investigation_id: Optional[str] = None,
-        bus: Optional[EventBus] = None,
-        modules: Optional[Dict[str, BaseModule]] = None,
-        session: Optional[aiohttp.ClientSession] = None,
+        investigation_id: str | None = None,
+        bus: EventBus | None = None,
+        modules: dict[str, BaseModule] | None = None,
+        session: aiohttp.ClientSession | None = None,
     ):
         self.investigation_id = investigation_id or f"inv_{uuid.uuid4().hex[:8]}"
         self.config = config
         self.bus = bus or event_bus
         self.graph = IntelligenceGraph(self.investigation_id)
-        self.modules: Dict[str, BaseModule] = modules if modules is not None else get_default_modules()
+        self.modules: dict[str, BaseModule] = modules if modules is not None else get_default_modules()
 
         if config.enabled_modules:
-            self.modules = {
-                name: mod for name, mod in self.modules.items()
-                if name in config.enabled_modules
-            }
+            self.modules = {name: mod for name, mod in self.modules.items() if name in config.enabled_modules}
 
         self.investigation = Investigation(
             id=self.investigation_id,
@@ -107,14 +104,14 @@ class ArgusEngine:
             status=InvestigationStatus.INITIALIZING,
         )
 
-        self.module_stats: Dict[str, ModuleStats] = {name: ModuleStats() for name in self.modules}
-        self.http: Optional[HttpClient] = None
+        self.module_stats: dict[str, ModuleStats] = {name: ModuleStats() for name in self.modules}
+        self.http: HttpClient | None = None
         self.truncated = False
 
         self._external_session = session
         self._queue: asyncio.Queue[Entity] = asyncio.Queue()
-        self._enqueued_ids: Set[str] = set()
-        self._processed_ids: Set[str] = set()
+        self._enqueued_ids: set[str] = set()
+        self._processed_ids: set[str] = set()
         self._cancel_event = asyncio.Event()
         self._is_running = False
 
@@ -133,12 +130,15 @@ class ArgusEngine:
         self.investigation.status = InvestigationStatus.RUNNING
         started = time.monotonic()
 
-        await self._emit(EventType.SCAN_STARTED, {
-            "target": self.config.target,
-            "target_type": self.config.target_type.value,
-            "max_depth": self.config.max_depth,
-            "active_modules": list(self.modules.keys()),
-        })
+        await self._emit(
+            EventType.SCAN_STARTED,
+            {
+                "target": self.config.target,
+                "target_type": self.config.target_type.value,
+                "max_depth": self.config.max_depth,
+                "active_modules": list(self.modules.keys()),
+            },
+        )
 
         seed = Entity.create(
             entity_type=self.config.target_type,
@@ -155,9 +155,16 @@ class ArgusEngine:
             if self._external_session is not None:
                 await self._run(self._external_session)
             else:
-                resolver = None if self.config.allow_private_targets else GuardedResolver(trusted_hosts=configured_proxy_hosts())
+                resolver = (
+                    None
+                    if self.config.allow_private_targets
+                    else GuardedResolver(trusted_hosts=configured_proxy_hosts())
+                )
                 connector = aiohttp.TCPConnector(
-                    limit=100, limit_per_host=self.config.per_host_concurrency, ttl_dns_cache=300, resolver=resolver,
+                    limit=100,
+                    limit_per_host=self.config.per_host_concurrency,
+                    ttl_dns_cache=300,
+                    resolver=resolver,
                 )
                 # trust_env: honour HTTP(S)_PROXY / NO_PROXY, as required on corporate networks.
                 async with aiohttp.ClientSession(connector=connector, trust_env=True) as session:
@@ -178,10 +185,13 @@ class ArgusEngine:
             await self._emit(EventType.SCAN_CANCELLED, self._summary(started))
         else:
             self._finalize(InvestigationStatus.COMPLETED, started)
-            await self._emit(EventType.SCAN_COMPLETED, {
-                **self._summary(started),
-                "analytics": self.investigation.analytics,
-            })
+            await self._emit(
+                EventType.SCAN_COMPLETED,
+                {
+                    **self._summary(started),
+                    "analytics": self.investigation.analytics,
+                },
+            )
         return self.graph
 
     # ---------------------------------------------------------------- internals
@@ -195,8 +205,7 @@ class ArgusEngine:
             allow_private=self.config.allow_private_targets,
         )
         workers = [
-            asyncio.create_task(self._worker(i), name=f"argus-worker-{i}")
-            for i in range(self.config.concurrency_limit)
+            asyncio.create_task(self._worker(i), name=f"argus-worker-{i}") for i in range(self.config.concurrency_limit)
         ]
         drained = asyncio.create_task(self._queue.join())
         cancelled = asyncio.create_task(self._cancel_event.wait())
@@ -224,19 +233,19 @@ class ArgusEngine:
             return
         self._processed_ids.add(entity.id)
 
-        eligible = [
-            m for m in self.modules.values()
-            if not self.module_stats[m.name].disabled and m.can_handle(entity)
-        ]
+        eligible = [m for m in self.modules.values() if not self.module_stats[m.name].disabled and m.can_handle(entity)]
         if eligible:
             await asyncio.gather(*(self._execute_module(m, entity) for m in eligible))
 
-        await self._emit(EventType.SCAN_PROGRESS, {
-            "processed_nodes": len(self._processed_ids),
-            "queued_nodes": self._queue.qsize(),
-            "total_nodes": self.graph.node_count,
-            "total_edges": self.graph.edge_count,
-        })
+        await self._emit(
+            EventType.SCAN_PROGRESS,
+            {
+                "processed_nodes": len(self._processed_ids),
+                "queued_nodes": self._queue.qsize(),
+                "total_nodes": self.graph.node_count,
+                "total_edges": self.graph.edge_count,
+            },
+        )
 
     async def _execute_module(self, module: BaseModule, entity: Entity) -> None:
         stats = self.module_stats[module.name]
@@ -255,7 +264,7 @@ class ArgusEngine:
             await self._record_failure(module, entity, f"timed out after {self.config.module_timeout_seconds:.0f}s")
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a buggy module must never crash the whole scan
             await self._record_failure(module, entity, repr(exc))
         else:
             await self._classify_run(module, entity, report)
@@ -263,12 +272,15 @@ class ArgusEngine:
             stats.total_seconds += time.monotonic() - started
             stats.source_errors += report.source_errors
 
-        await self._emit(EventType.MODULE_FINISHED, {
-            "module": module.name,
-            "entity": entity.label,
-            "outcome": report.outcome,
-            "source_errors": report.source_errors,
-        })
+        await self._emit(
+            EventType.MODULE_FINISHED,
+            {
+                "module": module.name,
+                "entity": entity.label,
+                "outcome": report.outcome,
+                "source_errors": report.source_errors,
+            },
+        )
 
     async def _classify_run(self, module: BaseModule, entity: Entity, report: ModuleRunReport) -> None:
         """Turn a run that finished without raising into success / degraded / failed."""
@@ -307,10 +319,13 @@ class ArgusEngine:
                     continue  # endpoint dropped (e.g. entity cap reached)
                 if self.graph.add_relation(item):
                     stats.relations_found += 1
-                    await self._emit(EventType.RELATION_DISCOVERED, {
-                        "relation": item.model_dump(mode="json"),
-                        "source_module": module.name,
-                    })
+                    await self._emit(
+                        EventType.RELATION_DISCOVERED,
+                        {
+                            "relation": item.model_dump(mode="json"),
+                            "source_module": module.name,
+                        },
+                    )
 
     async def _ingest_entity(self, item: Entity, module_name: str, stats: ModuleStats) -> None:
         if self.graph.get_entity(item.id) is None and self.graph.node_count >= self.config.max_entities:
@@ -324,10 +339,13 @@ class ArgusEngine:
         if not self.graph.add_entity(item):
             return
         stats.entities_found += 1
-        await self._emit(EventType.ENTITY_DISCOVERED, {
-            "entity": item.model_dump(mode="json"),
-            "source_module": module_name,
-        })
+        await self._emit(
+            EventType.ENTITY_DISCOVERED,
+            {
+                "entity": item.model_dump(mode="json"),
+                "source_module": module_name,
+            },
+        )
         if item.depth < self.config.max_depth:
             self._enqueue(item)
 
@@ -353,7 +371,7 @@ class ArgusEngine:
             self.investigation.errors.append(notice)
             await self._emit(EventType.LOG_MESSAGE, {"level": "WARNING", "message": notice})
 
-    def _summary(self, started: float) -> Dict[str, Any]:
+    def _summary(self, started: float) -> dict[str, Any]:
         return {
             "node_count": self.graph.node_count,
             "edge_count": self.graph.edge_count,
@@ -378,5 +396,5 @@ class ArgusEngine:
         except Exception:
             logger.exception("Graph analytics failed for %s", self.investigation_id)
 
-    async def _emit(self, event_type: EventType, data: Dict[str, Any]) -> None:
+    async def _emit(self, event_type: EventType, data: dict[str, Any]) -> None:
         await self.bus.emit(Event(type=event_type, investigation_id=self.investigation_id, data=data))

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -19,12 +19,12 @@ logger = logging.getLogger("argus.api.auth")
 _auth_failure_audit = SlidingWindowLimiter(limit=10, window=60)
 
 
-def client_ip(request: Request) -> Optional[str]:
+def client_ip(request: Request) -> str | None:
     # Behind a reverse proxy, run uvicorn with --proxy-headers so this is the real client.
     return request.client.host if request.client else None
 
 
-def _extract_key(request: Request) -> Optional[str]:
+def _extract_key(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
@@ -35,9 +35,9 @@ async def audit(
     request: Request,
     principal: Principal,
     action: str,
-    resource: Optional[str] = None,
+    resource: str | None = None,
     outcome: str = "success",
-    details: Optional[Dict[str, Any]] = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     """Write an audit event; never let an audit failure break the request itself."""
     try:
@@ -59,8 +59,14 @@ async def get_principal(request: Request) -> Principal:
         # revoked credentials). A visitor who has not signed in yet is just noise.
         if key and _auth_failure_audit.hit(ip):
             anon = Principal(key_id="unauthenticated", name="unauthenticated", role=Role.VIEWER)
-            await audit(request, anon, "auth.failed", request.url.path, "denied",
-                        {"reason": "invalid or revoked key", "key_prefix": key[:10]})
+            await audit(
+                request,
+                anon,
+                "auth.failed",
+                request.url.path,
+                "denied",
+                {"reason": "invalid or revoked key", "key_prefix": key[:10]},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Valid API key required (Authorization: Bearer <key> or X-API-Key header)",
@@ -74,8 +80,14 @@ def require(role: Role):
 
     async def checker(request: Request, principal: Principal = Depends(get_principal)) -> Principal:
         if not principal.has(role):
-            await audit(request, principal, "auth.forbidden", request.url.path, "denied",
-                        {"required_role": role.value, "actual_role": principal.role.value})
+            await audit(
+                request,
+                principal,
+                "auth.forbidden",
+                request.url.path,
+                "denied",
+                {"required_role": role.value, "actual_role": principal.role.value},
+            )
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires {role.value} role")
         return principal
 
@@ -92,7 +104,7 @@ class WebSocketTickets:
 
     def __init__(self, ttl: float):
         self.ttl = ttl
-        self._tickets: Dict[str, Tuple[Principal, float]] = {}
+        self._tickets: dict[str, tuple[Principal, float]] = {}
 
     def issue(self, principal: Principal) -> str:
         self._purge()
@@ -100,7 +112,7 @@ class WebSocketTickets:
         self._tickets[ticket] = (principal, time.monotonic() + self.ttl)
         return ticket
 
-    def redeem(self, ticket: Optional[str]) -> Optional[Principal]:
+    def redeem(self, ticket: str | None) -> Principal | None:
         if not ticket:
             return None
         entry = self._tickets.pop(ticket, None)  # single use

@@ -15,11 +15,11 @@ State model
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
@@ -51,8 +51,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 WEB_DIR = BASE_DIR / "web"
 
 # Live (running) scans only. Finished investigations are read from the database.
-INVESTIGATIONS: Dict[str, ArgusEngine] = {}
-SCAN_TASKS: Dict[str, "asyncio.Task[None]"] = {}
+INVESTIGATIONS: dict[str, ArgusEngine] = {}
+SCAN_TASKS: dict[str, asyncio.Task[None]] = {}
 
 
 # --------------------------------------------------------------------------- WebSockets
@@ -81,7 +81,7 @@ class ClientConnection:
             self.dead.set()
 
 
-CONNECTIONS: Dict[str, Set[ClientConnection]] = {}
+CONNECTIONS: dict[str, set[ClientConnection]] = {}
 
 
 async def ws_dispatcher(event: Event) -> None:
@@ -147,13 +147,17 @@ async def _bootstrap_admin_key(app: FastAPI) -> None:
             "(generate one with: python -c \"import secrets; print('argus_' + secrets.token_urlsafe(32))\")"
         )
     record, key = await keys.create("bootstrap-admin", Role.ADMIN, created_by="system", plaintext=supplied)
-    await app.state.audit.record(SYSTEM, "key.bootstrap", record["id"], details={"source": "env" if supplied else "generated"})
+    await app.state.audit.record(
+        SYSTEM, "key.bootstrap", record["id"], details={"source": "env" if supplied else "generated"}
+    )
     if not supplied:
         banner = "=" * 72
         logger.warning(
             "\n%s\n No admin API key existed, so one was generated. It will NOT be shown again:\n\n"
             "   %s\n\n Use it to sign in to the web UI, then create personal keys and revoke this one.\n%s",
-            banner, key, banner,
+            banner,
+            key,
+            banner,
         )
 
 
@@ -190,12 +194,13 @@ def get_repo(request: Request) -> InvestigationRepository:
 # --------------------------------------------------------------------------- helpers
 class StartScanRequest(BaseModel):
     target: str = Field(min_length=1, max_length=253)
-    target_type: Optional[EntityType] = None
+    target_type: EntityType | None = None
     max_depth: int = Field(default=2, ge=0, le=4)
-    enabled_modules: Optional[List[str]] = None
+    enabled_modules: list[str] | None = None
     concurrency_limit: int = Field(default=15, ge=1, le=50)
     purpose: str = Field(
-        min_length=5, max_length=500,
+        min_length=5,
+        max_length=500,
         description="Why this target is being investigated, e.g. 'HackerOne program X, ticket #123' or 'CTF'",
     )
     authorized: bool = Field(description="Confirms you are authorised to investigate this target")
@@ -205,17 +210,19 @@ def _live_investigation(engine: ArgusEngine) -> Investigation:
     """The engine's Investigation with live counters/stats filled in."""
     inv = engine.investigation
     if engine.is_running:
-        inv = inv.model_copy(update={
-            "node_count": engine.graph.node_count,
-            "edge_count": engine.graph.edge_count,
-            "truncated": engine.truncated,
-            "module_stats": {n: s.as_dict() for n, s in engine.module_stats.items()},
-            "http_stats": engine.http.stats.as_dict() if engine.http else {},
-        })
+        inv = inv.model_copy(
+            update={
+                "node_count": engine.graph.node_count,
+                "edge_count": engine.graph.edge_count,
+                "truncated": engine.truncated,
+                "module_stats": {n: s.as_dict() for n, s in engine.module_stats.items()},
+                "http_stats": engine.http.stats.as_dict() if engine.http else {},
+            }
+        )
     return inv
 
 
-def _investigation_payload(inv: Investigation) -> Dict[str, Any]:
+def _investigation_payload(inv: Investigation) -> dict[str, Any]:
     return {
         "id": inv.id,
         "name": inv.name,
@@ -271,7 +278,7 @@ async def _run_scan(engine: ArgusEngine, recorder: InvestigationRecorder) -> Non
         SCAN_TASKS.pop(inv_id, None)
 
 
-def _on_scan_done(task: "asyncio.Task[None]") -> None:
+def _on_scan_done(task: asyncio.Task[None]) -> None:
     """Consume the task result so failures are logged instead of silently lost."""
     if not task.cancelled() and task.exception() is not None:
         logger.error("Scan task %s failed: %r", task.get_name(), task.exception())
@@ -287,6 +294,7 @@ async def health(request: Request):
             await conn.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
+        logger.warning("Health check: database unreachable", exc_info=True)
         db_ok = False
     body = {
         "status": "ok" if db_ok else "degraded",
@@ -317,8 +325,8 @@ async def list_investigations(
     request: Request,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    status: Optional[InvestigationStatus] = None,
-    target: Optional[str] = Query(None, max_length=253),
+    status: InvestigationStatus | None = None,
+    target: str | None = Query(None, max_length=253),
     _: Principal = VIEWER,
 ):
     """Investigation history (newest first), with live counters for running scans."""
@@ -361,11 +369,14 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
 
     running = sum(1 for e in INVESTIGATIONS.values() if e.is_running or e.investigation.status.value == "initializing")
     if running >= settings.max_concurrent_scans:
-        raise HTTPException(status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans")
+        raise HTTPException(
+            status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
+        )
     limiter: SlidingWindowLimiter = request.app.state.scan_limiter
     if not limiter.hit(principal.key_id):
         raise HTTPException(
-            status_code=429, detail="Scan rate limit exceeded",
+            status_code=429,
+            detail="Scan rate limit exceeded",
             headers={"Retry-After": str(limiter.retry_after(principal.key_id))},
         )
 
@@ -397,10 +408,19 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
     task = asyncio.create_task(_run_scan(engine, recorder), name=f"scan-{engine.investigation_id}")
     task.add_done_callback(_on_scan_done)
     SCAN_TASKS[engine.investigation_id] = task
-    await audit(request, principal, "scan.start", engine.investigation_id, details={
-        "target": target, "target_type": ttype.value, "max_depth": req.max_depth, "purpose": req.purpose,
-        "authorized_confirmed": True,
-    })
+    await audit(
+        request,
+        principal,
+        "scan.start",
+        engine.investigation_id,
+        details={
+            "target": target,
+            "target_type": ttype.value,
+            "max_depth": req.max_depth,
+            "purpose": req.purpose,
+            "authorized_confirmed": True,
+        },
+    )
 
     return {
         "status": "launched",
@@ -474,7 +494,7 @@ async def export_graph_csv(inv_id: str, request: Request, principal: Principal =
 async def search_entities(
     request: Request,
     q: str = Query(min_length=2, max_length=253, description="Substring of the entity value"),
-    type: Optional[EntityType] = None,
+    type: EntityType | None = None,
     limit: int = Query(50, ge=1, le=500),
     _: Principal = VIEWER,
 ):
@@ -489,10 +509,10 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
 
     Authenticate with ``?ticket=`` from ``POST /api/ws-ticket`` (single use, short-lived).
     """
-    if websocket.app.state.settings.auth_enabled:
-        if websocket.app.state.ws_tickets.redeem(websocket.query_params.get("ticket")) is None:
-            await websocket.close(code=4401)
-            return
+    ticket = websocket.query_params.get("ticket")
+    if websocket.app.state.settings.auth_enabled and websocket.app.state.ws_tickets.redeem(ticket) is None:
+        await websocket.close(code=4401)
+        return
     repo: InvestigationRepository = websocket.app.state.repo
     engine = INVESTIGATIONS.get(inv_id)
     if engine is None and await repo.get_investigation(inv_id) is None:
@@ -529,10 +549,11 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
         # sender / receiver / overflow-watch finishes first cancels the other two,
         # and cancellation from the server propagates through cleanly.
         async with anyio.create_task_group() as tg:
+
             async def first_to_finish_wins(fn) -> None:
                 try:
                     await fn()
-                except Exception as exc:  # e.g. send on a broken socket
+                except Exception as exc:  # noqa: BLE001 - e.g. send on a broken socket ends this client only
                     logger.debug("WebSocket task ended: %r", exc)
                 finally:
                     tg.cancel_scope.cancel()
@@ -550,21 +571,23 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
     if not client_gone:  # server-side ending (e.g. slow client): tell the browser
         try:
             await websocket.close(code=1013)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - best-effort notice to a client that may already be gone
+            logger.debug("Could not close WebSocket cleanly: %r", exc)
 
 
 def _snapshot_message(inv: Investigation, graph: IntelligenceGraph) -> str:
-    return json.dumps({
-        "type": "snapshot",
-        "investigation_id": inv.id,
-        "data": {
-            "investigation": _investigation_payload(inv),
-            "analytics": inv.analytics,
-            "entities": [e.model_dump(mode="json") for e in graph.get_all_entities()],
-            "relations": [r.model_dump(mode="json") for r in graph.get_all_relations()],
-        },
-    })
+    return json.dumps(
+        {
+            "type": "snapshot",
+            "investigation_id": inv.id,
+            "data": {
+                "investigation": _investigation_payload(inv),
+                "analytics": inv.analytics,
+                "entities": [e.model_dump(mode="json") for e in graph.get_all_entities()],
+                "relations": [r.model_dump(mode="json") for r in graph.get_all_relations()],
+            },
+        }
+    )
 
 
 # --------------------------------------------------------------------------- static UI

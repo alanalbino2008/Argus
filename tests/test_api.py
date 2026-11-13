@@ -1,7 +1,5 @@
 """REST API contract tests (no outbound network: scans use fake modules)."""
 
-import asyncio
-
 import pytest
 
 from argus.api import server
@@ -9,8 +7,6 @@ from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus
 from argus.core.models import EntityType, ScanConfig
 from tests.test_engine import FanOutModule
-
-
 
 
 def test_list_modules(client):
@@ -21,25 +17,31 @@ def test_list_modules(client):
 OK = {"purpose": "Unit test fixture", "authorized": True}
 
 
-@pytest.mark.parametrize("payload", [
-    {"target": "example.com", "max_depth": 9, **OK},
-    {"target": "example.com", "concurrency_limit": 0, **OK},
-    {"target": "   ", **OK},
-    {"target": "example.com", "enabled_modules": ["does_not_exist"], **OK},
-    {"target": "example.com", "purpose": "x", "authorized": True},        # purpose too short
-    {"target": "example.com", "purpose": "Pentest ACME", "authorized": False},
-    {"target": "example.com"},                                             # no authorisation at all
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"target": "example.com", "max_depth": 9, **OK},
+        {"target": "example.com", "concurrency_limit": 0, **OK},
+        {"target": "   ", **OK},
+        {"target": "example.com", "enabled_modules": ["does_not_exist"], **OK},
+        {"target": "example.com", "purpose": "x", "authorized": True},  # purpose too short
+        {"target": "example.com", "purpose": "Pentest ACME", "authorized": False},
+        {"target": "example.com"},  # no authorisation at all
+    ],
+)
 def test_scan_rejects_invalid_input(client, payload):
     assert client.post("/api/scan", json=payload).status_code == 422
 
 
-@pytest.mark.parametrize("path", [
-    "/api/investigation/inv_missing",
-    "/api/investigation/inv_missing/graph",
-    "/api/investigation/inv_missing/export/json",
-    "/api/investigation/inv_missing/export/csv",
-])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/investigation/inv_missing",
+        "/api/investigation/inv_missing/graph",
+        "/api/investigation/inv_missing/export/json",
+        "/api/investigation/inv_missing/export/csv",
+    ],
+)
 def test_unknown_investigation_returns_404(client, path):
     assert client.get(path).status_code == 404
 

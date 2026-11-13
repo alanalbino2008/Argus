@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
 from enum import Enum
-import logging
-from typing import Any, Callable, Coroutine, Dict, List, Set
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger("argus.events")
@@ -27,9 +29,10 @@ class EventType(str, Enum):
 
 class Event(BaseModel):
     """Event payload emitted by the engine and modules."""
+
     type: EventType
     investigation_id: str
-    data: Dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -40,8 +43,8 @@ class EventBus:
     """Central event broker for Argus. Dispatches events to subscribers and WebSocket connections."""
 
     def __init__(self):
-        self._subscribers: Dict[EventType, Set[Subscriber]] = {t: set() for t in EventType}
-        self._global_subscribers: Set[Subscriber] = set()
+        self._subscribers: dict[EventType, set[Subscriber]] = {t: set() for t in EventType}
+        self._global_subscribers: set[Subscriber] = set()
 
     def subscribe(self, event_type: EventType, callback: Subscriber):
         """Register a callback for a specific event type."""
@@ -65,23 +68,20 @@ class EventBus:
         if not callbacks:
             return
 
-        tasks = []
-        for cb in callbacks:
-            tasks.append(self._safe_invoke(cb, event))
-
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*(self._safe_invoke(cb, event) for cb in callbacks), return_exceptions=True)
 
     async def _safe_invoke(self, callback: Subscriber, event: Event):
         try:
             import inspect
+
             if inspect.iscoroutinefunction(callback):
                 await callback(event)
             else:
                 res = callback(event)
                 if inspect.isawaitable(res):
                     await res
-        except Exception as e:
-            logger.error("Error executing subscriber callback for %s: %s", event.type, e)
+        except Exception:
+            logger.exception("Error executing subscriber callback for %s", event.type)
 
 
 # Global singleton instance for app-wide event distribution

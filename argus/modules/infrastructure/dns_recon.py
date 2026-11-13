@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import AsyncIterator, List, Union
+from collections.abc import AsyncIterator
+
 import aiohttp
 import dns.asyncresolver
 import dns.resolver
@@ -28,7 +29,7 @@ class DnsReconModule(BaseModule):
         entity: Entity,
         session: aiohttp.ClientSession,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         domain = entity.value.strip().lower()
         resolver = dns.asyncresolver.Resolver()
         resolver.lifetime = config.timeout_seconds
@@ -124,7 +125,7 @@ class DnsReconModule(BaseModule):
                             rec_entity = Entity.create(
                                 entity_type=EntityType.DNS_RECORD,
                                 value=f"SPF: {text_val[:80]}...",
-                                label=f"SPF Policy",
+                                label="SPF Policy",
                                 metadata={"full_record": text_val, "type": "SPF"},
                                 source_module=self.name,
                                 confidence=1.0,
@@ -138,10 +139,10 @@ class DnsReconModule(BaseModule):
                                 label="SPF Record",
                             )
 
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):  # noqa: PERF203 - isolate each record type
                 self.report_ok()  # authoritative "no such record" is a valid answer
                 continue
-            except Exception as e:  # timeouts, SERVFAIL, unreachable nameservers
+            except Exception as e:
                 logger.debug("DNS query %s for %s error: %s", rtype, domain, e)
                 self.report_error(f"dns:{rtype}", e)
 

@@ -1,6 +1,5 @@
 """Unit tests for modules, heuristics, and engine behavior."""
 
-import pytest
 from argus.cli.console import detect_target_type
 from argus.core.events import Event, EventBus, EventType
 from argus.core.models import EntityType
@@ -42,6 +41,7 @@ def test_event_bus_dispatch():
 
     # Test safe invocation
     import asyncio
+
     loop = asyncio.new_event_loop()
     try:
         loop.run_until_complete(bus._safe_invoke(sample_sync_handler, event))

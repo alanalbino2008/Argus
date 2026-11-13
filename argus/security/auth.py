@@ -10,18 +10,18 @@ lets us look a key up by its hash with a single indexed query.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
 import hashlib
 import secrets
+from dataclasses import dataclass
+from enum import Enum
 
 KEY_PREFIX = "argus_"
 
 
 class Role(str, Enum):
-    VIEWER = "viewer"      # read investigations, graphs, exports
-    ANALYST = "analyst"    # + launch and cancel scans
-    ADMIN = "admin"        # + delete data, manage keys, read the audit log
+    VIEWER = "viewer"  # read investigations, graphs, exports
+    ANALYST = "analyst"  # + launch and cancel scans
+    ADMIN = "admin"  # + delete data, manage keys, read the audit log
 
     @property
     def rank(self) -> int:

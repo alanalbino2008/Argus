@@ -7,9 +7,10 @@ so swapping SQLite for PostgreSQL - or adding caching - touches one file.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import logging
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from collections.abc import Iterable, Sequence
+from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import Table, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,7 @@ UPSERT_CHUNK = 400
 ACTIVE_STATUSES = (InvestigationStatus.INITIALIZING.value, InvestigationStatus.RUNNING.value)
 
 
-def _entity_row(investigation_id: str, entity: Dict[str, Any]) -> Dict[str, Any]:
+def _entity_row(investigation_id: str, entity: dict[str, Any]) -> dict[str, Any]:
     return {
         "investigation_id": investigation_id,
         "entity_id": entity["id"],
@@ -35,7 +36,7 @@ def _entity_row(investigation_id: str, entity: Dict[str, Any]) -> Dict[str, Any]
     }
 
 
-def _relation_row(investigation_id: str, relation: Dict[str, Any]) -> Dict[str, Any]:
+def _relation_row(investigation_id: str, relation: dict[str, Any]) -> dict[str, Any]:
     return {
         "investigation_id": investigation_id,
         "relation_id": relation["id"],
@@ -46,7 +47,7 @@ def _relation_row(investigation_id: str, relation: Dict[str, Any]) -> Dict[str, 
     }
 
 
-def _investigation_row(inv: Investigation) -> Dict[str, Any]:
+def _investigation_row(inv: Investigation) -> dict[str, Any]:
     return {
         "id": inv.id,
         "target": inv.config.target[:512],
@@ -70,14 +71,14 @@ class InvestigationRepository:
         async with self.db.session() as s, s.begin():
             await self._upsert(s, InvestigationRow.__table__, [_investigation_row(inv)], ["id"])
 
-    async def upsert_entities(self, investigation_id: str, entities: Iterable[Dict[str, Any]]) -> int:
+    async def upsert_entities(self, investigation_id: str, entities: Iterable[dict[str, Any]]) -> int:
         rows = [_entity_row(investigation_id, e) for e in entities]
         if rows:
             async with self.db.session() as s, s.begin():
                 await self._upsert(s, EntityRow.__table__, rows, ["investigation_id", "entity_id"])
         return len(rows)
 
-    async def upsert_relations(self, investigation_id: str, relations: Iterable[Dict[str, Any]]) -> int:
+    async def upsert_relations(self, investigation_id: str, relations: Iterable[dict[str, Any]]) -> int:
         rows = [_relation_row(investigation_id, r) for r in relations]
         if rows:
             async with self.db.session() as s, s.begin():
@@ -86,8 +87,12 @@ class InvestigationRepository:
 
     async def save_graph(self, graph: IntelligenceGraph) -> None:
         """Full snapshot of a graph (captures metadata merged into existing nodes)."""
-        await self.upsert_entities(graph.investigation_id, (e.model_dump(mode="json") for e in graph.get_all_entities()))
-        await self.upsert_relations(graph.investigation_id, (r.model_dump(mode="json") for r in graph.get_all_relations()))
+        await self.upsert_entities(
+            graph.investigation_id, (e.model_dump(mode="json") for e in graph.get_all_entities())
+        )
+        await self.upsert_relations(
+            graph.investigation_id, (r.model_dump(mode="json") for r in graph.get_all_relations())
+        )
 
     async def delete_investigation(self, investigation_id: str) -> bool:
         async with self.db.session() as s, s.begin():
@@ -100,9 +105,11 @@ class InvestigationRepository:
     async def mark_interrupted(self) -> int:
         """Investigations left 'running' by a crash/restart can never finish: mark them failed."""
         async with self.db.session() as s, s.begin():
-            rows = (await s.execute(
-                select(InvestigationRow).where(InvestigationRow.status.in_(ACTIVE_STATUSES))
-            )).scalars().all()
+            rows = (
+                (await s.execute(select(InvestigationRow).where(InvestigationRow.status.in_(ACTIVE_STATUSES))))
+                .scalars()
+                .all()
+            )
             now = datetime.now(timezone.utc)
             for row in rows:
                 data = dict(row.data)
@@ -117,14 +124,14 @@ class InvestigationRepository:
         return len(rows)
 
     # ----------------------------------------------------------------- reads
-    async def get_investigation(self, investigation_id: str) -> Optional[Investigation]:
+    async def get_investigation(self, investigation_id: str) -> Investigation | None:
         async with self.db.session() as s:
             row = await s.get(InvestigationRow, investigation_id)
         return Investigation.model_validate(row.data) if row else None
 
     async def list_investigations(
-        self, limit: int = 50, offset: int = 0, status: Optional[str] = None, target: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, limit: int = 50, offset: int = 0, status: str | None = None, target: str | None = None
+    ) -> list[dict[str, Any]]:
         stmt = select(InvestigationRow).order_by(InvestigationRow.created_at.desc()).limit(limit).offset(offset)
         if status:
             stmt = stmt.where(InvestigationRow.status == status)
@@ -148,16 +155,20 @@ class InvestigationRepository:
             for r in rows
         ]
 
-    async def load_graph(self, investigation_id: str) -> Optional[IntelligenceGraph]:
+    async def load_graph(self, investigation_id: str) -> IntelligenceGraph | None:
         async with self.db.session() as s:
             if await s.get(InvestigationRow, investigation_id) is None:
                 return None
-            ents = (await s.execute(
-                select(EntityRow.data).where(EntityRow.investigation_id == investigation_id)
-            )).scalars().all()
-            rels = (await s.execute(
-                select(RelationRow.data).where(RelationRow.investigation_id == investigation_id)
-            )).scalars().all()
+            ents = (
+                (await s.execute(select(EntityRow.data).where(EntityRow.investigation_id == investigation_id)))
+                .scalars()
+                .all()
+            )
+            rels = (
+                (await s.execute(select(RelationRow.data).where(RelationRow.investigation_id == investigation_id)))
+                .scalars()
+                .all()
+            )
 
         graph = IntelligenceGraph(investigation_id)
         entities = sorted((Entity.model_validate(e) for e in ents), key=lambda e: e.depth)
@@ -167,7 +178,9 @@ class InvestigationRepository:
             graph.add_relation(Relation.model_validate(rel))
         return graph
 
-    async def search_entities(self, query: str, entity_type: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    async def search_entities(
+        self, query: str, entity_type: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         """Cross-investigation pivot: where else have we seen this IP / email / domain?"""
         stmt = (
             select(EntityRow, InvestigationRow.target, InvestigationRow.created_at)
@@ -191,7 +204,7 @@ class InvestigationRepository:
         ]
 
     # -------------------------------------------------------------- helpers
-    async def _upsert(self, s: AsyncSession, table: Table, rows: Sequence[Dict[str, Any]], keys: List[str]) -> None:
+    async def _upsert(self, s: AsyncSession, table: Table, rows: Sequence[dict[str, Any]], keys: list[str]) -> None:
         dialect = self.db.dialect
         if dialect == "sqlite":
             from sqlalchemy.dialects.sqlite import insert
@@ -204,19 +217,17 @@ class InvestigationRepository:
 
         update_cols = [c.name for c in table.columns if c.name not in keys]
         for i in range(0, len(rows), UPSERT_CHUNK):
-            stmt = insert(table).values(list(rows[i:i + UPSERT_CHUNK]))
-            stmt = stmt.on_conflict_do_update(
-                index_elements=keys, set_={c: stmt.excluded[c] for c in update_cols}
-            )
+            stmt = insert(table).values(list(rows[i : i + UPSERT_CHUNK]))
+            stmt = stmt.on_conflict_do_update(index_elements=keys, set_={c: stmt.excluded[c] for c in update_cols})
             await s.execute(stmt)
 
 
-def _row_to_orm(table: Table, row: Dict[str, Any]):  # pragma: no cover
+def _row_to_orm(table: Table, row: dict[str, Any]):  # pragma: no cover
     model = {t.__table__: t for t in (InvestigationRow, EntityRow, RelationRow)}[table]
     return model(**row)
 
 
-def _iso(value: Optional[datetime]) -> Optional[str]:
+def _iso(value: datetime | None) -> str | None:
     if value is None:
         return None
     if value.tzinfo is None:  # SQLite drops tzinfo; values are always stored in UTC

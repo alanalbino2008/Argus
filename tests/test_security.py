@@ -63,14 +63,17 @@ def test_cannot_revoke_last_admin(client):
 
 
 # --------------------------------------------------------------------------- RBAC
-@pytest.mark.parametrize("role,method,path,body,allowed", [
-    ("viewer", "get", "/api/investigations", None, True),
-    ("viewer", "post", "/api/scan", SCAN, False),
-    ("viewer", "get", "/api/keys", None, False),
-    ("analyst", "get", "/api/audit", None, False),
-    ("analyst", "delete", "/api/investigation/inv_x", None, False),
-    ("analyst", "post", "/api/keys", {"name": "escalate", "role": "admin"}, False),
-])
+@pytest.mark.parametrize(
+    "role,method,path,body,allowed",
+    [
+        ("viewer", "get", "/api/investigations", None, True),
+        ("viewer", "post", "/api/scan", SCAN, False),
+        ("viewer", "get", "/api/keys", None, False),
+        ("analyst", "get", "/api/audit", None, False),
+        ("analyst", "delete", "/api/investigation/inv_x", None, False),
+        ("analyst", "post", "/api/keys", {"name": "escalate", "role": "admin"}, False),
+    ],
+)
 def test_role_permissions(client, role, method, path, body, allowed):
     key = make_key(client, role)["key"]
     as_key(client, key)
@@ -96,6 +99,7 @@ def test_audit_chain_detects_tampering(client):
     async def tamper():
         async with client.app.state.db.session() as s, s.begin():
             await s.execute(update(AuditEventRow).where(AuditEventRow.id == 2).values(actor_name="mallory"))
+
     client.portal.call(tamper)
 
     result = client.get("/api/audit/verify").json()
@@ -108,10 +112,16 @@ def test_bootstrap_is_audited(client):
 
 
 # ------------------------------------------------------------- scope & abuse limits
-@pytest.mark.parametrize("target,ttype", [
-    ("127.0.0.1", None), ("169.254.169.254", None), ("10.0.0.8", None),
-    ("localhost", "domain"), ("intranet.corp", None),
-])
+@pytest.mark.parametrize(
+    "target,ttype",
+    [
+        ("127.0.0.1", None),
+        ("169.254.169.254", None),
+        ("10.0.0.8", None),
+        ("localhost", "domain"),
+        ("intranet.corp", None),
+    ],
+)
 def test_internal_targets_rejected_and_audited(client, target, ttype):
     r = client.post("/api/scan", json={**SCAN, "target": target, **({"target_type": ttype} if ttype else {})})
     assert r.status_code == 422
@@ -145,16 +155,17 @@ def test_scan_records_purpose_and_operator(client, monkeypatch):
 
 def _noop_scan(record):
     """Replace the real scan runner: keep the engine registered as 'running' without network I/O."""
+
     async def runner(engine, recorder):
         record.append(engine.investigation_id)
+
     return runner
 
 
 # ------------------------------------------------------------------ websockets
 def test_websocket_requires_single_use_ticket(client):
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("/ws/stream/inv_x") as ws:
-            ws.receive_json()
+    with pytest.raises(WebSocketDisconnect) as exc, client.websocket_connect("/ws/stream/inv_x") as ws:
+        ws.receive_json()
     assert exc.value.code == 4401
 
     ticket = client.post("/api/ws-ticket").json()["ticket"]
@@ -185,7 +196,7 @@ def test_auth_can_be_disabled_for_local_dev(make_client):
 
 def test_only_invalid_keys_are_audited_not_anonymous_visits(client):
     client.headers.pop("Authorization")
-    client.get("/api/me")                                              # not signed in yet
+    client.get("/api/me")  # not signed in yet
     client.get("/api/me", headers={"Authorization": "Bearer argus_guess"})  # wrong key
     client.headers["Authorization"] = f"Bearer {ADMIN_KEY}"
     events = client.get("/api/audit", params={"action": "auth.failed"}).json()

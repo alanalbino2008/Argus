@@ -151,10 +151,13 @@ def test_websocket_replays_snapshot_for_finished_scan(client):
 
 def test_websocket_rejects_unknown_investigation(client):
     from starlette.websockets import WebSocketDisconnect
-    with pytest.raises(WebSocketDisconnect):
-        ticket = client.post("/api/ws-ticket").json()["ticket"]
-        with client.websocket_connect(f"/ws/stream/inv_missing?ticket={ticket}") as ws:
-            ws.receive_json()
+
+    ticket = client.post("/api/ws-ticket").json()["ticket"]
+    with (
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect(f"/ws/stream/inv_missing?ticket={ticket}") as ws,
+    ):
+        ws.receive_json()
 
 
 def test_entity_search_and_delete_endpoints(client):

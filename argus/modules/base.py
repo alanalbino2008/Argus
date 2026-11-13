@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 import logging
-from typing import AsyncIterator, List, Union
+from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+
 from argus.core.http import HttpClient
-from argus.core.runctx import report_error as _report_error, report_ok as _report_ok
 from argus.core.models import Entity, EntityType, Relation, ScanConfig
+from argus.core.runctx import report_error as _report_error
+from argus.core.runctx import report_ok as _report_ok
 
 logger = logging.getLogger("argus.module")
 
@@ -17,7 +19,7 @@ class BaseModule(ABC):
 
     name: str = "base_module"
     description: str = "Base reconnaissance module"
-    supported_entity_types: List[EntityType] = []
+    supported_entity_types: list[EntityType] = []
 
     def report_error(self, source: str, error: object) -> None:
         """Record that a data source failed during this run (e.g. a DNS timeout).
@@ -42,7 +44,7 @@ class BaseModule(ABC):
         entity: Entity,
         session: HttpClient,
         config: ScanConfig,
-    ) -> AsyncIterator[Union[Entity, Relation]]:
+    ) -> AsyncIterator[Entity | Relation]:
         """Execute intelligence gathering on target entity.
 
         ``session`` is the shared resilient :class:`HttpClient` (aiohttp-compatible

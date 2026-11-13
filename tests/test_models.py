@@ -1,6 +1,5 @@
 """Unit tests for Argus Pydantic data schemas."""
 
-import pytest
 from argus.core.models import (
     Entity,
     EntityType,
