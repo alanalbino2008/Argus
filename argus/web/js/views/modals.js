@@ -141,6 +141,7 @@ const TOUR = [
   { icon: "plus", title: "Start an investigation", text: "Enter a domain, IP, email or username. You'll state the purpose and confirm you're authorised — every scan is recorded in a tamper-evident audit log." },
   { icon: "paths", title: "Attack paths are the headline", text: "Findings are chained into realistic scenarios — leaked passwords, spoofable email, exposed services — ranked by risk, mapped to MITRE ATT&CK, with fixes. Click “Show on graph” to see the chain." },
   { icon: "bell", title: "Keep watching", text: "Tick “Keep watching” and Argus re-scans on a schedule, comparing each scan with the last and alerting you when something material changes. Press ? any time for shortcuts." },
+  { icon: "sparkle", title: "Start with a guided scan", text: "Not sure where to begin? “Guided first scan” helps you pick a target you're allowed to assess, explains every option in plain English, and shows what it finds as it runs. Or explore the demo — nothing is scanned." },
 ];
 let tourStep = 0;
 

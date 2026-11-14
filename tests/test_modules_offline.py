@@ -133,6 +133,16 @@ async def test_dns_recon_extracts_records_and_email_security(fake_dns):
     assert any(r.type == RelationType.RESOLVES_TO for r in relations)
 
 
+async def test_dns_recon_marks_domains_that_do_not_exist(fake_dns):
+    domain = Entity.create(EntityType.DOMAIN, "no-such-domain.example")
+    await collect(DnsReconModule(), domain)  # every lookup is NXDOMAIN
+    assert domain.metadata["dns_exists"] is False and domain.metadata["dmarc_policy"] == "missing"
+    fake_dns[("real.example", "A")] = rr("A", "93.184.216.34")
+    real = Entity.create(EntityType.DOMAIN, "real.example")
+    await collect(DnsReconModule(), real)
+    assert real.metadata["dns_exists"] is True
+
+
 async def test_email_recon_mx_disposable_and_username(fake_dns):
     fake_dns[("example.com", "MX")] = rr("MX", "5 mx.example.com.")
     entities, _ = await collect(EmailReconModule(), Entity.create(EntityType.EMAIL, "Jane.Doe@Example.com"))

@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.18.0] — Phase 18: Guided first scan
+
+### Added
+- **Guided first scan**, a four-step wizard:
+  1. Target: good first targets, and targets that need permission.
+  2. Check: server-side pre-flight, purpose, authorisation, and an extra written-authorisation
+     confirmation for sensitive targets.
+  3. How: passive vs standard, and depth, with the exact source counts.
+  4. Run: live counts and the sources consulted in plain English, then the top attack path,
+     its first fix, and next steps (attack paths, watch, report).
+- `POST /api/scan/preflight`: target type, whether it is allowed, which sources would run and
+  which would contact the target, scope warnings, and a recent scan of the same target. Nothing
+  is scanned.
+- Scope guidance (`argus/security/scope.py`), with warnings rather than blocks:
+  - danger: public-sector domains (incl. `.gov.uk`, `.police.uk`, `.nhs.uk`, the zones
+    themselves), and large organisations outside bug bounty scope;
+  - warning: academic domains, and people (personal data);
+  - info: shared IPs, placeholder domains, and active checks.
+- Every `scan.start` audit entry records the `scope_warnings` the server computed, so the log
+  shows what the person was told.
+- `GET /api/onboarding` and a **Getting started** checklist on the home page (demo, first
+  scan, attack paths, monitoring, destinations, reports, schedules), role-aware and computed
+  from real activity. The guided scan is the home page's main call to action, and the tour
+  ends with it.
+- `docs/explained/18-guided-first-scan.md`.
+
+### Fixed
+- Domains that do not exist are no longer reported as "can be spoofed in phishing emails". The
+  DNS collector distinguishes NXDOMAIN (no such domain) from NoAnswer (no such record) and
+  records `dns_exists`; the spoofing rule skips nonexistent domains.
+
 ## [1.17.0] — Phase 17: Scheduled reports
 
 ### Added

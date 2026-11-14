@@ -49,6 +49,8 @@ from argus.api.auth_routes import router as auth_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.notification_routes import router as notification_router
+from argus.api.onboarding_routes import router as onboarding_router
+from argus.api.onboarding_routes import scope_warnings
 from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
@@ -302,6 +304,7 @@ app.include_router(workspace_router)
 app.include_router(monitor_router)
 app.include_router(notification_router)
 app.include_router(report_router)
+app.include_router(onboarding_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -730,6 +733,8 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
             "passive_only": req.passive_only,
             "purpose": req.purpose,
             "authorized_confirmed": True,
+            # What the person was warned about (computed here, not trusted from the client).
+            "scope_warnings": [w["code"] for w in scope_warnings(target, ttype, req.passive_only)],
         },
     )
 

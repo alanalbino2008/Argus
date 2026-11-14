@@ -246,6 +246,18 @@ email (attached) and a summary to Slack, Teams or a SIEM. Schedules are DST-corr
 across replicas, skip unchanged targets, and are always pseudonymised
 ([`docs/explained/17-scheduled-reports.md`](docs/explained/17-scheduled-reports.md)).
 
+**Guided first scan**: a four-step wizard teaches responsible reconnaissance before anything is
+scanned:
+- authorisation and good first targets;
+- a server-side pre-flight check with legal and ethical warnings (government and NHS domains,
+  large companies outside bug bounty scope, personal data under UK GDPR), recorded in the audit
+  log;
+- passive vs active reconnaissance;
+- live, plain-English progress ending in "what an attacker could learn".
+
+A getting-started checklist tracks the whole workflow
+([`docs/explained/18-guided-first-scan.md`](docs/explained/18-guided-first-scan.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

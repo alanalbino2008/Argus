@@ -231,6 +231,8 @@ def _spoofable_domain(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]
         policy = domain.metadata.get("dmarc_policy")
         if not domain.metadata.get("dns_checked") or policy not in ("missing", "none"):
             continue  # unknown is not missing: never alert on absent data
+        if domain.metadata.get("dns_exists") is False:
+            continue  # a domain that does not exist has nothing to spoof (and receivers reject it)
         staff = [e for e in emails if e.value.lower().endswith("@" + domain.value.lower())][:2]
         people = [p for e in staff for p in view.neighbors(e, EntityType.PERSON)][:1]
         yield _Draft(

@@ -37,6 +37,8 @@ class DnsReconModule(BaseModule):
 
         spf_record: str | None = None
         txt_answered = False
+        nonexistent = False  # an authoritative NXDOMAIN: the domain itself does not exist
+        answered = False
 
         # Query standard records
         for rtype in self.RECORD_TYPES:
@@ -44,6 +46,7 @@ class DnsReconModule(BaseModule):
                 answers = await resolver.resolve(domain, rtype)
                 self.report_ok()
                 txt_answered = txt_answered or rtype == "TXT"
+                answered = True
                 for rdata in answers:
                     text_val = rdata.to_text().strip('"')
 
@@ -143,8 +146,12 @@ class DnsReconModule(BaseModule):
                             label="SPF Record",
                         )
 
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):  # noqa: PERF203 - isolate each record type
-                self.report_ok()  # authoritative "no such record" is a valid answer
+            except dns.resolver.NXDOMAIN:  # noqa: PERF203 - isolate each record type
+                nonexistent = True
+                self.report_ok()  # an authoritative answer, not a failure
+                continue
+            except dns.resolver.NoAnswer:
+                self.report_ok()  # the name exists but has no record of this type
                 continue
             except Exception as e:
                 logger.debug("DNS query %s for %s error: %s", rtype, domain, e)
@@ -185,6 +192,7 @@ class DnsReconModule(BaseModule):
 
         # Facts other components reason over (e.g. the attack path engine), set on the domain itself.
         entity.metadata["dns_checked"] = True
+        entity.metadata["dns_exists"] = answered or not nonexistent
         entity.metadata["dmarc_policy"] = dmarc_policy
         entity.metadata["spf"] = spf_record or ("missing" if txt_answered else "unknown")
 

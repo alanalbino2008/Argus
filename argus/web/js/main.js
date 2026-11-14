@@ -10,6 +10,7 @@ import { initGraphView } from "./views/graphview.js";
 import { initHistory, refresh as refreshHistory } from "./views/history.js";
 import { initModals, openDiff, openNewInvestigation, startTour } from "./views/modals.js";
 import { initReports, openReport } from "./views/reports.js";
+import { initGuide, markPathsReviewed, openGuide } from "./views/guide.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
@@ -37,6 +38,7 @@ function route() {
   if (view === "history") refreshHistory();
   if (view === "monitoring") refreshMonitoring();
   if (view === "settings") refreshSettings();
+  if (view === "paths") markPathsReviewed();
 }
 
 // ------------------------------------------------------------------ actions shared by views
@@ -51,6 +53,8 @@ const actions = {
     go("overview");
   },
   newInvestigation: (opts) => openNewInvestigation(opts),
+  guide: (target) => openGuide(actions, typeof target === "string" ? target : ""),
+  goMonitoring: () => go("monitoring"),
   async loadDemo() {
     try {
       const { investigation_id: id } = await api.post("/api/demo");
@@ -220,6 +224,7 @@ async function enterApp(me) {
   const linkedWs = new URLSearchParams(location.search).get("ws"); // links in notifications name their workspace
   if (linkedWs && (me.workspaces || []).some((w) => w.id === linkedWs)) setActiveWorkspace(linkedWs);
   chooseWorkspace(me);
+  emit("onboarding-changed"); // signed in: load this workspace's getting-started progress
   $("#signin").hidden = true;
   $("#user-name").textContent = `${me.name}`;
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
@@ -271,6 +276,7 @@ async function boot() {
   setupAuth();
   setupShortcuts();
   initModals(actions);
+  initGuide(actions);
   initReports();
   initGraphView(actions);
   initOverview($("#view-overview"), actions);

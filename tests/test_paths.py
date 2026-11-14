@@ -85,6 +85,13 @@ def test_unknown_dmarc_never_alerts():
     assert "spoofable_email_domain" not in rules(g)
 
 
+def test_a_domain_that_does_not_exist_cannot_be_spoofed():
+    """Found by the guided first scan: a nonexistent domain has no DMARC record, but nothing to spoof."""
+    meta = {"dns_checked": True, "dmarc_policy": "missing", "dns_exists": False}
+    g, _ = build(entities=[("seed", E.DOMAIN, "typo-acme.example", meta)])
+    assert "spoofable_email_domain" not in rules(g)
+
+
 def test_enforced_dmarc_never_alerts():
     g, _ = build(entities=[("seed", E.DOMAIN, "acme.com", {"dns_checked": True, "dmarc_policy": "reject"})])
     assert rules(g) == []

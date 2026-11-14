@@ -280,6 +280,18 @@
     </form>
   </div>
 
+  <!-- ================================================================ guided first scan -->
+  <div id="guide-modal" class="modal-root" aria-hidden="true">
+    <div class="modal wide guide" role="dialog" aria-labelledby="guide-title">
+      <div class="modal-head">
+        <div><h2 id="guide-title">Your first scan</h2><ol class="guide-steps" id="guide-steps" aria-label="Progress"></ol></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body" id="guide-body" aria-live="polite"></div>
+      <div class="modal-foot" id="guide-foot"></div>
+    </div>
+  </div>
+
   <!-- ================================================================ report schedule -->
   <div id="schedule-modal" class="modal-root" aria-hidden="true">
     <form class="modal wide" role="dialog" aria-labelledby="schedule-title" id="schedule-form" novalidate>

@@ -6,21 +6,26 @@ import { empty, gauge, ico, pathCard, skeletonRows, statusBadge, tip } from "../
 import { formatDate, html, on, plural, setHTML, timeAgo } from "../dom.js";
 import { typeInfo } from "../icons.js";
 import { isRunning, on as onState, state } from "../state.js";
+import { checklistCard, hideChecklist } from "./guide.js";
 
 let root;
 let actions;
 let recent = null;
+let checklist; // undefined = not loaded, null = nothing to show
 
 export function initOverview(el, appActions) {
   root = el;
   actions = appActions;
   ["investigation", "analytics", "paths", "attack", "reset"].forEach((e) => onState(e, render));
   onState("graph", () => { if (isRunning()) throttledRender(); });
-  onState("history-changed", () => { recent = null; if (!state.investigation) render(); });
+  onState("history-changed", () => { recent = null; checklist = undefined; if (!state.investigation) render(); });
+  ["onboarding-changed", "workspace"].forEach((e) => onState(e, () => { checklist = undefined; if (!state.investigation) render(); }));
 
   on(root, "click", "[data-action]", (e, btn) => {
     const act = btn.dataset.action;
     if (act === "show-path") actions.showPath(state.paths.paths[Number(btn.dataset.index)]);
+    else if (act === "hideChecklist") { hideChecklist(); checklist = null; render(); }
+    else if (act === "checklist") runChecklistStep(btn.dataset.act);
     else if (act === "open") actions.open(btn.dataset.id);
     else if (actions[act]) actions[act](btn.dataset);
   });
@@ -33,7 +38,20 @@ function throttledRender() {
   pending = setTimeout(() => { pending = null; render(); }, 700);
 }
 
+async function runChecklistStep(act) {
+  // Steps that need a finished investigation open the latest one first.
+  if (["report", "goPaths"].includes(act) && !state.investigation) {
+    if (!checklist?.latestId) return actions.toast("Run a scan or explore the demo first", "info");
+    await actions.open(checklist.latestId);
+  }
+  actions[act]?.();
+}
+
 function welcome() {
+  if (checklist === undefined) {
+    checklist = null;
+    checklistCard().then((c) => { checklist = c; if (!state.investigation) render(); });
+  }
   if (recent === null) {
     recent = [];
     api.get("/api/investigations?limit=6").then((rows) => { recent = rows; render(); }).catch(() => {});
@@ -45,8 +63,9 @@ function welcome() {
         <h1>See your organisation the way an attacker does.</h1>
         <p>Argus maps everything publicly discoverable about a target, connects the findings into the attack paths an adversary would actually use, and watches for changes.</p>
         <div class="hero-actions">
-          <button class="btn primary" data-action="newInvestigation">${ico("plus")}Start an investigation</button>
-          <button class="btn" data-action="loadDemo">${ico("sparkle")}Try the demo</button>
+          <button class="btn primary" data-action="guide">${ico("sparkle")}Guided first scan</button>
+          <button class="btn" data-action="newInvestigation">${ico("plus")}New investigation</button>
+          <button class="btn ghost" data-action="loadDemo">Try the demo</button>
         </div>
       </div>
       <div class="steps">
@@ -55,6 +74,7 @@ function welcome() {
         <div class="step"><span class="step-num">3</span><div><h3>Watch</h3><p>Re-scan on a schedule and get alerted when the attack surface changes.</p></div></div>
       </div>
     </div>
+    ${checklist ? checklist.render() : ""}
     <div class="card card-pad" style="margin-top:16px">
       <div class="card-head"><h2>Recent investigations</h2><button class="btn ghost sm" data-action="goHistory">View all</button></div>
       ${recent.length ? html`<div class="list">${recent.map((r) => html`

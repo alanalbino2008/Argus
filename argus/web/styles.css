@@ -747,3 +747,51 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .schedule-when .select, .schedule-when .input { width: auto; flex: 1 1 120px; }
 .schedule-channels { display: flex; flex-wrap: wrap; gap: 8px 16px; }
 @media (max-width: 760px) { .schedule-grid { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------------------ guided first scan */
+.guide .modal-body { min-height: 340px; }
+.guide-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 10px 0 0; flex-wrap: wrap; }
+.guide-steps li { font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+.guide-steps li + li::before { content: ""; width: 18px; height: 1px; background: var(--border); }
+.guide-steps li .dot { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 650; background: var(--surface-2); color: var(--text-3); }
+.guide-steps li.on { color: var(--text); font-weight: 600; }
+.guide-steps li.on .dot { background: var(--accent); color: #fff; }
+.guide-steps li.done .dot { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.guide-ok { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0; }
+.guide-ok > div { padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); font-size: 13px; line-height: 1.5; }
+.guide-ok h4 { margin: 0 0 6px; font-size: 13px; display: flex; gap: 6px; align-items: center; }
+.guide-ok .yes h4 svg { color: var(--ok); }
+.guide-ok .no h4 svg { color: var(--sev-critical); }
+.guide-ok ul { margin: 0; padding-left: 18px; color: var(--text-2); }
+.guide-warning { display: flex; gap: 10px; padding: 12px 14px; border-radius: var(--radius); margin-bottom: 10px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border); }
+.guide-warning svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.guide-warning.danger { background: color-mix(in srgb, var(--sev-critical) 9%, transparent); border-color: color-mix(in srgb, var(--sev-critical) 35%, transparent); }
+.guide-warning.danger svg { color: var(--sev-critical); }
+.guide-warning.warning { background: color-mix(in srgb, var(--sev-high) 9%, transparent); border-color: color-mix(in srgb, var(--sev-high) 35%, transparent); }
+.guide-warning.warning svg { color: var(--sev-high); }
+.guide-warning.info svg { color: var(--accent); }
+.guide-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 6px 0 14px; }
+.guide-mode { text-align: left; padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; line-height: 1.5; }
+.guide-mode[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.guide-mode b { display: block; margin-bottom: 4px; }
+.guide-mode small { color: var(--text-2); font-size: 12.5px; }
+.guide-live { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.guide-live > div { padding: 12px; border-radius: var(--radius); background: var(--surface-2); }
+.guide-live b { font-size: 22px; display: block; }
+.guide-sources { max-height: 190px; overflow: auto; font-size: 12.5px; }
+.guide-sources li { padding: 4px 0; color: var(--text-2); list-style: none; display: flex; gap: 8px; }
+.guide-sources li b { color: var(--text); min-width: 140px; font-weight: 600; }
+.guide-tip { font-size: 13px; color: var(--text-2); padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 var(--radius) var(--radius) 0; }
+.checklist { display: grid; gap: 2px; margin-top: 8px; }
+.checklist-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--border); }
+.checklist-row:last-child { border-bottom: 0; }
+.checklist-row .tick { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border-strong); display: grid; place-items: center; flex: none; }
+.checklist-row.done .tick { background: var(--ok); border-color: var(--ok); color: #fff; }
+.checklist-row.done .tick svg { width: 13px; height: 13px; }
+.checklist-row .what { flex: 1; min-width: 0; }
+.checklist-row .what b { font-weight: 600; }
+.checklist-row.done .what b { color: var(--text-3); text-decoration: line-through; }
+.checklist-row .what div { font-size: 12.5px; color: var(--text-3); }
+.progress { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.progress > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
+@media (max-width: 760px) { .guide-ok, .guide-modes, .guide-live { grid-template-columns: 1fr; } }
