@@ -17,7 +17,7 @@
 
 Argus bridges the gap between fragmented CLI tools and expensive enterprise intelligence suites by fusing the best features of industry standards with modern web-scale engineering:
 
-* ⚡ **Sherlock-Class Identity Hunting:** Asynchronous, concurrent account hunting across 60+ platforms (GitHub, GitLab, DockerHub, PyPI, Bluesky, Telegram, Keybase, etc.) with smart false-positive rejection.
+* ⚡ **Sherlock-Class Identity Hunting:** Asynchronous, concurrent account hunting across 35 platforms (GitHub, GitLab, DockerHub, PyPI, Bluesky, Telegram, Keybase, etc.) with smart false-positive rejection — then follows each account to learn more about the person behind it.
 * 🕸️ **Spiderfoot-Style Recursive Infrastructure Mapping:** Automated multi-hop enrichment: Domain ➔ DNS ➔ IP ➔ GeoIP/ASN ➔ RDAP Registrant ➔ Subdomains via Certificate Transparency ➔ TLS SANs ➔ Web Tech Stack.
 * 🔮 **Maltego-Grade Visual Link Analysis:** Interactive physics-driven graph visualization built on **Cytoscape.js** with real-time WebSocket telemetry streaming. Nodes and relationships animate live onto the canvas as intelligence is discovered.
 * 🛡️ **Novel Innovation — Attack Surface Scoring & Pivot Analysis:** Topological analysis utilizing graph degree centrality to identify single-point-of-failure infrastructure hubs, detect missing defensive headers (HSTS, CSP), and calculate a quantitative exposure score.
@@ -102,6 +102,12 @@ Most OSINT tools return a list of findings. Argus **chains them into the attack 
 ![Attack paths highlighted on the intelligence graph](docs/img/attack-paths.jpg)
 
 Try it without scanning anything: `python -m argus.cli.console --load-demo` loads a fictional company (reserved `.example` domains and TEST-NET IPs) that triggers every rule. How it works: [`docs/explained/06-attack-path-engine.md`](docs/explained/06-attack-path-engine.md).
+
+### People & Software Intelligence
+
+A username or email is a starting point, not an answer. When Argus finds an account it reads the platform's **official public API** for what the owner chose to publish — display name, bio, location, employer, website, join date and *linked accounts* — and follows those links. **Identity resolution** then groups the fragments into **people**, each with a dossier: accounts, emails, handles, locations, employer, a timeline (joined GitHub 2014 → password exposed in a 2023 breach) and the exposures and attack paths they are part of. Every link is graded **verified** (proven by Keybase or Mastodon), **strong** or **possible** (same handle — may be someone else), shared inboxes like `info@` are never treated as people, viewing a dossier is audited, and remote avatars are never loaded, so the analyst's IP doesn't leak to the subject's platforms.
+
+Software gets the same treatment: `PHP/7.4.3` is checked against **endoflife.date** (*end-of-life since Nov 2022*), and every CVE against **CISA's Known Exploited Vulnerabilities** catalog, **FIRST EPSS** (probability of exploitation in the next 30 days) and **NIST NVD** (CVSS). A CVE that is being exploited in the wild raises its attack path to critical. See [`docs/explained/09-people-and-software-intelligence.md`](docs/explained/09-people-and-software-intelligence.md).
 
 ### Continuous Monitoring
 
@@ -207,7 +213,7 @@ Argus includes a **Rich** command-line interface with automatic entity type dete
 # Scan a domain (Recursion Depth: 1)
 python -m argus.cli.console example.com -d 1
 
-# Sherlock-style username hunting across 60+ platforms
+# Sherlock-style username hunting across 35 platforms
 python -m argus.cli.console torvalds -t username
 
 # Scan an IP address with JSON export
@@ -233,7 +239,9 @@ python -m argus.cli.console security@example.com --export-csv maltego_export.csv
 | **`whois_lookup`** | `DOMAIN` | `ORGANIZATION` (Registrar/Registrant), `EMAIL` (Abuse) | RFC 7480 RDAP protocol queries |
 | **`tls_analyzer`** | `DOMAIN`, `SUBDOMAIN` | `CERTIFICATE`, `SUBDOMAIN` (via SANs) | TLS handshake on 443, certificate chain extraction |
 | **`http_fingerprint`** | `DOMAIN`, `IP_ADDRESS` | `TECHNOLOGY` (Web Server, CDN, Framework) | Header analysis, HSTS/CSP defense audit & letter grade (A+ to F) |
-| **`email_recon`** | `EMAIL` | `USERNAME`, `DOMAIN`, `SOCIAL_PROFILE` | RFC email parsing, disposable domain check, Gravatar profiling |
+| **`email_recon`** | `EMAIL` | `USERNAME`, `DOMAIN`, `SOCIAL_PROFILE` | RFC email parsing, disposable domain check, Gravatar profiling; role inboxes (`info@`) are not hunted |
+| **`profile_enricher`** | `SOCIAL_PROFILE` | `PERSON`, `LOCATION`, `ORGANIZATION`, `DOMAIN`, `EMAIL`, linked `SOCIAL_PROFILE`/`USERNAME` | Official public APIs of GitLab, Reddit, Hacker News, Keybase (verified proofs), Dev.to, Mastodon (`rel="me"` verified links), Docker Hub, Bluesky |
+| **`software_intel`** | `TECHNOLOGY`, `PORT`, `VULNERABILITY` | Enriches with lifecycle and CVE intel | endoflife.date, CISA KEV, FIRST EPSS, NIST NVD (rate-limited) |
 
 ---
 

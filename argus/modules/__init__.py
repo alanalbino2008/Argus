@@ -4,11 +4,13 @@ from argus.modules.base import BaseModule
 from argus.modules.identity.email_recon import EmailReconModule
 from argus.modules.identity.github_hunter import GitHubHunterModule
 from argus.modules.identity.phone_recon import PhoneReconModule
+from argus.modules.identity.profile_enricher import ProfileEnricherModule
 from argus.modules.identity.username_hunter import UsernameHunterModule
 from argus.modules.infrastructure.dns_recon import DnsReconModule
 from argus.modules.infrastructure.http_fingerprint import HttpFingerprintModule
 from argus.modules.infrastructure.ip_intelligence import IpIntelligenceModule
 from argus.modules.infrastructure.shodan_internetdb import ShodanInternetDbModule
+from argus.modules.infrastructure.software_intel import SoftwareIntelModule
 from argus.modules.infrastructure.subdomain_finder import SubdomainFinderModule
 from argus.modules.infrastructure.tls_analyzer import TlsAnalyzerModule
 from argus.modules.infrastructure.whois_lookup import WhoisLookupModule
@@ -19,6 +21,7 @@ from argus.modules.threat_intel.virustotal import VirusTotalModule
 
 ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     UsernameHunterModule,
+    ProfileEnricherModule,
     EmailReconModule,
     GitHubHunterModule,
     PhoneReconModule,
@@ -29,6 +32,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     WhoisLookupModule,
     TlsAnalyzerModule,
     HttpFingerprintModule,
+    SoftwareIntelModule,
     # Optional: enabled only when their API key is configured
     VirusTotalModule,
     HibpModule,

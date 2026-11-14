@@ -116,6 +116,14 @@ def _domain_object(entity: Entity, investigation_id: str) -> Any | None:
         return stix2.Identity(
             id=_sdo_id("identity", investigation_id, entity.id), name=entity.value, identity_class=cls, **common
         )
+    if entity.type == EntityType.LOCATION:
+        return stix2.Location(
+            id=_sdo_id("location", investigation_id, entity.id),
+            name=entity.value,
+            description="Self-declared location on a public profile",
+            region="unknown",
+            **common,
+        )
     if entity.type == EntityType.VULNERABILITY and entity.value.upper().startswith("CVE-"):
         cve = entity.value.upper()
         return stix2.Vulnerability(

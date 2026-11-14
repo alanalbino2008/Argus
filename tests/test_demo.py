@@ -39,6 +39,7 @@ def test_demo_triggers_every_attack_path_rule():
         "subdomain_takeover_candidate",
         "malicious_reputation",
         "web_information_leak",
+        "end_of_life_software",
     }
     assert fired == names and len(expected) == len(names)
 

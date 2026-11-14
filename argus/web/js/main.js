@@ -12,9 +12,10 @@ import { initModals, openDiff, openNewInvestigation, openReport, startTour } fro
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
+import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 
-const VIEWS = ["overview", "graph", "paths", "monitoring", "history", "settings"];
+const VIEWS = ["overview", "graph", "paths", "people", "monitoring", "history", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -31,6 +32,7 @@ function route() {
   $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${view}`));
   $$(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
   if (view === "graph") setTimeout(graph.resizeCanvas, 50);
+  if (view === "people") refreshPeople();
   if (view === "history") refreshHistory();
   if (view === "monitoring") refreshMonitoring();
   if (view === "settings") refreshSettings();
@@ -78,6 +80,7 @@ const actions = {
   report: () => openReport(),
   goGraph: () => go("graph"),
   goPaths: () => go("paths"),
+  goPeople: () => go("people"),
   goHistory: () => go("history"),
   exportStix: () => exportAs("stix", "stix.json"),
   exportNavigator: () => exportAs("navigator", "attack_layer.json"),
@@ -140,7 +143,7 @@ function setupShortcuts() {
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing || e.metaKey || e.ctrlKey || e.altKey || !$("#signin").hidden || $(".modal-root.open")) return;
-    const map = { o: "overview", g: "graph", p: "paths", m: "monitoring", h: "history" };
+    const map = { o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", h: "history" };
     if (map[e.key]) go(map[e.key]);
     else if (e.key === "n") { e.preventDefault(); actions.newInvestigation(); }
     else if (e.key === "/") { e.preventDefault(); go("graph"); setTimeout(() => $("#graph-search").focus(), 120); }
@@ -205,6 +208,7 @@ async function boot() {
   initGraphView(actions);
   initOverview($("#view-overview"), actions);
   initPaths($("#view-paths"), actions);
+  initPeople($("#view-people"), actions);
   initMonitoring($("#view-monitoring"), actions);
   initHistory($("#view-history"), actions);
   initSettings($("#view-settings"));

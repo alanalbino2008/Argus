@@ -33,6 +33,9 @@ class BaseModule(ABC):
     requires_settings: ClassVar[tuple[str, ...]] = ()
     # Minimum seconds between requests to specific hosts (third-party API quotas).
     rate_limits: ClassVar[dict[str, float]] = {}
+    # Enrichment modules add facts to an entity rather than discovering new targets. They also run on
+    # entities *at* the depth limit (whatever they yield is recorded but never expanded further).
+    enrichment: ClassVar[bool] = False
     # "builtin", or "plugin:<package:object>" for third-party modules (see argus/modules/plugins.py).
     origin: ClassVar[str] = "builtin"
 

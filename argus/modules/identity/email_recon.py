@@ -13,6 +13,7 @@ import dns.resolver
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel.identity import is_role_mailbox
 from argus.modules.base import BaseModule
 
 logger = logging.getLogger("argus.module.email_recon")
@@ -52,23 +53,27 @@ class EmailReconModule(BaseModule):
 
         username_part, domain_part = email.split("@", 1)
 
-        # 1. Extract and yield Username entity
-        username_entity = Entity.create(
-            entity_type=EntityType.USERNAME,
-            value=username_part,
-            label=username_part,
-            metadata={"origin": "email_prefix", "email": email},
-            source_module=self.name,
-            confidence=0.85,
-            depth=entity.depth + 1,
-        )
-        yield username_entity
-        yield Relation.create(
-            source_id=entity.id,
-            target_id=username_entity.id,
-            rel_type=RelationType.BELONGS_TO,
-            label="Username Prefix",
-        )
+        # 1. Extract and yield Username entity - unless this is a shared inbox (info@, support@...):
+        # hunting "info" across social networks would only find strangers.
+        if is_role_mailbox(email):
+            entity.metadata["role_mailbox"] = True
+        else:
+            username_entity = Entity.create(
+                entity_type=EntityType.USERNAME,
+                value=username_part,
+                label=username_part,
+                metadata={"origin": "email_prefix", "email": email},
+                source_module=self.name,
+                confidence=0.85,
+                depth=entity.depth + 1,
+            )
+            yield username_entity
+            yield Relation.create(
+                source_id=entity.id,
+                target_id=username_entity.id,
+                rel_type=RelationType.BELONGS_TO,
+                label="Username Prefix",
+            )
 
         # 2. Extract and yield Domain entity
         is_disposable = domain_part in DISPOSABLE_DOMAINS

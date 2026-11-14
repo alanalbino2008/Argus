@@ -436,6 +436,49 @@ details.more .more-body { margin-top: 10px; display: grid; grid-template-columns
 details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* ---------------------------------------------------------------- people */
+.persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.persona-card {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 18px; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  transition: border-color var(--speed) var(--ease), box-shadow var(--speed) var(--ease), transform var(--speed) var(--ease);
+}
+.persona-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow); transform: translateY(-1px); }
+.persona-card:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.persona-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.persona-name { min-width: 0; flex: 1; }
+.persona-bio { margin: 0; color: var(--text-2); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.persona-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--text-2); }
+.persona-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.persona-meta svg { width: 14px; height: 14px; color: var(--text-3); }
+.persona-meta:empty { display: none; }
+.persona-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.avatar {
+  width: 42px; height: 42px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 15px; letter-spacing: 0.02em;
+  color: var(--accent); background: var(--accent-soft);
+}
+.avatar.lg { width: 64px; height: 64px; font-size: 22px; }
+.dossier .grid { grid-template-columns: minmax(0, 1fr); }
+.dossier .grid.two { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+.dossier-head { display: flex; align-items: center; gap: 18px; }
+.dossier-head h1 { font-size: 22px; letter-spacing: -0.01em; }
+.account-bio { white-space: normal; margin-top: 3px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 10px; border-radius: 999px; background: var(--surface-2); font-size: 12.5px; color: var(--text-2); }
+.timeline { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 2px solid var(--border); }
+.timeline li { position: relative; padding: 0 0 14px 14px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li::before {
+  content: ""; position: absolute; left: -23px; top: 4px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent);
+}
+.timeline time { font-size: 12px; color: var(--text-3); }
+.intel-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.intel-badges .pill, .persona-foot .pill { text-transform: none; }
+
 /* ---------------------------------------------------------------- graph workspace */
 .workspace { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr var(--panel-width); transition: grid-template-columns 220ms var(--ease); }
 .workspace.panel-collapsed { grid-template-columns: 1fr 0; }
@@ -632,7 +675,7 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 1100px) {
   .grid.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid.two { grid-template-columns: 1fr; }
+  .grid.two, .dossier .grid.two { grid-template-columns: minmax(0, 1fr); }
   .hero { grid-template-columns: 1fr; padding: 28px; }
   :root { --panel-width: 340px; }
 }
@@ -657,6 +700,9 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
   .context-meta, .hide-sm { display: none; }
   details.more .more-body { grid-template-columns: 1fr; }
   .floating .input { width: 130px; }
+  .nav-item { font-size: 10px; padding-left: 0; padding-right: 0; min-width: 0; }
+  .persona-grid { grid-template-columns: 1fr; }
+  .dossier-head { flex-wrap: wrap; }
 }
 
 @media (prefers-reduced-motion: reduce) {

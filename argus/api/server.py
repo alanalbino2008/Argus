@@ -43,6 +43,7 @@ from argus.core.settings import get_settings
 from argus.demo import load_demo
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
+from argus.intel.identity import resolve_people
 from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
 from argus.modules import get_default_modules, get_module_catalog, plugin_report
@@ -632,6 +633,17 @@ async def get_attack_mapping(inv_id: str, request: Request, _: Principal = VIEWE
 async def get_attack_paths(inv_id: str, request: Request, _: Principal = VIEWER):
     """Attack Path Engine: findings chained into ranked, explained attack scenarios."""
     return find_attack_paths(await _resolve_graph(inv_id, get_repo(request)))
+
+
+@app.get("/api/investigation/{inv_id}/people")
+async def get_people(inv_id: str, request: Request, principal: Principal = VIEWER):
+    """Identity resolution: linked identifiers grouped into personas, each with a dossier.
+
+    Dossiers aggregate personal data, so every access is recorded in the audit log.
+    """
+    graph = await _resolve_graph(inv_id, get_repo(request))
+    await audit(request, principal, "investigation.people", inv_id)
+    return resolve_people(graph, find_attack_paths(graph)["paths"])
 
 
 @app.get("/api/investigation/{inv_id}/diff")

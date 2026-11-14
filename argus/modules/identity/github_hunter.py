@@ -44,6 +44,61 @@ class GitHubHunterModule(BaseModule):
                 if resp.status == 200:
                     user_data = await resp.json()
 
+                    # The GitHub profile itself, carrying the public profile facts. Its value matches
+                    # the profile username_hunter finds, so the two merge into one node.
+                    profile_entity = Entity.create(
+                        entity_type=EntityType.SOCIAL_PROFILE,
+                        value=f"https://github.com/{username}",
+                        label=f"GitHub: {username}",
+                        metadata={
+                            "platform": "GitHub",
+                            "username": username,
+                            "profile": {
+                                k: v
+                                for k, v in {
+                                    "display_name": user_data.get("name"),
+                                    "bio": (user_data.get("bio") or "")[:400] or None,
+                                    "location": user_data.get("location"),
+                                    "website": user_data.get("blog") or None,
+                                    "company": user_data.get("company"),
+                                    "created_at": user_data.get("created_at"),
+                                    "followers": user_data.get("followers"),
+                                    "public_repos": user_data.get("public_repos"),
+                                    "avatar_url": user_data.get("avatar_url"),
+                                }.items()
+                                if v not in (None, "")
+                            },
+                        },
+                        source_module=self.name,
+                        confidence=1.0,
+                        depth=entity.depth + 1,
+                    )
+                    yield profile_entity
+                    yield Relation.create(
+                        source_id=entity.id,
+                        target_id=profile_entity.id,
+                        rel_type=RelationType.HAS_ACCOUNT,
+                        label="Registered on GitHub",
+                    )
+                    location = (user_data.get("location") or "").strip()
+                    if 2 <= len(location) <= 80:
+                        place = Entity.create(
+                            entity_type=EntityType.LOCATION,
+                            value=location,
+                            label=location,
+                            metadata={"source_platform": "GitHub", "origin": "self-declared"},
+                            source_module=self.name,
+                            confidence=0.5,
+                            depth=entity.depth + 1,
+                        )
+                        yield place
+                        yield Relation.create(
+                            source_id=profile_entity.id,
+                            target_id=place.id,
+                            rel_type=RelationType.LOCATED_IN,
+                            label="Declared location",
+                        )
+
                     # Real Name -> Person entity
                     real_name = user_data.get("name")
                     if real_name and len(real_name.strip()) > 1:

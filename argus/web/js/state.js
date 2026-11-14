@@ -10,6 +10,7 @@ export const state = {
   analytics: null,
   paths: null, // { paths, summary }
   attack: null, // ATT&CK mapping
+  people: null, // { personas, role_mailboxes, summary } - fetched when the People view opens
   feed: [],
   alertsOpen: 0,
 };
@@ -33,6 +34,7 @@ export function resetInvestigation() {
   state.analytics = null;
   state.paths = null;
   state.attack = null;
+  state.people = null;
   state.feed = [];
   emit("reset");
 }

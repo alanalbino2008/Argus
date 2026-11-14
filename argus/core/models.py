@@ -33,6 +33,7 @@ class EntityType(str, Enum):
     VULNERABILITY = "vulnerability"
     PORT = "port"
     BREACH = "breach"
+    LOCATION = "location"
     GENERIC = "generic"
 
 

@@ -103,6 +103,11 @@ TECHNIQUES: dict[str, Technique] = {
             "Review public corporate information (registrant data, org charts, supplier lists).",
         ),
         _T(
+            "T1591.001",
+            "Determine Physical Locations",
+            "Encourage staff to avoid publishing precise locations; review what profiles reveal about offices and homes.",
+        ),
+        _T(
             "T1592",
             "Gather Victim Host Information",
             "Patch exposed hosts promptly; reduce information leaked in banners and headers.",
@@ -169,6 +174,7 @@ ENTITY_TECHNIQUES: dict[EntityType, tuple[str, ...]] = {
     EntityType.PHONE: ("T1589",),
     EntityType.SOCIAL_PROFILE: ("T1593.001",),
     EntityType.ORGANIZATION: ("T1591",),
+    EntityType.LOCATION: ("T1591.001",),
     EntityType.DOMAIN: ("T1590.001",),
     EntityType.SUBDOMAIN: ("T1590.002",),
     EntityType.DNS_RECORD: ("T1590.002",),

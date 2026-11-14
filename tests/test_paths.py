@@ -196,10 +196,71 @@ def test_paths_are_ranked_deduplicated_and_summarised():
     scores = [p["score"] for p in result["paths"]]
     assert scores == sorted(scores, reverse=True)
     assert len({p["id"] for p in result["paths"]}) == len(result["paths"])
-    assert result["summary"]["total"] == 2 and result["summary"]["rules_evaluated"] == 9
+    assert result["summary"]["total"] == 2 and result["summary"]["rules_evaluated"] == 10
     assert find_attack_paths(g)["paths"] == result["paths"]  # deterministic
 
 
 def test_empty_graph_has_no_paths():
     g, _ = build()
     assert find_attack_paths(g)["summary"]["total"] == 0
+
+
+# ------------------------------------------------------------- threat intelligence
+def test_kev_and_ransomware_cves_raise_likelihood_and_lead_the_path():
+    kev = {"kev": {"date_added": "2024-02-09", "ransomware": True}, "epss": 0.94, "cvss_score": 9.8}
+    g, _ = build(
+        entities=[
+            ("ip", E.IP_ADDRESS, "203.0.113.40", {}),
+            ("old", E.VULNERABILITY, "CVE-2019-0001", {"intel": {"kev": None, "epss": 0.01}}),
+            ("hot", E.VULNERABILITY, "CVE-2024-21762", {"intel": kev}),
+        ],
+        links=[("old", "ip"), ("hot", "ip")],
+    )
+    path = only(g, "exploitable_public_service")
+    assert path["likelihood"] == 0.95 and path["severity"] == "critical"
+    assert path["title"].startswith("Actively exploited")
+    assert "ransomware" in path["narrative"]
+    roles = {s["label"]: s["role"] for s in path["steps"]}
+    assert roles["CVE-2024-21762"] == "actively exploited vulnerability"
+    assert path["steps"][1]["label"] == "CVE-2024-21762"  # most dangerous first
+    assert any("CISA KEV since 2024-02-09" in e and "EPSS 94%" in e for e in path["evidence"])
+    assert path["remediation"][0].startswith("Treat as an emergency")
+
+
+def test_plain_cves_keep_baseline_likelihood():
+    g, _ = build(
+        entities=[("ip", E.IP_ADDRESS, "203.0.113.41", {}), ("v", E.VULNERABILITY, "CVE-2019-0001", {})],
+        links=[("v", "ip")],
+    )
+    path = only(g, "exploitable_public_service")
+    assert path["likelihood"] == 0.6 and path["title"].startswith("Known")
+
+
+def test_end_of_life_software_needs_an_exposed_host():
+    life = {
+        "product": "php",
+        "version": "7.4.3",
+        "cycle": "7.4",
+        "eol": True,
+        "eol_date": "2022-11-28",
+        "latest": "7.4.33",
+    }
+    g, _ = build(
+        entities=[("sub", E.SUBDOMAIN, "shop.acme.com", {}), ("php", E.TECHNOLOGY, "PHP/7.4.3", {"lifecycle": life})],
+        links=[("sub", "php")],
+    )
+    path = only(g, "end_of_life_software")
+    assert path["title"] == "Unsupported software exposed: php 7.4.3"
+    assert "since 2022-11-28" in path["narrative"]
+    assert [t["id"] for t in path["techniques"]] == ["T1592.002", "T1190"]
+
+    lonely, _ = build(entities=[("php", E.TECHNOLOGY, "PHP/7.4.3", {"lifecycle": life})])
+    assert "end_of_life_software" not in rules(lonely)
+    supported, _ = build(
+        entities=[
+            ("sub", E.SUBDOMAIN, "a.acme.com", {}),
+            ("p", E.TECHNOLOGY, "PHP/8.3.1", {"lifecycle": {"eol": False}}),
+        ],
+        links=[("sub", "p")],
+    )
+    assert "end_of_life_software" not in rules(supported)

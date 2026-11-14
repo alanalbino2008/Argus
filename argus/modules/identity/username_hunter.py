@@ -54,6 +54,7 @@ class UsernameHunterModule(BaseModule):
                         is_found = False
                         extra_meta = {
                             "platform": plat["name"],
+                            "username": username,
                             "category": plat.get("category", "General"),
                             "profile_url": profile_url,
                             "http_status": status,

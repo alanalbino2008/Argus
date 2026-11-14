@@ -100,10 +100,79 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
     ),
     "p3389": (E.PORT, "203.0.113.30:3389", "Port 3389 (RDP)", 3, "shodan_internetdb", {"port_number": 3389}),
     "p6379": (E.PORT, "203.0.113.30:6379", "Port 6379 (Redis)", 3, "shodan_internetdb", {"port_number": 6379}),
-    "cve1": (E.VULNERABILITY, "CVE-2024-21762", "CVE-2024-21762", 3, "shodan_host", {"cve_id": "CVE-2024-21762"}),
-    "cve2": (E.VULNERABILITY, "CVE-2023-27997", "CVE-2023-27997", 3, "shodan_host", {"cve_id": "CVE-2023-27997"}),
+    # Real CVEs with their public threat intelligence (CISA KEV, FIRST EPSS, NVD CVSS) as software_intel adds it.
+    "cve1": (
+        E.VULNERABILITY,
+        "CVE-2024-21762",
+        "CVE-2024-21762",
+        3,
+        "shodan_host",
+        {
+            "cve_id": "CVE-2024-21762",
+            "intel": {
+                "kev": {
+                    "date_added": "2024-02-09",
+                    "due_date": "2024-02-16",
+                    "ransomware": False,
+                    "product": "Fortinet FortiOS",
+                    "name": "Fortinet FortiOS Out-of-Bound Write Vulnerability",
+                    "action": "Apply mitigations per vendor instructions or discontinue use of the product.",
+                },
+                "epss": 0.9157,
+                "epss_percentile": 0.9963,
+                "cvss_score": 9.8,
+                "cvss_severity": "CRITICAL",
+                "description": "An out-of-bounds write in FortiOS SSL-VPN may allow a remote unauthenticated "
+                "attacker to execute arbitrary code or commands via specially crafted HTTP requests.",
+            },
+        },
+    ),
+    "cve2": (
+        E.VULNERABILITY,
+        "CVE-2023-27997",
+        "CVE-2023-27997",
+        3,
+        "shodan_host",
+        {
+            "cve_id": "CVE-2023-27997",
+            "intel": {
+                "kev": {
+                    "date_added": "2023-06-13",
+                    "due_date": "2023-07-04",
+                    "ransomware": False,
+                    "product": "Fortinet FortiOS and FortiProxy SSL-VPN",
+                    "name": "Fortinet FortiOS and FortiProxy SSL-VPN Heap-Based Buffer Overflow Vulnerability",
+                    "action": "Apply updates per vendor instructions.",
+                },
+                "epss": 0.8706,
+                "epss_percentile": 0.9941,
+                "cvss_score": 9.8,
+                "cvss_severity": "CRITICAL",
+                "description": "A heap-based buffer overflow in FortiOS and FortiProxy SSL-VPN may allow a remote "
+                "attacker to execute arbitrary code or commands via specifically crafted requests.",
+            },
+        },
+    ),
     "nginx": (E.TECHNOLOGY, "nginx 1.18.0", "nginx 1.18.0", 2, "http_fingerprint", {"category": "Web Server"}),
-    "php": (E.TECHNOLOGY, "PHP/7.4.3", "PHP/7.4.3", 2, "http_fingerprint", {"category": "Application Framework"}),
+    "php": (
+        E.TECHNOLOGY,
+        "PHP/7.4.3",
+        "PHP/7.4.3",
+        2,
+        "http_fingerprint",
+        {
+            "category": "Application Framework",
+            "lifecycle": {
+                "product": "php",
+                "version": "7.4.3",
+                "cycle": "7.4",
+                "eol": True,
+                "eol_date": "2022-11-28",
+                "latest": "7.4.33",
+                "outdated": True,
+            },
+        },
+    ),
     "cert": (
         E.CERTIFICATE,
         "TLS-Cert: 9f3c",
@@ -164,8 +233,21 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
         "https://github.example/dwhitfield-dev",
         "GitHub: dwhitfield-dev",
         2,
-        "username_hunter",
-        {"platform": "GitHub"},
+        "github_hunter",
+        {
+            "platform": "GitHub",
+            "username": "dwhitfield-dev",
+            "verified": True,  # proven by the Keybase account below
+            "profile": {
+                "display_name": "Dana Whitfield",
+                "bio": "CTO at Acme. Breaking things so attackers can't.",
+                "company": "Acme Corp",
+                "location": "Leeds, UK",
+                "created_at": "2014-09-02T10:21:00Z",
+                "followers": 214,
+                "public_repos": 37,
+            },
+        },
     ),
     "mastodon": (
         E.SOCIAL_PROFILE,
@@ -173,7 +255,43 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
         "Mastodon: dwhitfield-dev",
         2,
         "username_hunter",
-        {"platform": "Mastodon"},
+        {
+            "platform": "Mastodon",
+            "username": "dwhitfield-dev",
+            "profile": {
+                "display_name": "Dana W",
+                "bio": "Security engineering, coffee and fell running.",
+                "created_at": "2022-11-05T08:00:00Z",
+                "followers": 389,
+            },
+        },
+    ),
+    "keybase": (
+        E.SOCIAL_PROFILE,
+        "https://keybase.example/dwhitfield-dev",
+        "Keybase: dwhitfield-dev",
+        2,
+        "username_hunter",
+        {
+            "platform": "Keybase",
+            "username": "dwhitfield-dev",
+            "profile": {
+                "display_name": "Dana Whitfield",
+                "bio": "Keys for work and personal projects.",
+                "location": "Leeds, UK",
+                "created_at": "2016-05-14T19:30:00Z",
+            },
+        },
+    ),
+    "place": (E.LOCATION, "Leeds, UK", "Leeds, UK", 3, "profile_enricher", {"origin": "self-declared"}),
+    "company": (E.ORGANIZATION, "Acme Corp", "Acme Corp", 3, "profile_enricher", {"origin": "self-declared employer"}),
+    "website": (
+        E.DOMAIN,
+        "dana-whitfield.example",
+        "dana-whitfield.example",
+        3,
+        "profile_enricher",
+        {"origin": "verified link"},
     ),
 }
 
@@ -208,6 +326,13 @@ _RELATIONS: list[tuple[str, str, RelationType, str]] = [
     ("handle", "mastodon", R.HAS_ACCOUNT, "Registered on Mastodon"),
     ("handle", "email_ceo", R.BELONGS_TO, "Git commit author email"),
     ("handle", "ceo", R.BELONGS_TO, "Real name"),
+    ("handle", "keybase", R.HAS_ACCOUNT, "Registered on Keybase"),
+    ("keybase", "github", R.ASSOCIATED_WITH, "Verified same owner"),
+    ("keybase", "website", R.ASSOCIATED_WITH, "Verified website"),
+    ("mastodon", "website", R.ASSOCIATED_WITH, "Verified website"),
+    ("keybase", "place", R.LOCATED_IN, "Declared location"),
+    ("github", "place", R.LOCATED_IN, "Declared location"),
+    ("github", "company", R.ASSOCIATED_WITH, "Declared employer"),
 ]
 
 

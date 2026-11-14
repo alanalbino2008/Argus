@@ -237,7 +237,15 @@ class ArgusEngine:
             return
         self._processed_ids.add(entity.id)
 
-        eligible = [m for m in self.modules.values() if not self.module_stats[m.name].disabled and m.can_handle(entity)]
+        # The seed is always fully processed; the limit applies to what is discovered from it.
+        at_limit = entity.depth > 0 and entity.depth >= self.config.max_depth
+        eligible = [
+            m
+            for m in self.modules.values()
+            if not self.module_stats[m.name].disabled
+            and m.can_handle(entity)
+            and (m.enrichment or not at_limit)  # at the depth limit only enrichers run
+        ]
         if eligible:
             await asyncio.gather(*(self._execute_module(m, entity) for m in eligible))
 
@@ -351,6 +359,11 @@ class ArgusEngine:
             },
         )
         if item.depth < self.config.max_depth:
+            self._enqueue(item)
+        elif item.depth == self.config.max_depth and any(
+            m.enrichment and m.can_handle(item) for m in self.modules.values()
+        ):
+            # Leaf entities still get enriched (facts, lifecycle, CVE intel) - nothing they yield is expanded.
             self._enqueue(item)
 
     def _enqueue(self, entity: Entity) -> None:

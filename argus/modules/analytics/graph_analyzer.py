@@ -51,7 +51,20 @@ class GraphIntelligenceAnalyzer:
             # Flag CVE vulnerabilities
             if entity.type == EntityType.VULNERABILITY:
                 exposure_points += 25
-                risk_flags.append(f"Known CVE Vulnerability: {entity.label}")
+                kev = (entity.metadata.get("intel") or {}).get("kev")
+                if kev:  # exploited in the wild: lead the list so it survives truncation
+                    exposure_points += 15
+                    extra = ", used by ransomware" if kev.get("ransomware") else ""
+                    risk_flags.insert(0, f"Actively exploited CVE (CISA KEV{extra}): {entity.label}")
+                else:
+                    risk_flags.append(f"Known CVE Vulnerability: {entity.label}")
+
+            # Flag software whose vendor no longer ships security fixes
+            life = entity.metadata.get("lifecycle") or {}
+            if life.get("eol"):
+                exposure_points += 12
+                since = f" since {life['eol_date']}" if life.get("eol_date") else ""
+                risk_flags.append(f"End-of-life software{since}: {life.get('product')} {life.get('version')}")
 
             # Flag open ports
             if entity.type == EntityType.PORT:

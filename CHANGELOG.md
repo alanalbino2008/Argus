@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.9.0] — Phase 9: People & software intelligence
+
+### Added
+- `profile_enricher` module: when an account is found, reads the platform's official public API
+  (GitLab, Reddit, Hacker News, Keybase, Dev.to, Mastodon, Docker Hub, Bluesky) for the owner's
+  display name, bio, location, employer, website, join date and linked accounts; Keybase proofs and
+  Mastodon `rel="me"` links are recorded as **verified** and their handles are hunted in turn.
+  `github_hunter` now records the GitHub profile itself with the same facts.
+- New `LOCATION` entity type (ATT&CK T1591.001 *Determine Physical Locations*; STIX `location`).
+- `software_intel` module: software end-of-life status (endoflife.date) for banners such as
+  `PHP/7.4.3`, and CVE threat intelligence — CISA KEV (exploited in the wild, ransomware use),
+  FIRST EPSS exploit probability, NVD CVSS score and description.
+- Enrichment modules: the engine runs them on entities at the depth limit, so leaf CVEs and profiles
+  are still enriched, without expanding the scan further.
+- Identity resolution (`argus/intel/identity.py`) and `GET /api/investigation/{id}/people`: linked
+  identifiers grouped into personas with a dossier — accounts and profile facts, emails, handles,
+  locations, employer, websites, breaches, a timeline, exposures and related attack paths. Links are
+  graded verified / strong / possible. Access is recorded in the audit log.
+- Attack paths: new `end_of_life_software` rule (10 rules); `exploitable_public_service` uses KEV,
+  ransomware and EPSS to raise likelihood and explain *why* a CVE is urgent.
+- Risk analyser flags actively exploited CVEs first, and end-of-life software.
+- Web: **People** page (persona cards → dossier with accounts, timeline, exposure and *Show on graph*,
+  shortcut `U`); graph panel shows profile facts, support status and CVE intelligence.
+- Demo: verified persona with Keybase/GitHub/Mastodon profiles, real KEV/EPSS/CVSS data for its
+  FortiOS CVEs and an end-of-life PHP release.
+- `docs/explained/09-people-and-software-intelligence.md`.
+
+### Changed
+- Shared inboxes (`info@`, `security@`, …) are no longer turned into usernames and hunted across
+  social networks: they are not people, and the results were strangers' accounts.
+- Remote avatars are never loaded in the UI (initials instead), so viewing a dossier doesn't reveal
+  the analyst's IP address to the subject's platforms.
+
+### Fixed
+- README claimed 60+ username platforms; the hunter checks 35.
+- Duplicate links on profiles (the same URL in a link's address and its text) are de-duplicated.
+
 ## [1.8.0] — Phase 8: Interface redesign
 
 ### Added

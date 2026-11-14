@@ -269,30 +269,75 @@ def _exploitable_service(view: _GraphView, seed: Entity | None) -> Iterable[_Dra
         ip = view.entities[ip_id]
         products = [p for p in view.neighbors(ip, EntityType.PORT) if p.metadata.get("product")][:1]
         cves = sorted({v.value for v in vulns})
+        # Threat intelligence (software_intel) turns "a CVE exists" into "this CVE is being exploited".
+        intel = {v.value: v.metadata.get("intel") or {} for v in vulns}
+        kev = sorted(c for c, i in intel.items() if i.get("kev"))
+        ransomware = sorted(c for c, i in intel.items() if (i.get("kev") or {}).get("ransomware"))
+        epss = max((float(i.get("epss") or 0) for i in intel.values()), default=0.0)
+        likelihood = 0.6
+        if epss >= 0.1:
+            likelihood = 0.75
+        if kev:
+            likelihood = 0.9
+        if ransomware:
+            likelihood = 0.95
+        # Most dangerous CVEs first, so the path shows the ones that matter.
+        vulns.sort(key=lambda v: (v.value not in kev, -float(intel[v.value].get("epss") or 0), v.value))
+        narrative = (
+            f"Public scan databases report {len(cves)} known vulnerability(ies) on {ip.value} "
+            f"({', '.join(cves[:3])}{'...' if len(cves) > 3 else ''}). Attackers search the same "
+            "databases to find exploitable targets, so these are likely to be probed automatically."
+        )
+        if kev:
+            narrative += (
+                f" {', '.join(kev[:3])} {'is' if len(kev) == 1 else 'are'} on CISA's Known Exploited "
+                "Vulnerabilities list: attackers are actively exploiting it in the wild"
+                + (", including in ransomware campaigns." if ransomware else ".")
+            )
+        evidence = []
+        for c in cves[:5]:
+            i = intel[c]
+            facts = []
+            if i.get("kev"):
+                facts.append(f"CISA KEV since {i['kev'].get('date_added')}")
+                if i["kev"].get("ransomware"):
+                    facts.append("used by ransomware")
+            if i.get("epss") is not None:
+                facts.append(f"EPSS {float(i['epss']):.0%} chance of exploitation in 30 days")
+            if i.get("cvss_score") is not None:
+                facts.append(f"CVSS {i['cvss_score']} {i.get('cvss_severity') or ''}".strip())
+            evidence.append(
+                f"{c}: {'; '.join(facts)}" if facts else f"{c} reported by a scan database (verify the running version)"
+            )
+        remediation = [
+            "Confirm the running versions and patch or upgrade the affected software.",
+            "Remove the service from the internet or restrict it to known IP ranges/VPN.",
+            "Add the host to vulnerability scanning and WAF/IPS coverage.",
+        ]
+        if kev:
+            remediation.insert(
+                0, "Treat as an emergency: patch the CISA KEV CVEs now and check the host for compromise."
+            )
         yield _Draft(
             rule="exploitable_public_service",
             anchor=ip,
-            title=f"Known vulnerabilities exposed on {ip.value}",
-            likelihood=0.6,
-            impact=5,
-            narrative=(
-                f"Public scan databases report {len(cves)} known vulnerability(ies) on {ip.value} "
-                f"({', '.join(cves[:3])}{'...' if len(cves) > 3 else ''}). Attackers search the same "
-                "databases to find exploitable targets, so these are likely to be probed automatically."
+            title=(
+                f"Actively exploited vulnerabilities exposed on {ip.value}"
+                if kev
+                else f"Known vulnerabilities exposed on {ip.value}"
             ),
+            likelihood=likelihood,
+            impact=5,
+            narrative=narrative,
             steps=[
                 *((h, "public hostname") for h in _host_names(view, ip)),
                 (ip, "exposed host"),
                 *((p, "vulnerable service") for p in products),
-                *((v, "vulnerability") for v in vulns[:2]),
+                *((v, "actively exploited vulnerability" if v.value in kev else "vulnerability") for v in vulns[:2]),
             ],
             techniques=["T1596.005", "T1190"],
-            evidence=[f"{c} reported by a scan database (verify the running version)" for c in cves[:5]],
-            remediation=[
-                "Confirm the running versions and patch or upgrade the affected software.",
-                "Remove the service from the internet or restrict it to known IP ranges/VPN.",
-                "Add the host to vulnerability scanning and WAF/IPS coverage.",
-            ],
+            evidence=evidence,
+            remediation=remediation,
         )
 
 
@@ -471,6 +516,41 @@ def _web_information_leak(view: _GraphView, seed: Entity | None) -> Iterable[_Dr
         )
 
 
+def _end_of_life_software(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    for software in view.of_type(EntityType.TECHNOLOGY, EntityType.PORT):
+        life = software.metadata.get("lifecycle") or {}
+        if not life.get("eol"):
+            continue
+        hosts = view.neighbors(software, EntityType.DOMAIN, EntityType.SUBDOMAIN, EntityType.IP_ADDRESS)
+        if not hosts:
+            continue
+        name = f"{life.get('product', software.value)} {life.get('version', '')}".strip()
+        since = f" since {life['eol_date']}" if life.get("eol_date") else ""
+        yield _Draft(
+            rule="end_of_life_software",
+            anchor=software,
+            title=f"Unsupported software exposed: {name}",
+            likelihood=0.55,
+            impact=4,
+            narrative=(
+                f"{', '.join(h.value for h in hosts[:2])} runs {name}, whose {life.get('cycle')} release line has "
+                f"been end-of-life{since}. The vendor no longer publishes security fixes, so every vulnerability "
+                "found from now on stays exploitable for good."
+            ),
+            steps=[*((h, "public host") for h in hosts[:2]), (software, "end-of-life software")],
+            techniques=["T1592.002", "T1190"],
+            evidence=[
+                f"{name}: release line {life.get('cycle')} end-of-life{since} (endoflife.date)",
+                *([f"Latest patch release of that line: {life['latest']}"] if life.get("latest") else []),
+            ],
+            remediation=[
+                f"Upgrade {life.get('product', 'the software')} to a supported release line.",
+                "Until then, restrict access and add compensating controls (WAF, virtual patching).",
+                "Hide version banners so the exact version is not advertised.",
+            ],
+        )
+
+
 RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _credential_exposure,
     _spoofable_domain,
@@ -481,6 +561,7 @@ RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _takeover_candidate,
     _bad_reputation,
     _web_information_leak,
+    _end_of_life_software,
 ]
 
 

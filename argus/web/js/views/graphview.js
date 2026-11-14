@@ -3,7 +3,7 @@
 
 import { api, enc } from "../api.js";
 import { empty, entityIcon, ico, severityPill } from "../components.js";
-import { $, $$, html, on, setHTML, timeAgo } from "../dom.js";
+import { $, $$, formatDay, html, on, setHTML, timeAgo } from "../dom.js";
 import { ENTITY_TYPES, typeInfo } from "../icons.js";
 import * as graph from "../graph.js";
 import { isRunning, on as onState, state } from "../state.js";
@@ -13,7 +13,8 @@ let selected = null;
 let pivotsFor = null;
 let pivots = [];
 
-const HIDDEN_META = new Set(["full_record"]);
+// Keys shown in their own panels (or not at all) rather than the generic details list.
+const HIDDEN_META = new Set(["full_record", "profile", "lifecycle", "intel", "verified"]);
 
 export function initGraphView(appActions) {
   actions = appActions;
@@ -149,12 +150,57 @@ function renderDetails() {
     </dl>
     ${involved.length ? html`<div class="section"><div class="section-title">Part of ${involved.length} attack path${involved.length > 1 ? "s" : ""}</div>
       ${involved.map(({ p, i }) => html`<div class="list-row clickable" data-path="${i}">${severityPill(p.severity)}<div class="list-main"><div class="list-title">${p.title}</div></div></div>`)}</div>` : ""}
+    ${intelBlocks(entity)}
     ${meta.length ? html`<div class="section"><div class="section-title">Details</div><dl class="kv">${meta.map(([k, v]) => html`<dt>${humanKey(k)}</dt><dd>${formatValue(v)}</dd>`)}</dl></div>` : ""}
     ${neighbours.length ? html`<div class="section"><div class="section-title">Connected to</div>
       ${neighbours.map((n) => html`<div class="list-row clickable" data-select="${n.id}">${entityIcon(n.type)}<div class="list-main"><div class="list-title">${n.label}</div><div class="list-sub">${typeInfo(n.type).label}</div></div></div>`)}</div>` : ""}
     <div class="section"><div class="section-title">Seen in other investigations</div>
       ${pivots.length ? pivots.map((h) => html`<div class="list-row clickable" data-open="${h.investigation_id}"><div class="list-main"><div class="list-title">${h.investigation_target}</div><div class="list-sub">${timeAgo(h.investigation_created_at)}</div></div>${ico("external")}</div>`)
         : html`<p class="muted small">Not seen in any other investigation.</p>`}</div>`);
+}
+
+/** Purpose-built panels for profile facts, software lifecycle and CVE threat intelligence. */
+function intelBlocks(entity) {
+  const md = entity.metadata || {};
+  const blocks = [];
+  if (md.profile && Object.keys(md.profile).length) {
+    const p = md.profile;
+    const rows = [
+      ["Name", p.display_name], ["Bio", p.bio], ["Location", p.location], ["Works at", p.company],
+      ["Website", p.website], ["Joined", p.created_at && formatDay(p.created_at)],
+      ["Followers", p.followers], ["Repositories", p.public_repos], ["Public email", p.public_email],
+    ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+    blocks.push(html`<div class="section"><div class="section-title">Public profile${md.verified ? html` <span class="pill ok">Verified link</span>` : ""}</div>
+      <dl class="kv">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>
+      <p class="muted small" style="margin-top:8px">Self-declared by the account owner; treat as a lead, not a fact.</p></div>`);
+  }
+  if (md.lifecycle) {
+    const l = md.lifecycle;
+    blocks.push(html`<div class="section"><div class="section-title">Support status</div>
+      <div class="intel-badges">${l.eol ? html`<span class="pill critical">End of life</span>` : html`<span class="pill ok">Supported</span>`}
+        ${l.outdated ? html`<span class="pill medium">Update available</span>` : ""}</div>
+      <dl class="kv"><dt>Release line</dt><dd>${l.product} ${l.cycle}</dd>
+        ${l.eol_date ? html`<dt>${l.eol ? "Support ended" : "Support ends"}</dt><dd>${formatDay(l.eol_date)}</dd>` : ""}
+        ${l.latest ? html`<dt>Latest patch</dt><dd>${l.latest}</dd>` : ""}</dl>
+      ${l.eol ? html`<p class="muted small" style="margin-top:8px">The vendor no longer ships security fixes for this version.</p>` : ""}</div>`);
+  }
+  if (md.intel) {
+    const i = md.intel;
+    const kev = i.kev;
+    blocks.push(html`<div class="section"><div class="section-title">Threat intelligence</div>
+      <div class="intel-badges">
+        ${kev ? html`<span class="pill critical" data-tip="Listed in CISA's Known Exploited Vulnerabilities catalog">Exploited in the wild</span>` : html`<span class="pill">Not in CISA KEV</span>`}
+        ${kev?.ransomware ? html`<span class="pill critical">Used by ransomware</span>` : ""}
+        ${i.cvss_score != null ? html`<span class="pill ${i.cvss_score >= 9 ? "critical" : i.cvss_score >= 7 ? "high" : i.cvss_score >= 4 ? "medium" : "low"}">CVSS ${i.cvss_score}</span>` : ""}
+      </div>
+      <dl class="kv">
+        ${i.epss != null ? html`<dt>Exploit chance</dt><dd>${(i.epss * 100).toFixed(1)}% in the next 30 days${i.epss_percentile != null ? html` <span class="muted">(top ${Math.max(0.1, (1 - i.epss_percentile) * 100).toFixed(1)}%)</span>` : ""}</dd>` : ""}
+        ${kev ? html`<dt>Affects</dt><dd>${kev.product}</dd><dt>Added to KEV</dt><dd>${formatDay(kev.date_added)}</dd><dt>Required action</dt><dd>${kev.action}</dd>` : ""}
+      </dl>
+      ${i.description ? html`<p class="muted small" style="margin-top:8px">${i.description}</p>` : ""}
+      <p class="small" style="margin-top:8px"><a href="https://nvd.nist.gov/vuln/detail/${entity.value.toUpperCase()}" target="_blank" rel="noopener noreferrer">View on NVD ↗</a></p></div>`);
+  }
+  return html`${blocks}`;
 }
 
 // ------------------------------------------------------------------ intel

@@ -50,6 +50,8 @@ const P = {
   vulnerability: '<path d="M8 8a4 4 0 0 1 8 0v8a4 4 0 0 1-8 0V8z"/><path d="M12 12v6M4 13h4M16 13h4M5 7l3 2M19 7l-3 2M5 19l3-2M19 19l-3-2"/>',
   port: '<path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0V8zM12 18v4"/>',
   breach: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/>',
+  location: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  persona: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
   generic: '<circle cx="12" cy="12" r="6"/>',
 };
 
@@ -70,6 +72,7 @@ export const ENTITY_TYPES = {
   vulnerability: { label: "Vulnerability", color: "#e5484d" },
   port: { label: "Open port", color: "#f76b15" },
   breach: { label: "Breach", color: "#c62a2f" },
+  location: { label: "Location", color: "#3e9b4f" },
   generic: { label: "Other", color: "#8b8d98" },
 };
 
