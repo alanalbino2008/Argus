@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import ipaddress
+import os
 import re
 import sys
 from pathlib import Path
@@ -221,17 +222,30 @@ async def create_api_key_cli(name: str, role: str) -> None:
     )
 
 
-async def migrate_cli() -> str | None:
-    """Apply database migrations and exit (Kubernetes runs this once per release, in a Job)."""
+async def migrate_cli(wait_seconds: float = 90.0) -> str | None:
+    """Apply database migrations and exit (run before the API starts, e.g. as an init container).
+
+    Waits for the database to accept connections - in a fresh deployment PostgreSQL may still be
+    starting - instead of failing and being restarted with an ever-growing back-off.
+    """
+    import time
+
     from argus.core.settings import get_settings
     from argus.storage import Database
     from argus.storage.migrate import upgrade_database
 
-    db = Database(get_settings().database_url)
-    try:
-        return await upgrade_database(db)
-    finally:
-        await db.dispose()
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        db = Database(get_settings().database_url)
+        try:
+            return await upgrade_database(db)
+        except (OSError, ConnectionError) as exc:  # refused / DNS not ready / reset
+            if time.monotonic() >= deadline:
+                raise
+            console.print(f"[yellow]Database not reachable yet ({type(exc).__name__}); retrying...[/yellow]")
+            await asyncio.sleep(2)
+        finally:
+            await db.dispose()
 
 
 async def check_platforms_cli() -> dict:
@@ -316,7 +330,7 @@ def cli_entrypoint():
     args = parser.parse_args()
 
     if args.migrate:
-        revision = asyncio.run(migrate_cli())
+        revision = asyncio.run(migrate_cli(float(os.environ.get("ARGUS_MIGRATE_WAIT_SECONDS", "90"))))
         console.print(f"[green]Database schema at revision {revision}[/green]")
         return
 
