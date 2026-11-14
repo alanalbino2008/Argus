@@ -3,18 +3,28 @@
 import { api, enc } from "../api.js";
 import { empty, ico } from "../components.js";
 import { $, confirmDialog, copyText, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
-import { state } from "../state.js";
+import { emit, on as onState, state } from "../state.js";
 
 let root;
-let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null };
+let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null, members: null };
 
 export function initSettings(el) {
   root = el;
+  onState("workspace", () => { data = { ...data, keys: null, audit: null, members: null }; refresh(); });
   on(root, "click", "[data-theme-choice]", (_e, btn) => { window.argusTheme.set(btn.dataset.themeChoice); render(); });
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     try {
-      if (act === "user-toggle") {
+      if (act === "member-remove") {
+        if (!(await confirmDialog({ title: "Remove from this workspace?", message: "They lose access to its investigations immediately.", confirm: "Remove", danger: true }))) return;
+        await api.del(`/api/workspaces/${enc(state.workspace.id)}/members/${enc(id)}`);
+        toast("Member removed", "success");
+      } else if (act === "ws-delete") {
+        if (!(await confirmDialog({ title: "Delete this workspace?", message: "Only empty workspaces can be deleted.", confirm: "Delete", danger: true }))) return;
+        await api.del(`/api/workspaces/${enc(id)}`);
+        toast("Workspace deleted", "success");
+        emit("workspaces-changed");
+      } else if (act === "user-toggle") {
         const disabling = btn.dataset.disabled !== "true";
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
@@ -36,6 +46,14 @@ export function initSettings(el) {
     }
   });
   root.addEventListener("change", async (e) => {
+    if (e.target.matches("[data-member-role]")) {
+      try {
+        await api.put(`/api/workspaces/${enc(state.workspace.id)}/members/${enc(e.target.dataset.memberRole)}`, { role: e.target.value });
+        toast("Role updated", "success");
+      } catch (err) { toast(err.message, "error"); }
+      await refresh();
+      return;
+    }
     if (!e.target.matches("[data-user-role]")) return;
     try {
       await api.patch(`/api/users/${enc(e.target.dataset.userRole)}`, { role: e.target.value });
@@ -47,13 +65,29 @@ export function initSettings(el) {
     }
   });
   root.addEventListener("submit", async (e) => {
+    if (e.target.id === "member-form" || e.target.id === "ws-form") {
+      e.preventDefault();
+      try {
+        if (e.target.id === "member-form") {
+          await api.post(`/api/workspaces/${enc(state.workspace.id)}/members`, { email: $("#member-email").value.trim(), role: $("#member-role").value });
+          toast("Member added", "success");
+        } else {
+          const ws = await api.post("/api/workspaces", { name: $("#ws-name").value.trim() });
+          toast(`Workspace “${ws.name}” created — switch to it from the top bar`, "success", 5000);
+          emit("workspaces-changed");
+        }
+        await refresh();
+      } catch (err) { toast(err.message, "error"); }
+      return;
+    }
     if (e.target.id !== "key-form") return;
     e.preventDefault();
     const name = $("#key-name").value.trim();
     const role = $("#key-role").value;
+    const platform = $("#key-platform")?.checked || false;
     if (!name) return toast("Give the key a name", "error");
     try {
-      const created = await api.post("/api/keys", { name, role });
+      const created = await api.post("/api/keys", { name, role: platform ? "admin" : role, platform });
       $("#key-value").textContent = created.key;
       $("#key-copy").onclick = () => copyText(created.key);
       openModal("key-modal");
@@ -65,11 +99,19 @@ export function initSettings(el) {
 }
 
 export async function refresh() {
-  const admin = state.me?.role === "admin";
-  const tasks = [api.get("/api/health").catch(() => null)];
-  if (admin) tasks.push(api.get("/api/keys"), api.get("/api/audit?limit=50"), api.get("/api/plugins"), api.get("/api/users"));
-  const [health, keys = null, audit = null, plugins = null, users = null] = await Promise.all(tasks).catch(() => [null]);
-  data = { ...data, health, keys, audit, plugins, users };
+  const wsAdmin = state.workspace?.role === "admin";
+  const platform = !!state.me?.platform_admin;
+  const ws = state.workspace ? enc(state.workspace.id) : "";
+  const tasks = [
+    api.get("/api/health").catch(() => null),
+    wsAdmin ? api.get("/api/keys").catch(() => null) : null,
+    wsAdmin ? api.get("/api/audit?limit=50").catch(() => null) : null,
+    platform ? api.get("/api/plugins").catch(() => null) : null,
+    platform ? api.get("/api/users").catch(() => null) : null,
+    wsAdmin && ws ? api.get(`/api/workspaces/${ws}/members`).catch(() => null) : null,
+  ];
+  const [health, keys, audit, plugins, users, members] = await Promise.all(tasks);
+  data = { ...data, health, keys, audit, plugins, users, members };
   render();
 }
 
@@ -82,9 +124,11 @@ function themeChooser() {
 function keysCard() {
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><div><h2>API keys</h2><p class="muted small">Keys are stored only as SHA-256 hashes. Viewer: read · Analyst: + scan · Admin: + delete, keys, audit.</p></div></div>
+    <p class="muted small" style="margin:-6px 0 12px">New keys are bound to <b>${state.workspace?.name || "this workspace"}</b> and cannot see any other workspace.</p>
     <form id="key-form" class="filters" style="margin-bottom:12px">
       <input id="key-name" class="input" placeholder="Key name, e.g. alice-laptop" maxlength="128" style="max-width:260px">
       <select id="key-role" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+      ${state.me?.platform_admin ? html`<label class="check small"><input type="checkbox" id="key-platform"> Platform-wide admin key</label>` : ""}
       <button class="btn primary" type="submit">${ico("plus")}Create key</button>
     </form>
     ${data.keys ? html`<table class="table"><thead><tr><th>Name</th><th>Role</th><th>Key</th><th>Last used</th><th>Created</th><th></th></tr></thead><tbody>
@@ -95,6 +139,37 @@ function keysCard() {
         <td>${formatDate(k.created_at)}</td>
         <td class="actions">${k.revoked ? html`<span class="pill">revoked</span>` : html`<button class="btn sm ghost danger" data-act="revoke" data-id="${k.id}">Revoke</button>`}</td>
       </tr>`)}</tbody></table>` : html`<p class="muted">Loading…</p>`}
+  </div>`;
+}
+
+function workspacesCard() {
+  const current = state.workspace;
+  const platform = !!state.me?.platform_admin;
+  const members = data.members;
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Workspace: ${current?.name || "—"}</h2>
+      <p class="muted small">Each team works in its own workspace: investigations, monitors, alerts, API keys and audit entries are never visible to other workspaces. Your role here: <b>${current?.role || "—"}</b>.</p></div></div>
+    ${members ? html`
+      <form id="member-form" class="filters" style="margin-bottom:12px">
+        <input id="member-email" class="input" type="email" placeholder="colleague@company.com (signed in once with SSO)" style="max-width:320px" required>
+        <select id="member-role" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+        <button class="btn primary" type="submit">${ico("plus")}Add member</button>
+      </form>
+      ${members.length ? html`<table class="table"><thead><tr><th>Member</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>
+        ${members.map((m) => {
+          const self = state.me?.key_id === `user:${m.user_id}`;
+          return html`<tr style="${m.disabled ? "opacity:.55" : ""}"><td><b>${m.name || m.email}</b> <span class="muted">${m.email || ""}</span>${self ? html` <span class="pill accent">you</span>` : ""}</td>
+            <td><select class="select sm" data-member-role="${m.user_id}" ${self ? "disabled" : ""} aria-label="Role for ${m.email}">${["viewer", "analyst", "admin"].map((r) => html`<option value="${r}" ${m.role === r ? "selected" : ""}>${r[0].toUpperCase() + r.slice(1)}</option>`)}</select></td>
+            <td>${m.added_at ? timeAgo(m.added_at) : "—"}</td>
+            <td class="actions">${self ? "" : html`<button class="btn sm ghost danger" data-act="member-remove" data-id="${m.user_id}">Remove</button>`}</td></tr>`;
+        })}</tbody></table>` : html`<p class="muted small">No people yet — API keys bound to this workspace can still use it.</p>`}` : ""}
+    ${platform ? html`<div class="section"><div class="section-title">All workspaces (platform administration)</div>
+      <form id="ws-form" class="filters" style="margin-bottom:10px">
+        <input id="ws-name" class="input" placeholder="New workspace, e.g. Red Team" maxlength="128" style="max-width:260px" required>
+        <button class="btn" type="submit">${ico("plus")}Create workspace</button>
+      </form>
+      <div class="chips">${(state.me.workspaces || []).map((w) => html`<span class="chip">${w.name}${w.default ? "" : html` <button class="btn sm ghost danger" style="height:20px;padding:0 6px" data-act="ws-delete" data-id="${w.id}" title="Delete (only if empty)">×</button>`}</span>`)}</div>
+    </div>` : ""}
   </div>`;
 }
 
@@ -155,7 +230,8 @@ function pluginsCard() {
 
 function render() {
   if (!root) return;
-  const admin = state.me?.role === "admin";
+  const admin = state.workspace?.role === "admin";
+  const platform = !!state.me?.platform_admin;
   const h = data.health;
   setHTML(root, html`<div class="page" style="max-width:1040px">
     <div class="page-head"><div><h1>Settings</h1><p>Appearance, access and accountability.</p></div></div>
@@ -170,7 +246,8 @@ function render() {
           <dt>Version</dt><dd>${h ? `Argus ${h.version}` : "—"}</dd><dt>Database</dt><dd>${h ? `${h.database.backend} · ${h.database.reachable ? "reachable" : "unreachable"}` : "—"}</dd></dl>
       </div>
     </div>
-    ${admin ? html`${usersCard()}${keysCard()}${auditCard()}${pluginsCard()}`
-      : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys, the audit log and plugins are available to administrators.")}</div>`}
+    ${workspacesCard()}
+    ${admin ? html`${platform ? usersCard() : ""}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
+      : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
 }

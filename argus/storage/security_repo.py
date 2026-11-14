@@ -39,7 +39,12 @@ class ApiKeyRepository:
         self.db = db
 
     async def create(
-        self, name: str, role: Role, created_by: str | None = None, plaintext: str | None = None
+        self,
+        name: str,
+        role: Role,
+        created_by: str | None = None,
+        plaintext: str | None = None,
+        workspace_id: str | None = None,
     ) -> tuple[dict[str, Any], str]:
         """Create a key. Returns (public record, plaintext key) - the plaintext is never stored."""
         key = plaintext or generate_api_key()
@@ -51,6 +56,7 @@ class ApiKeyRepository:
             role=role.value,
             created_at=_now(),
             created_by=created_by,
+            workspace_id=workspace_id,
         )
         async with self.db.session() as s, s.begin():
             s.add(row)
@@ -73,11 +79,15 @@ class ApiKeyRepository:
             if last is None or _now() - last > LAST_USED_RESOLUTION:  # avoid a write per request
                 await s.execute(update(ApiKeyRow).where(ApiKeyRow.id == row.id).values(last_used_at=_now()))
                 await s.commit()
-        return Principal(key_id=row.id, name=row.name, role=Role(row.role))
+        return Principal(key_id=row.id, name=row.name, role=Role(row.role), workspace_id=row.workspace_id)
 
-    async def list(self) -> builtins.list[dict[str, Any]]:
+    async def list(self, workspace_id: str | None = None) -> builtins.list[dict[str, Any]]:
+        """Keys of one workspace, or every key (platform administrators) when ``workspace_id`` is None."""
+        stmt = select(ApiKeyRow).order_by(ApiKeyRow.created_at)
+        if workspace_id is not None:
+            stmt = stmt.where(ApiKeyRow.workspace_id == workspace_id)
         async with self.db.session() as s:
-            rows = (await s.execute(select(ApiKeyRow).order_by(ApiKeyRow.created_at))).scalars().all()
+            rows = (await s.execute(stmt)).scalars().all()
         return [self._public(r) for r in rows]
 
     async def get(self, key_id: str) -> dict[str, Any] | None:
@@ -85,13 +95,13 @@ class ApiKeyRepository:
             row = await s.get(ApiKeyRow, key_id)
         return self._public(row) if row else None
 
-    async def revoke(self, key_id: str) -> bool:
+    async def revoke(self, key_id: str, workspace_id: str | None = None) -> bool:
+        """Revoke a key; with ``workspace_id`` only a key of that workspace can be revoked."""
+        stmt = update(ApiKeyRow).where(ApiKeyRow.id == key_id, ApiKeyRow.revoked_at.is_(None))
+        if workspace_id is not None:
+            stmt = stmt.where(ApiKeyRow.workspace_id == workspace_id)
         async with self.db.session() as s, s.begin():
-            result = await s.execute(
-                update(ApiKeyRow)
-                .where(ApiKeyRow.id == key_id, ApiKeyRow.revoked_at.is_(None))
-                .values(revoked_at=_now())
-            )
+            result = await s.execute(stmt.values(revoked_at=_now()))
         return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
     async def count_active(self, role: Role | None = None) -> int:
@@ -112,6 +122,7 @@ class ApiKeyRepository:
             "created_by": row.created_by,
             "last_used_at": _iso(row.last_used_at),
             "revoked": row.revoked_at is not None,
+            "workspace_id": row.workspace_id,
         }
 
 
@@ -137,7 +148,11 @@ class AuditLog:
 
     @staticmethod
     def _entry(row: AuditEventRow) -> dict[str, Any]:
+        # workspace_id joins the hashed entry only when set: entries written before workspaces
+        # existed keep verifying, newer ones protect their workspace from tampering too.
+        scope = {"workspace_id": row.workspace_id} if row.workspace_id else {}
         return {
+            **scope,
             "ts": row.ts,
             "actor_id": row.actor_id,
             "actor_name": row.actor_name,
@@ -156,8 +171,10 @@ class AuditLog:
         outcome: str = "success",
         ip: str | None = None,
         details: dict[str, Any] | None = None,
+        workspace_id: str | None = None,
     ) -> None:
         entry = {
+            **({"workspace_id": workspace_id} if workspace_id else {}),
             "ts": _now().isoformat(),
             "actor_id": principal.key_id,
             "actor_name": principal.name,
@@ -177,9 +194,15 @@ class AuditLog:
         metrics.AUDIT_EVENTS.labels(outcome).inc()
 
     async def list(
-        self, limit: int = 100, action: str | None = None, actor_id: str | None = None
+        self,
+        limit: int = 100,
+        action: str | None = None,
+        actor_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> builtins.list[dict[str, Any]]:
         stmt = select(AuditEventRow).order_by(AuditEventRow.id.desc()).limit(limit)
+        if workspace_id is not None:
+            stmt = stmt.where(AuditEventRow.workspace_id == workspace_id)
         if action:
             stmt = stmt.where(AuditEventRow.action == action)
         if actor_id:
@@ -216,7 +239,7 @@ class TicketStore:
         self.db = db
         self.ttl = ttl
 
-    async def issue(self, principal: Principal) -> str:
+    async def issue(self, principal: Principal, workspace_id: str | None = None) -> str:
         ticket = secrets.token_urlsafe(24)
         now = _now()
         async with self.db.session() as s, s.begin():
@@ -227,12 +250,18 @@ class TicketStore:
                     key_id=principal.key_id,
                     name=principal.name,
                     role=principal.role.value,
+                    workspace_id=workspace_id,
                     expires_at=now + timedelta(seconds=self.ttl),
                 )
             )
         return ticket
 
     async def redeem(self, ticket: str | None) -> Principal | None:
+        found = await self.redeem_for_workspace(ticket)
+        return found[0] if found else None
+
+    async def redeem_for_workspace(self, ticket: str | None) -> tuple[Principal, str | None] | None:
+        """Redeem a ticket: (who, which workspace it was issued for)."""
         if not ticket:
             return None
         digest = hashlib.sha256(ticket.encode()).hexdigest()
@@ -241,7 +270,13 @@ class TicketStore:
                 await s.execute(
                     delete(WsTicketRow)
                     .where(WsTicketRow.ticket_hash == digest)
-                    .returning(WsTicketRow.key_id, WsTicketRow.name, WsTicketRow.role, WsTicketRow.expires_at)
+                    .returning(
+                        WsTicketRow.key_id,
+                        WsTicketRow.name,
+                        WsTicketRow.role,
+                        WsTicketRow.expires_at,
+                        WsTicketRow.workspace_id,
+                    )
                 )
             ).first()
         if row is None:
@@ -249,4 +284,4 @@ class TicketStore:
         expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
         if expires < _now():
             return None
-        return Principal(key_id=row.key_id, name=row.name, role=Role(row.role))
+        return Principal(key_id=row.key_id, name=row.name, role=Role(row.role)), row.workspace_id

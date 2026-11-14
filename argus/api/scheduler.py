@@ -36,7 +36,8 @@ logger = logging.getLogger("argus.scheduler")
 
 SCHEDULER = Principal(key_id="scheduler", name="scheduler", role=Role.ANALYST)
 
-Launcher = Callable[[ScanConfig, str, str, str], Awaitable[str]]  # config, created_by, purpose, monitor_id -> inv id
+# config, created_by, purpose, monitor_id, workspace_id -> investigation id
+Launcher = Callable[[ScanConfig, str, str, str, str], Awaitable[str]]
 
 
 class MonitorScheduler:
@@ -75,10 +76,11 @@ class MonitorScheduler:
             try:
                 validate_scan_target(monitor["target"], target_type)
             except ValueError as exc:
-                await self.monitors.set_enabled(monitor["id"], False)
+                await self.monitors.set_enabled(monitor["id"], False, workspace_id=None)
                 await self.audit.record(
-                    SCHEDULER, "monitor.disabled", monitor["id"], "denied", details={"reason": str(exc)}
-                )
+                    SCHEDULER, "monitor.disabled", monitor["id"], "denied", details={"reason": str(exc)},
+                    workspace_id=monitor["workspace_id"],
+                )  # fmt: skip
                 return
         config = ScanConfig(
             target=monitor["target"],
@@ -88,7 +90,9 @@ class MonitorScheduler:
             allow_private_targets=self.settings.allow_private_targets,
         )
         try:
-            inv_id = await self.launch(config, f"monitor:{monitor['created_by']}", monitor["purpose"], monitor["id"])
+            inv_id = await self.launch(
+                config, f"monitor:{monitor['created_by']}", monitor["purpose"], monitor["id"], monitor["workspace_id"]
+            )
         except Exception:
             logger.exception("Monitor %s failed to launch", monitor["id"])
             await self.monitors.release(monitor["id"])  # retry on the next tick
@@ -96,8 +100,9 @@ class MonitorScheduler:
         await self.monitors.mark_started(monitor["id"], inv_id)
         metrics.MONITOR_RUNS.inc()
         await self.audit.record(
-            SCHEDULER, "monitor.run", monitor["id"], details={"investigation_id": inv_id, "target": monitor["target"]}
-        )
+            SCHEDULER, "monitor.run", monitor["id"], details={"investigation_id": inv_id, "target": monitor["target"]},
+            workspace_id=monitor["workspace_id"],
+        )  # fmt: skip
         launched.append(inv_id)
 
     async def run_forever(self) -> None:

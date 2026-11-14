@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
 from fastapi import Depends, HTTPException, Request, status
 
+from argus.core.models import DEFAULT_WORKSPACE_ID
 from argus.observability import metrics
 from argus.security.auth import ANONYMOUS_ADMIN, Principal, Role
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage.security_repo import ApiKeyRepository, AuditLog
+from argus.storage.workspace_repo import WorkspaceRepository
 
 logger = logging.getLogger("argus.api.auth")
 
@@ -63,10 +66,11 @@ async def audit(
     outcome: str = "success",
     details: dict[str, Any] | None = None,
 ) -> None:
-    """Write an audit event; never let an audit failure break the request itself."""
+    """Write an audit event (tagged with the request's workspace); never let it break the request."""
     try:
         log: AuditLog = request.app.state.audit
-        await log.record(principal, action, resource, outcome, client_ip(request), details)
+        workspace_id = getattr(request.state, "workspace_id", None)
+        await log.record(principal, action, resource, outcome, client_ip(request), details, workspace_id)
     except Exception:
         logger.exception("Failed to write audit event %s", action)
 
@@ -121,6 +125,86 @@ async def _session_principal(request: Request, token: str) -> Principal:
     return Principal(
         key_id=f"user:{user['id']}", name=user["email"] or user["name"] or user["id"], role=Role(user["role"])
     )
+
+
+# ------------------------------------------------------------------------------ workspaces
+WORKSPACE_HEADER = "x-argus-workspace"
+
+
+@dataclass(frozen=True)
+class WorkspaceContext:
+    """Who is calling, in which workspace, with which role there. Every tenant-scoped endpoint gets one."""
+
+    principal: Principal
+    workspace: dict[str, Any]
+    role: Role
+
+    @property
+    def id(self) -> str:
+        return str(self.workspace["id"])
+
+
+def _not_found() -> HTTPException:
+    # 404, not 403: never confirm that a workspace (or anything in it) exists to outsiders.
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+
+
+async def resolve_workspace(request: Request, principal: Principal, ref: str | None = None) -> WorkspaceContext:
+    """The workspace this request acts in: an explicit ``ref``, else the ``X-Argus-Workspace`` header,
+    else the caller's natural workspace. Membership is checked here, once, for every endpoint."""
+    repo: WorkspaceRepository = request.app.state.workspaces
+    requested = ref or request.headers.get(WORKSPACE_HEADER) or request.query_params.get("workspace")
+    if principal.workspace_id:  # API key bound to one workspace: that one, and only that one
+        ws = await repo.get(principal.workspace_id)
+        if ws is None or (requested and requested not in (ws["id"], ws["slug"])):
+            raise _not_found()
+        role = principal.role
+    elif principal.platform_admin:
+        ws = await repo.get(requested or DEFAULT_WORKSPACE_ID)
+        if ws is None:
+            raise _not_found()
+        role = Role.ADMIN
+    elif principal.user_id:
+        memberships = await repo.list_for_user(principal.user_id)
+        if requested:
+            ws = next((m for m in memberships if requested in (m["id"], m["slug"])), None)
+            if ws is None:
+                raise _not_found()
+        elif memberships:
+            ws = next((m for m in memberships if m["default"]), memberships[0])
+        else:
+            raise HTTPException(status_code=403, detail="You are not a member of any workspace yet")
+        role = Role(ws["role"])
+    else:
+        raise _not_found()
+    request.state.workspace_id = ws["id"]
+    return WorkspaceContext(principal=principal, workspace=ws, role=role)
+
+
+def in_workspace(min_role: Role):
+    """Dependency factory: ``ws: WorkspaceContext = Depends(in_workspace(Role.ANALYST))``."""
+
+    async def checker(request: Request, principal: Principal = Depends(get_principal)) -> WorkspaceContext:
+        ctx = await resolve_workspace(request, principal)
+        if ctx.role.rank < min_role.rank:
+            metrics.AUTH_FAILURES.labels("insufficient_role").inc()
+            await audit(
+                request, principal, "auth.forbidden", request.url.path, "denied",
+                {"required_role": min_role.value, "workspace_role": ctx.role.value},
+            )  # fmt: skip
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires {min_role.value} role")
+        return ctx
+
+    return checker
+
+
+async def require_platform_admin(request: Request, principal: Principal = Depends(get_principal)) -> Principal:
+    """Platform-wide administration (all workspaces, users, plugins, audit-chain verification)."""
+    if not principal.platform_admin:
+        metrics.AUTH_FAILURES.labels("insufficient_role").inc()
+        await audit(request, principal, "auth.forbidden", request.url.path, "denied", {"required": "platform admin"})
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requires a platform administrator")
+    return principal
 
 
 def require(role: Role):

@@ -60,6 +60,7 @@ def _investigation_row(inv: Investigation) -> dict[str, Any]:
         "completed_at": inv.completed_at,
         "node_count": inv.node_count,
         "edge_count": inv.edge_count,
+        "workspace_id": inv.workspace_id,
         "data": inv.model_dump(mode="json"),
     }
 
@@ -225,9 +226,21 @@ class InvestigationRepository:
         return Investigation.model_validate(row.data) if row else None
 
     async def list_investigations(
-        self, limit: int = 50, offset: int = 0, status: str | None = None, target: str | None = None
+        self,
+        *,
+        workspace_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+        target: str | None = None,
     ) -> list[dict[str, Any]]:
-        stmt = select(InvestigationRow).order_by(InvestigationRow.created_at.desc()).limit(limit).offset(offset)
+        stmt = (
+            select(InvestigationRow)
+            .where(InvestigationRow.workspace_id == workspace_id)
+            .order_by(InvestigationRow.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if status:
             stmt = stmt.where(InvestigationRow.status == status)
         if target:
@@ -251,10 +264,11 @@ class InvestigationRepository:
         ]
 
     async def find_previous(self, inv: Investigation) -> Investigation | None:
-        """Most recent *completed* investigation of the same target that finished before this one started."""
+        """Most recent *completed* investigation of the same target (and workspace) before this one started."""
         stmt = (
             select(InvestigationRow)
             .where(
+                InvestigationRow.workspace_id == inv.workspace_id,
                 func.lower(InvestigationRow.target) == inv.config.target.lower(),
                 InvestigationRow.target_type == inv.config.target_type.value,
                 InvestigationRow.status == InvestigationStatus.COMPLETED.value,
@@ -292,13 +306,16 @@ class InvestigationRepository:
         return graph
 
     async def search_entities(
-        self, query: str, entity_type: str | None = None, limit: int = 50
+        self, query: str, *, workspace_id: str, entity_type: str | None = None, limit: int = 50
     ) -> list[dict[str, Any]]:
-        """Cross-investigation pivot: where else have we seen this IP / email / domain?"""
+        """Cross-investigation pivot within one workspace: where else have we seen this IP / email / domain?"""
         stmt = (
             select(EntityRow, InvestigationRow.target, InvestigationRow.created_at)
             .join(InvestigationRow, InvestigationRow.id == EntityRow.investigation_id)
-            .where(func.lower(EntityRow.value).contains(query.lower()))
+            .where(
+                InvestigationRow.workspace_id == workspace_id,
+                func.lower(EntityRow.value).contains(query.lower()),
+            )
             .order_by(InvestigationRow.created_at.desc())
             .limit(limit)
         )

@@ -29,6 +29,7 @@ class Base(DeclarativeBase):
 
 class InvestigationRow(Base):
     __tablename__ = "investigations"
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True, server_default="ws_default")
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     target: Mapped[str] = mapped_column(String(512), index=True)
@@ -80,6 +81,8 @@ class ApiKeyRow(Base):
     """API credentials. Only a SHA-256 hash of each key is stored, never the key itself."""
 
     __tablename__ = "api_keys"
+    # None = a platform-wide key (administers every workspace); otherwise bound to one workspace.
+    workspace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
@@ -96,12 +99,39 @@ class WsTicketRow(Base):
     """Single-use WebSocket tickets, shared by every replica (only a SHA-256 hash is stored)."""
 
     __tablename__ = "ws_tickets"
+    workspace_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     ticket_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     key_id: Mapped[str] = mapped_column(String(64))
     name: Mapped[str] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(16))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class WorkspaceRow(Base):
+    """A team's private space: its investigations, monitors, alerts, keys and audit trail."""
+
+    __tablename__ = "workspaces"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class WorkspaceMemberRow(Base):
+    """A user's role inside one workspace."""
+
+    __tablename__ = "workspace_members"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16))
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    added_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class UserRow(Base):
@@ -151,6 +181,7 @@ class AuditEventRow(Base):
     """Append-only, hash-chained security audit trail."""
 
     __tablename__ = "audit_events"
+    workspace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ts: Mapped[str] = mapped_column(String(40), index=True)  # ISO-8601 UTC string: part of the hash
@@ -169,6 +200,7 @@ class MonitorRow(Base):
     """A target re-scanned on a schedule; material changes between scans raise alerts."""
 
     __tablename__ = "monitors"
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True, server_default="ws_default")
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     target: Mapped[str] = mapped_column(String(512))
@@ -189,6 +221,7 @@ class AlertRow(Base):
     """Material attack-surface drift detected by a monitor."""
 
     __tablename__ = "alerts"
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True, server_default="ws_default")
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     monitor_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)

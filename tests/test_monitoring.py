@@ -156,6 +156,7 @@ def test_scheduler_disables_monitors_that_fall_out_of_scope(make_client):
             interval_hours=1,
             purpose="legacy monitor",
             created_by="x",
+            workspace_id="ws_default",
         )
     )
     assert client.portal.call(client.app.state.scheduler.tick) == []

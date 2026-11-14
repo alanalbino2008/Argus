@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.14.0] — Phase 14: Team workspaces
+
+### Added
+- **Workspaces** (migration `0006`): investigations, monitors, alerts, API keys, audit entries and
+  WebSocket tickets belong to a workspace. Upgrades move existing data, non-admin keys and users
+  into a *Default* workspace.
+- Per-workspace roles (viewer, analyst, admin) through memberships. Platform administration is
+  separate: admin users, and admin keys not bound to a workspace.
+- `X-Argus-Workspace` request header. `GET/POST /api/workspaces`, `PATCH/DELETE /api/workspaces/{ref}`
+  (only empty, non-default workspaces can be deleted). Members can be listed, added by email,
+  given a new role and removed. Admins cannot demote or remove themselves.
+- `/api/me` lists the caller's workspaces and whether they are a platform admin. API keys are bound
+  to the workspace they are created in; platform admins can opt into a platform-wide key.
+- SSO: `oidc_default_workspace` and `oidc_workspace_groups`, which mirror identity-provider groups
+  into memberships at each sign-in. Helm values `sso.defaultWorkspace` and `sso.workspaceGroups`.
+- Web app: a workspace switcher in the top bar, plus workspace members and platform workspace
+  administration in Settings.
+- `docs/explained/14-team-workspaces.md`.
+
+### Security
+- Objects from another workspace return 404 (not 403) everywhere, including cancel/delete,
+  graphs, reports, monitors, alerts and the live WebSocket stream. A route-sweep test enforces it.
+- Audit entries hash their workspace ID. Older entries still verify.
+
 ## [1.13.0] — Phase 13: Single sign-on
 
 ### Added

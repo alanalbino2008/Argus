@@ -33,6 +33,7 @@ def _monitor(row: MonitorRow) -> dict[str, Any]:
         "target": row.target,
         "target_type": row.target_type,
         "max_depth": row.max_depth,
+        "workspace_id": row.workspace_id,
         "passive_only": bool(row.passive_only),
         "interval_hours": row.interval_hours,
         "purpose": row.purpose,
@@ -50,6 +51,7 @@ def _alert(row: AlertRow) -> dict[str, Any]:
         "id": row.id,
         "monitor_id": row.monitor_id,
         "investigation_id": row.investigation_id,
+        "workspace_id": row.workspace_id,
         "previous_investigation_id": row.previous_investigation_id,
         "target": row.target,
         "severity": row.severity,
@@ -75,6 +77,7 @@ class MonitorRepository:
         interval_hours: int,
         purpose: str,
         created_by: str,
+        workspace_id: str,
         run_now: bool = True,
         passive_only: bool = False,
     ) -> dict[str, Any]:
@@ -84,6 +87,7 @@ class MonitorRepository:
             target=target,
             target_type=target_type,
             max_depth=max_depth,
+            workspace_id=workspace_id,
             passive_only=passive_only,
             interval_hours=interval_hours,
             purpose=purpose,
@@ -96,24 +100,33 @@ class MonitorRepository:
             s.add(row)
         return _monitor(row)
 
-    async def get(self, monitor_id: str) -> dict[str, Any] | None:
+    # Every user-facing method takes a *required* workspace_id: a call that forgets the
+    # tenant boundary does not type-check, and rows of other workspaces simply do not match.
+    async def get(self, monitor_id: str, *, workspace_id: str) -> dict[str, Any] | None:
         async with self.db.session() as s:
             row = await s.get(MonitorRow, monitor_id)
-        return _monitor(row) if row else None
+        return _monitor(row) if row and row.workspace_id == workspace_id else None
 
-    async def list_monitors(self) -> list[dict[str, Any]]:
+    async def list_monitors(self, *, workspace_id: str) -> list[dict[str, Any]]:
+        stmt = select(MonitorRow).where(MonitorRow.workspace_id == workspace_id).order_by(MonitorRow.created_at)
         async with self.db.session() as s:
-            rows = (await s.execute(select(MonitorRow).order_by(MonitorRow.created_at))).scalars().all()
+            rows = (await s.execute(stmt)).scalars().all()
         return [_monitor(r) for r in rows]
 
-    async def set_enabled(self, monitor_id: str, enabled: bool) -> bool:
+    async def set_enabled(self, monitor_id: str, enabled: bool, *, workspace_id: str | None) -> bool:
+        """``workspace_id=None`` is reserved for the scheduler (it acts across workspaces)."""
+        stmt = update(MonitorRow).where(MonitorRow.id == monitor_id)
+        if workspace_id is not None:
+            stmt = stmt.where(MonitorRow.workspace_id == workspace_id)
         async with self.db.session() as s, s.begin():
-            result = await s.execute(update(MonitorRow).where(MonitorRow.id == monitor_id).values(enabled=enabled))
+            result = await s.execute(stmt.values(enabled=enabled))
         return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
-    async def delete(self, monitor_id: str) -> bool:
+    async def delete(self, monitor_id: str, *, workspace_id: str) -> bool:
         async with self.db.session() as s, s.begin():
-            result = await s.execute(delete(MonitorRow).where(MonitorRow.id == monitor_id))
+            result = await s.execute(
+                delete(MonitorRow).where(MonitorRow.id == monitor_id, MonitorRow.workspace_id == workspace_id)
+            )
         return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
     async def due(self, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -177,9 +190,11 @@ class MonitorRepository:
         severity: str,
         headline: str,
         summary: dict[str, Any],
+        workspace_id: str,
     ) -> dict[str, Any]:
         row = AlertRow(
             id=f"alert_{secrets.token_hex(6)}",
+            workspace_id=workspace_id,
             monitor_id=monitor_id,
             investigation_id=investigation_id,
             previous_investigation_id=previous_investigation_id,
@@ -193,19 +208,28 @@ class MonitorRepository:
             s.add(row)
         return _alert(row)
 
-    async def alerts(self, limit: int = 50, unacknowledged_only: bool = False) -> list[dict[str, Any]]:
-        stmt = select(AlertRow).order_by(AlertRow.created_at.desc()).limit(limit)
+    async def alerts(
+        self, *, workspace_id: str, limit: int = 50, unacknowledged_only: bool = False
+    ) -> list[dict[str, Any]]:
+        stmt = (
+            select(AlertRow)
+            .where(AlertRow.workspace_id == workspace_id)
+            .order_by(AlertRow.created_at.desc())
+            .limit(limit)
+        )
         if unacknowledged_only:
             stmt = stmt.where(AlertRow.acknowledged_at.is_(None))
         async with self.db.session() as s:
             rows = (await s.execute(stmt)).scalars().all()
         return [_alert(r) for r in rows]
 
-    async def acknowledge(self, alert_id: str, by: str) -> bool:
+    async def acknowledge(self, alert_id: str, by: str, *, workspace_id: str) -> bool:
         async with self.db.session() as s, s.begin():
             result = await s.execute(
                 update(AlertRow)
-                .where(AlertRow.id == alert_id, AlertRow.acknowledged_at.is_(None))
+                .where(
+                    AlertRow.id == alert_id, AlertRow.workspace_id == workspace_id, AlertRow.acknowledged_at.is_(None)
+                )
                 .values(acknowledged_at=_now(), acknowledged_by=by)
             )
         return (cast("CursorResult[Any]", result).rowcount or 0) > 0

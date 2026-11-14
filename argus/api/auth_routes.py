@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
-from argus.api.deps import SESSION_COOKIE, audit, client_ip, public_base_url, require
+from argus.api.deps import SESSION_COOKIE, audit, client_ip, public_base_url, require_platform_admin
 from argus.observability import metrics
 from argus.security.auth import Principal, Role
 from argus.security.oidc import (
@@ -124,6 +124,8 @@ async def oidc_callback(
     who = Principal(
         key_id=f"user:{user['id']}", name=user["email"] or user["name"] or user["id"], role=Role(user["role"])
     )
+    if not user["disabled"]:
+        await _sync_memberships(request, user, claims, role)
     if user["disabled"]:
         await audit(request, who, "auth.sso_failed", user["id"], "denied", {"reason": "disabled"})
         return _fail("disabled")
@@ -143,6 +145,29 @@ async def oidc_callback(
         path="/",
     )
     return response
+
+
+async def _sync_memberships(request: Request, user: dict[str, Any], claims: dict[str, Any], role: str) -> None:
+    """Join the default workspace, and mirror IdP groups that are mapped to workspaces."""
+    settings = request.app.state.settings
+    workspaces = request.app.state.workspaces
+    by = "single sign-on"
+    if settings.oidc_default_workspace:
+        default = await workspaces.get(settings.oidc_default_workspace)
+        if default and (groups_configured(settings) or await workspaces.role_of(default["id"], user["id"]) is None):
+            await workspaces.set_member(default["id"], user["id"], role, by)
+    if settings.oidc_workspace_groups:
+        raw = claims.get(settings.oidc_role_claim)
+        groups = {raw} if isinstance(raw, str) else {str(g) for g in raw} if isinstance(raw, list) else set()
+        for group, slug in settings.oidc_workspace_groups.items():
+            ws = await workspaces.get(slug)
+            if ws is None:
+                logger.warning("SSO group %s maps to unknown workspace %s", group, slug)
+                continue
+            if group in groups:
+                await workspaces.set_member(ws["id"], user["id"], role, by)
+            elif await workspaces.role_of(ws["id"], user["id"]) is not None:
+                await workspaces.remove_member(ws["id"], user["id"])  # left the team in the IdP
 
 
 @router.post("/api/auth/logout")
@@ -170,13 +195,13 @@ class UpdateUserRequest(BaseModel):
 
 
 @router.get("/api/users")
-async def list_users(request: Request, _: Principal = Depends(require(Role.ADMIN))) -> list[dict[str, Any]]:
+async def list_users(request: Request, _: Principal = Depends(require_platform_admin)) -> list[dict[str, Any]]:
     return await request.app.state.users.list_users()
 
 
 @router.patch("/api/users/{user_id}")
 async def update_user(
-    user_id: str, body: UpdateUserRequest, request: Request, principal: Principal = Depends(require(Role.ADMIN))
+    user_id: str, body: UpdateUserRequest, request: Request, principal: Principal = Depends(require_platform_admin)
 ):
     """Change a user's role or disable them (which also ends all their sessions immediately)."""
     if principal.key_id == f"user:{user_id}" and (body.disabled or (body.role and body.role != Role.ADMIN)):

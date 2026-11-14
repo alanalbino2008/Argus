@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     oidc_admin_emails: list[str] = Field(
         default_factory=list, description="Emails always granted admin (bootstrap the first administrators)"
     )
+    oidc_default_workspace: str = Field(
+        default="default",
+        description="Workspace (slug) every SSO user joins with their resolved role; empty = none",
+    )
+    oidc_workspace_groups: dict[str, str] = Field(
+        default_factory=dict,
+        description='IdP group -> workspace slug, e.g. {"red-team": "red-team"}. Memberships of mapped '
+        "workspaces follow the provider at every sign-in.",
+    )
     session_ttl_hours: float = Field(default=8.0, gt=0, le=24 * 30, description="Lifetime of a browser session")
 
     # --- Observability ---------------------------------------------------------------------

@@ -107,6 +107,24 @@ helm upgrade argus deploy/helm/argus -n argus --reuse-values \
 * Sessions last `sessionTtlHours` (8 h). Disabling a user in *Settings* signs them out everywhere at once.
 * API keys keep working for automation and break-glass access.
 
+### Team workspaces
+
+Each team gets its own workspace: investigations, monitors, alerts, API keys and audit entries
+are invisible to other workspaces. A platform admin creates workspaces in *Settings*, and
+workspace admins add members there by email. With SSO, the membership can come from the identity
+provider:
+
+```bash
+helm upgrade argus deploy/helm/argus -n argus --reuse-values \
+  --set sso.defaultWorkspace=default --set 'sso.workspaceGroups.argus-red-team=red-team'
+```
+
+* `defaultWorkspace`: every SSO user joins it on first sign-in (`""` = admins add people by hand).
+* `workspaceGroups`: group → workspace slug, mirrored at every sign-in (leaving the group removes the
+  membership).
+* Automation: API keys belong to the workspace they were created in. Scripts may send
+  `X-Argus-Workspace: <slug or id>`, but a bound key only ever sees its own workspace.
+
 ### Monitoring
 
 ```bash

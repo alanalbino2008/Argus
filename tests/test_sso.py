@@ -115,7 +115,13 @@ def test_full_login_creates_a_secure_session(sso):
     cookie = done.headers["set-cookie"].lower()
     assert "argus_session=" in cookie and "httponly" in cookie and "samesite=lax" in cookie
     me = browser(client).get("/api/me").json()
-    assert me == {"key_id": me["key_id"], "name": "dana@acme.example", "role": "viewer", "auth": "session"}
+    assert {k: me[k] for k in ("name", "role", "auth", "platform_admin")} == {
+        "name": "dana@acme.example",
+        "role": "viewer",
+        "auth": "session",
+        "platform_admin": False,
+    }
+    assert [(w["slug"], w["role"]) for w in me["workspaces"]] == [("default", "viewer")]  # joined on first sign-in
     assert client.get(
         "/api/audit", params={"action": "auth.login"}, headers={"Authorization": f"Bearer {ADMIN}"}
     ).json()
@@ -309,3 +315,15 @@ def test_sso_endpoints_404_when_not_configured(client):
 
 
 ADMIN = "argus_test-admin-key-0123456789abcdefghijklmnopqrstu"
+
+
+def test_identity_provider_groups_map_to_workspaces(sso):
+    make, _, login = sso
+    client = make(oidc_workspace_groups='{"red-team": "red-team"}', oidc_analyst_groups='["red-team"]')
+    client.post("/api/workspaces", json={"name": "Red Team"})
+    login(client, groups=["red-team"])
+    user = client.get("/api/users").json()[0]
+    members = client.get("/api/workspaces/red-team/members").json()
+    assert [(m["user_id"], m["role"]) for m in members] == [(user["id"], "analyst")]
+    login(client, groups=[])  # left the team in the identity provider
+    assert client.get("/api/workspaces/red-team/members").json() == []

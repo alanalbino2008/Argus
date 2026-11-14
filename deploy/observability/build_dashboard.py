@@ -87,7 +87,7 @@ def series(panels: list[dict[str, Any]], h: int = 8) -> None:
                         "noValue": "None yet",  # nothing happened: not a broken panel
                         "unit": p.get("unit", "short"),
                         "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": p.get("fill", 12),
-                                   "stacking": {"mode": "normal" if p.get("stack") else "none"}},  # fmt: skip
+                                   "stacking": {"mode": "normal" if p.get("stack") else "none"}},
                     },
                     "overrides": [],
                 },
@@ -198,7 +198,7 @@ DASHBOARD = {
     "templating": {
         "list": [
             {"name": "datasource", "label": "Data source", "type": "datasource", "query": "prometheus",
-             "current": {}, "hide": 0, "refresh": 1}  # fmt: skip
+             "current": {}, "hide": 0, "refresh": 1}
         ]
     },
     "annotations": {"list": []},

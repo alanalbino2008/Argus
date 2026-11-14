@@ -46,10 +46,11 @@ from sqlalchemy import text
 
 from argus import __version__
 from argus.api.auth_routes import router as auth_router
-from argus.api.deps import audit, require
+from argus.api.deps import WorkspaceContext, audit, in_workspace, require_platform_admin
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
+from argus.api.workspace_routes import router as workspace_router
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
@@ -76,6 +77,7 @@ from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 from argus.storage.user_repo import UserRepository
+from argus.storage.workspace_repo import WorkspaceRepository
 
 logger = logging.getLogger("argus.api")
 
@@ -147,6 +149,7 @@ async def lifespan(app: FastAPI):
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
     app.state.keys = ApiKeyRepository(db)
     app.state.users = UserRepository(db)
+    app.state.workspaces = WorkspaceRepository(db)
     app.state.oidc = OidcProvider(settings) if settings.oidc_issuer and settings.oidc_client_id else None
     app.state.audit = AuditLog(db)
     app.state.ws_tickets = TicketStore(db, settings.ws_ticket_ttl_seconds)
@@ -158,7 +161,9 @@ async def lifespan(app: FastAPI):
         app.state.monitors,
         app.state.audit,
         settings,
-        launch=lambda config, by, purpose, monitor_id: _launch_for_scheduler(app, config, by, purpose, monitor_id),
+        launch=lambda config, by, purpose, monitor_id, workspace_id: _launch_for_scheduler(
+            app, config, by, purpose, monitor_id, workspace_id
+        ),
         running_scans=lambda: cluster_running_scans(app),
     )
     janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
@@ -261,11 +266,14 @@ if _cors_origins:
     )
 app.include_router(security_router)
 app.include_router(auth_router)
+app.include_router(workspace_router)
 app.include_router(monitor_router)
 
-VIEWER = Depends(require(Role.VIEWER))
-ANALYST = Depends(require(Role.ANALYST))
-ADMIN = Depends(require(Role.ADMIN))
+# Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
+VIEWER = Depends(in_workspace(Role.VIEWER))
+ANALYST = Depends(in_workspace(Role.ANALYST))
+ADMIN = Depends(in_workspace(Role.ADMIN))
+PLATFORM_ADMIN = Depends(require_platform_admin)
 
 
 def get_repo(request: Request) -> InvestigationRepository:
@@ -326,23 +334,33 @@ def _investigation_payload(inv: Investigation) -> dict[str, Any]:
     }
 
 
-async def _resolve(inv_id: str, repo: InvestigationRepository) -> Investigation:
+def _not_found() -> HTTPException:
+    return HTTPException(status_code=404, detail="Investigation not found")
+
+
+async def _resolve(inv_id: str, repo: InvestigationRepository, workspace_id: str) -> Investigation:
+    """THE tenant boundary for investigations: anything outside ``workspace_id`` is "not found"."""
     engine = INVESTIGATIONS.get(inv_id)
     if engine:
+        if engine.investigation.workspace_id != workspace_id:
+            raise _not_found()
         return _live_investigation(engine)
     inv = await repo.get_investigation(inv_id)
-    if inv is None:
-        raise HTTPException(status_code=404, detail="Investigation not found")
+    if inv is None or inv.workspace_id != workspace_id:
+        raise _not_found()
     return inv
 
 
-async def _resolve_graph(inv_id: str, repo: InvestigationRepository) -> IntelligenceGraph:
+async def _resolve_graph(inv_id: str, repo: InvestigationRepository, workspace_id: str) -> IntelligenceGraph:
     engine = INVESTIGATIONS.get(inv_id)
     if engine:
+        if engine.investigation.workspace_id != workspace_id:
+            raise _not_found()
         return engine.graph
+    await _resolve(inv_id, repo, workspace_id)  # ownership first, then the (larger) graph
     graph = await repo.load_graph(inv_id)
     if graph is None:
-        raise HTTPException(status_code=404, detail="Investigation not found")
+        raise _not_found()
     return graph
 
 
@@ -407,11 +425,18 @@ async def _janitor(app: FastAPI) -> None:
 
 
 async def launch_scan(
-    app: FastAPI, config: ScanConfig, *, created_by: str, purpose: str, monitor_id: str | None = None
+    app: FastAPI,
+    config: ScanConfig,
+    *,
+    created_by: str,
+    purpose: str,
+    workspace_id: str,
+    monitor_id: str | None = None,
 ) -> ArgusEngine:
     """Single code path for every scan (manual or scheduled): record, register, run in background."""
     repo: InvestigationRepository = app.state.repo
     engine = ArgusEngine(config)
+    engine.investigation.workspace_id = workspace_id
     engine.investigation.created_by = created_by
     engine.investigation.purpose = purpose
     engine.investigation.monitor_id = monitor_id
@@ -431,8 +456,12 @@ async def launch_scan(
     return engine
 
 
-async def _launch_for_scheduler(app: FastAPI, config: ScanConfig, by: str, purpose: str, monitor_id: str) -> str:
-    engine = await launch_scan(app, config, created_by=by, purpose=purpose, monitor_id=monitor_id)
+async def _launch_for_scheduler(
+    app: FastAPI, config: ScanConfig, by: str, purpose: str, monitor_id: str, workspace_id: str
+) -> str:
+    engine = await launch_scan(
+        app, config, created_by=by, purpose=purpose, monitor_id=monitor_id, workspace_id=workspace_id
+    )
     return engine.investigation_id
 
 
@@ -467,10 +496,15 @@ async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:
         severity=worst,
         headline=headline(diff, inv.config.target),
         summary={k: diff[k] for k in ("summary", "new_paths", "escalated_paths", "resolved_paths")},
+        workspace_id=inv.workspace_id,
     )
     metrics.ALERTS_RAISED.labels(worst).inc()
     await app.state.audit.record(
-        SCHEDULER, "alert.raised", alert["id"], details={"severity": worst, "target": inv.config.target}
+        SCHEDULER,
+        "alert.raised",
+        alert["id"],
+        details={"severity": worst, "target": inv.config.target},
+        workspace_id=inv.workspace_id,
     )
 
 
@@ -531,7 +565,7 @@ async def health(request: Request):
 
 
 @app.get("/api/modules")
-async def list_modules(_: Principal = VIEWER):
+async def list_modules(ws: WorkspaceContext = VIEWER):
     """Return list of available OSINT reconnaissance modules."""
     return [
         {
@@ -549,15 +583,16 @@ async def list_modules(_: Principal = VIEWER):
 
 
 @app.get("/api/plugins")
-async def list_plugins(_: Principal = ADMIN):
+async def list_plugins(_: Principal = PLATFORM_ADMIN):
     """Plugin status: allowlisted, loaded, rejected (with reasons) and installed-but-inactive."""
     return asdict(plugin_report())
 
 
 @app.post("/api/demo")
-async def load_demo_investigation(request: Request, principal: Principal = ADMIN):
+async def load_demo_investigation(request: Request, ws: WorkspaceContext = ADMIN):
     """Load the built-in fictional demo investigation (reserved .example domains, TEST-NET IPs)."""
-    inv_id = await load_demo(get_repo(request))
+    principal = ws.principal
+    inv_id = await load_demo(get_repo(request), ws.id)
     await audit(request, principal, "demo.load", inv_id)
     return {"investigation_id": inv_id}
 
@@ -569,11 +604,11 @@ async def list_investigations(
     offset: int = Query(0, ge=0),
     status: InvestigationStatus | None = None,
     target: str | None = Query(None, max_length=253),
-    _: Principal = VIEWER,
+    ws: WorkspaceContext = VIEWER,
 ):
     """Investigation history (newest first), with live counters for running scans."""
     rows = await get_repo(request).list_investigations(
-        limit=limit, offset=offset, status=status.value if status else None, target=target
+        workspace_id=ws.id, limit=limit, offset=offset, status=status.value if status else None, target=target
     )
     for row in rows:
         engine = INVESTIGATIONS.get(row["id"])
@@ -585,8 +620,9 @@ async def list_investigations(
 
 
 @app.post("/api/scan")
-async def start_scan(req: StartScanRequest, request: Request, principal: Principal = ANALYST):
+async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceContext = ANALYST):
     """Initiate a new reconnaissance scan in the background."""
+    principal = ws.principal
     from argus.cli.console import detect_target_type
 
     settings = request.app.state.settings
@@ -641,7 +677,9 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
 
     try:  # fail fast (503) if we cannot record the scan, rather than run it unsaved
-        engine = await launch_scan(request.app, config, created_by=principal.name, purpose=req.purpose)
+        engine = await launch_scan(
+            request.app, config, created_by=principal.name, purpose=req.purpose, workspace_id=ws.id
+        )
     except Exception as exc:
         logger.exception("Database unavailable")
         raise HTTPException(status_code=503, detail="Database unavailable") from exc
@@ -669,14 +707,16 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
 
 
 @app.get("/api/investigation/{inv_id}")
-async def get_investigation(inv_id: str, request: Request, _: Principal = VIEWER):
+async def get_investigation(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Status, summary metrics and execution telemetry of an investigation."""
-    return _investigation_payload(await _resolve(inv_id, get_repo(request)))
+    return _investigation_payload(await _resolve(inv_id, get_repo(request), ws.id))
 
 
 @app.post("/api/investigation/{inv_id}/cancel")
-async def cancel_investigation(inv_id: str, request: Request, principal: Principal = ANALYST):
+async def cancel_investigation(inv_id: str, request: Request, ws: WorkspaceContext = ANALYST):
     """Request cooperative cancellation of a running investigation."""
+    principal = ws.principal
+    inv = await _resolve(inv_id, get_repo(request), ws.id)  # tenant check first: 404 outside this workspace
     engine = INVESTIGATIONS.get(inv_id)
     if engine is not None and engine.is_running:
         engine.cancel()
@@ -686,15 +726,15 @@ async def cancel_investigation(inv_id: str, request: Request, principal: Princip
         # Running on another replica: it sees the request on its next heartbeat (~1 s).
         await audit(request, principal, "scan.cancel", inv_id, details={"via": "cluster"})
         return {"status": "cancelling", "investigation_id": inv_id}
-    inv = await _resolve(inv_id, get_repo(request))  # 404 if unknown
     raise HTTPException(status_code=409, detail=f"Investigation is {inv.status.value}")
 
 
 @app.delete("/api/investigation/{inv_id}", status_code=204)
-async def delete_investigation(inv_id: str, request: Request, principal: Principal = ADMIN):
+async def delete_investigation(inv_id: str, request: Request, ws: WorkspaceContext = ADMIN):
     """Permanently delete an investigation and all of its findings."""
-    stored = await get_repo(request).get_investigation(inv_id)
-    if inv_id in INVESTIGATIONS or (stored is not None and stored.status.value in ACTIVE_STATUSES):
+    principal = ws.principal
+    stored = await _resolve(inv_id, get_repo(request), ws.id)  # tenant check first: 404 outside this workspace
+    if inv_id in INVESTIGATIONS or stored.status.value in ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail="Investigation is running; cancel it first")
     if not await get_repo(request).delete_investigation(inv_id):
         raise HTTPException(status_code=404, detail="Investigation not found")
@@ -703,9 +743,9 @@ async def delete_investigation(inv_id: str, request: Request, principal: Princip
 
 
 @app.get("/api/investigation/{inv_id}/graph")
-async def get_investigation_graph(inv_id: str, request: Request, _: Principal = VIEWER):
+async def get_investigation_graph(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Retrieve full Cytoscape-formatted graph elements."""
-    graph = await _resolve_graph(inv_id, get_repo(request))
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)
     return {
         "investigation_id": inv_id,
         "elements": graph.to_cytoscape_elements(),
@@ -714,17 +754,19 @@ async def get_investigation_graph(inv_id: str, request: Request, _: Principal = 
 
 
 @app.get("/api/investigation/{inv_id}/export/json")
-async def export_graph_json(inv_id: str, request: Request, principal: Principal = VIEWER):
+async def export_graph_json(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Export complete graph as JSON."""
-    graph = await _resolve_graph(inv_id, get_repo(request))
+    principal = ws.principal
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)
     await audit(request, principal, "investigation.export", inv_id, details={"format": "json"})
     return graph.to_dict()
 
 
 @app.get("/api/investigation/{inv_id}/export/csv")
-async def export_graph_csv(inv_id: str, request: Request, principal: Principal = VIEWER):
+async def export_graph_csv(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Export relationships in Maltego-compatible CSV format."""
-    graph = await _resolve_graph(inv_id, get_repo(request))
+    principal = ws.principal
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)
     await audit(request, principal, "investigation.export", inv_id, details={"format": "csv"})
     return PlainTextResponse(
         graph.to_maltego_csv(),
@@ -739,42 +781,43 @@ def _modules_for(inv_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/investigation/{inv_id}/attack")
-async def get_attack_mapping(inv_id: str, request: Request, _: Principal = VIEWER):
+async def get_attack_mapping(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Findings classified by MITRE ATT&CK reconnaissance technique, with defensive guidance."""
-    graph = await _resolve_graph(inv_id, get_repo(request))
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)
     return map_investigation(graph, _modules_for(inv_id))
 
 
 @app.get("/api/investigation/{inv_id}/paths")
-async def get_attack_paths(inv_id: str, request: Request, _: Principal = VIEWER):
+async def get_attack_paths(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Attack Path Engine: findings chained into ranked, explained attack scenarios."""
-    return find_attack_paths(await _resolve_graph(inv_id, get_repo(request)))
+    return find_attack_paths(await _resolve_graph(inv_id, get_repo(request), ws.id))
 
 
 @app.get("/api/investigation/{inv_id}/people")
-async def get_people(inv_id: str, request: Request, principal: Principal = VIEWER):
+async def get_people(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Identity resolution: linked identifiers grouped into personas, each with a dossier.
 
     Dossiers aggregate personal data, so every access is recorded in the audit log.
     """
-    graph = await _resolve_graph(inv_id, get_repo(request))
+    principal = ws.principal
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)
     await audit(request, principal, "investigation.people", inv_id)
     return resolve_people(graph, find_attack_paths(graph)["paths"])
 
 
 @app.get("/api/investigation/{inv_id}/diff")
 async def diff_investigation(
-    inv_id: str, request: Request, against: str | None = Query(None, max_length=64), _: Principal = VIEWER
+    inv_id: str, request: Request, against: str | None = Query(None, max_length=64), ws: WorkspaceContext = VIEWER
 ):
     """What changed since an earlier scan of the same target (default: the previous completed one)."""
     repo = get_repo(request)
-    inv = await _resolve(inv_id, repo)
-    previous = await _resolve(against, repo) if against else await repo.find_previous(inv)
+    inv = await _resolve(inv_id, repo, ws.id)
+    previous = await _resolve(against, repo, ws.id) if against else await repo.find_previous(inv)
     if previous is None:
         raise HTTPException(status_code=404, detail="No earlier completed investigation of this target to compare with")
     if previous.config.target.lower() != inv.config.target.lower():
         raise HTTPException(status_code=422, detail="Investigations are of different targets")
-    diff = compare(await _resolve_graph(previous.id, repo), await _resolve_graph(inv_id, repo))
+    diff = compare(await _resolve_graph(previous.id, repo, ws.id), await _resolve_graph(inv_id, repo, ws.id))
     return {
         "investigation_id": inv_id,
         "previous_investigation_id": previous.id,
@@ -785,10 +828,11 @@ async def diff_investigation(
 
 
 @app.get("/api/investigation/{inv_id}/export/navigator")
-async def export_attack_navigator(inv_id: str, request: Request, principal: Principal = VIEWER):
+async def export_attack_navigator(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """ATT&CK Navigator layer (open at https://mitre-attack.github.io/attack-navigator/)."""
+    principal = ws.principal
     repo = get_repo(request)
-    inv, graph = await _resolve(inv_id, repo), await _resolve_graph(inv_id, repo)
+    inv, graph = await _resolve(inv_id, repo, ws.id), await _resolve_graph(inv_id, repo, ws.id)
     layer = to_navigator_layer(map_investigation(graph), f"Argus: {inv.config.target}", f"Investigation {inv_id}")
     await audit(request, principal, "investigation.export", inv_id, details={"format": "attack-navigator"})
     return JSONResponse(
@@ -797,10 +841,11 @@ async def export_attack_navigator(inv_id: str, request: Request, principal: Prin
 
 
 @app.get("/api/investigation/{inv_id}/export/stix")
-async def export_stix(inv_id: str, request: Request, principal: Principal = VIEWER):
+async def export_stix(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """STIX 2.1 bundle for threat-intelligence platforms (OpenCTI, MISP...). Marked TLP:AMBER."""
+    principal = ws.principal
     repo = get_repo(request)
-    inv, graph = await _resolve(inv_id, repo), await _resolve_graph(inv_id, repo)
+    inv, graph = await _resolve(inv_id, repo, ws.id), await _resolve_graph(inv_id, repo, ws.id)
     bundle = build_bundle(inv, graph)
     await audit(request, principal, "investigation.export", inv_id, details={"format": "stix-2.1"})
     return Response(
@@ -816,10 +861,12 @@ async def search_entities(
     q: str = Query(min_length=2, max_length=253, description="Substring of the entity value"),
     type: EntityType | None = None,
     limit: int = Query(50, ge=1, le=500),
-    _: Principal = VIEWER,
+    ws: WorkspaceContext = VIEWER,
 ):
-    """Cross-investigation pivot: every investigation in which a value has been seen."""
-    return await get_repo(request).search_entities(q, type.value if type else None, limit)
+    """Cross-investigation pivot: every investigation *of this workspace* in which a value has been seen."""
+    return await get_repo(request).search_entities(
+        q, workspace_id=ws.id, entity_type=type.value if type else None, limit=limit
+    )
 
 
 # --------------------------------------------------------------------------- WebSocket
@@ -830,13 +877,18 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
     Authenticate with ``?ticket=`` from ``POST /api/ws-ticket`` (single use, short-lived).
     """
     ticket = websocket.query_params.get("ticket")
-    if websocket.app.state.settings.auth_enabled and await websocket.app.state.ws_tickets.redeem(ticket) is None:
+    auth_enabled = websocket.app.state.settings.auth_enabled
+    redeemed = await websocket.app.state.ws_tickets.redeem_for_workspace(ticket) if auth_enabled else None
+    if auth_enabled and redeemed is None:
         metrics.AUTH_FAILURES.labels("websocket_ticket").inc()
         await websocket.close(code=4401)
         return
     repo: InvestigationRepository = websocket.app.state.repo
     engine = INVESTIGATIONS.get(inv_id)
-    if engine is None and await repo.get_investigation(inv_id) is None:
+    stored = None if engine else await repo.get_investigation(inv_id)
+    owner_ws = engine.investigation.workspace_id if engine else stored.workspace_id if stored else None
+    # The ticket was issued for one workspace: anything else is "not found", exactly like the REST API.
+    if owner_ws is None or (redeemed is not None and redeemed[1] != owner_ws):
         await websocket.close(code=4404)
         return
     await websocket.accept()

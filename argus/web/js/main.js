@@ -1,7 +1,7 @@
 // Argus web app entry point: sign-in, routing, top bar, shortcuts and cross-view actions.
 
-import { api, authConfig, clearKey, download, enc, endSession, storeKey, whoAmI } from "./api.js";
-import { $, $$, closeTopModal, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
+import { activeWorkspace, api, authConfig, clearKey, download, enc, endSession, setActiveWorkspace, storeKey, whoAmI } from "./api.js";
+import { $, $$, closeTopModal, html, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
 import * as graph from "./graph.js";
 import { icon, installSprite } from "./icons.js";
 import { closeInvestigation, openInvestigation, startScan, stopScan } from "./live.js";
@@ -192,8 +192,31 @@ function showSignIn(message = "") {
   setTimeout(() => ($("#signin-sso").hidden ? $("#signin-key") : $("#signin-sso-link")).focus(), 50);
 }
 
+function chooseWorkspace(me) {
+  const list = me.workspaces || [];
+  const stored = activeWorkspace();
+  const pick = list.find((w) => w.id === stored) || list.find((w) => w.default) || list[0];
+  setActiveWorkspace(pick ? pick.id : "");
+  state.workspace = pick || null;
+  const sw = $("#workspace-switch");
+  sw.hidden = list.length < 2;
+  setHTML($("#workspace-select"), html`${list.map((w) => html`<option value="${w.id}" ${pick && w.id === pick.id ? "selected" : ""}>${w.name}</option>`)}`);
+}
+
+async function switchWorkspace(id) {
+  setActiveWorkspace(id);
+  state.workspace = (state.me?.workspaces || []).find((w) => w.id === id) || null;
+  closeInvestigation(); // an investigation belongs to exactly one workspace
+  emit("history-changed");
+  emit("workspace", state.workspace);
+  refreshMonitoring();
+  go("overview");
+  toast(`Switched to ${state.workspace?.name || "workspace"}`, "success", 2200);
+}
+
 async function enterApp(me) {
   state.me = me;
+  chooseWorkspace(me);
   $("#signin").hidden = true;
   $("#user-name").textContent = `${me.name}`;
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
@@ -255,6 +278,8 @@ async function boot() {
 
   $$(".nav-item").forEach((el) => el.addEventListener("click", () => go(el.dataset.view)));
   $("#btn-new").addEventListener("click", () => actions.newInvestigation());
+  $("#workspace-select").addEventListener("change", (e) => switchWorkspace(e.target.value));
+  on("workspaces-changed", async () => { const me = await whoAmI(); if (me) { state.me = me; chooseWorkspace(me); } });
   $("#btn-stop").addEventListener("click", stopScan);
   $("#btn-theme").addEventListener("click", () => window.argusTheme.toggle());
   $("#btn-shortcuts").addEventListener("click", () => openModal("shortcuts-modal"));

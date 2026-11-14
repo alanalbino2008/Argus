@@ -31,6 +31,10 @@
 
     <!-- ================================================================ top bar -->
     <header class="topbar" style="position: relative;">
+      <label class="workspace-switch" id="workspace-switch" hidden title="Switch workspace (team)">
+        <svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-persona"/></svg>
+        <select id="workspace-select" class="select sm" aria-label="Workspace"></select>
+      </label>
       <div class="context">
         <span id="context-status" class="status" hidden><span class="dot"></span><span></span></span>
         <span id="context-title" class="context-title">No investigation open</span>

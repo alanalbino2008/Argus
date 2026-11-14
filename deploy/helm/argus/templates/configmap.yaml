@@ -29,6 +29,8 @@ data:
   ARGUS_OIDC_VIEWER_GROUPS: {{ .Values.sso.viewerGroups | toJson | quote }}
   ARGUS_OIDC_DEFAULT_ROLE: {{ .Values.sso.defaultRole | quote }}
   ARGUS_OIDC_ADMIN_EMAILS: {{ .Values.sso.adminEmails | toJson | quote }}
+  ARGUS_OIDC_DEFAULT_WORKSPACE: {{ .Values.sso.defaultWorkspace | quote }}
+  ARGUS_OIDC_WORKSPACE_GROUPS: {{ .Values.sso.workspaceGroups | toJson | quote }}
   ARGUS_SESSION_TTL_HOURS: {{ .Values.sso.sessionTtlHours | quote }}
   {{- end }}
   ARGUS_CORS_ORIGINS: {{ .Values.config.corsOrigins | toJson | quote }}

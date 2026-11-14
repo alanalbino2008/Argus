@@ -4,6 +4,7 @@ const listeners = new Map();
 
 export const state = {
   me: null,
+  workspace: null, // the active team workspace (every API call is scoped to it)
   investigation: null, // investigation payload from the API / snapshot
   entities: new Map(), // id -> entity
   relations: new Map(), // id -> relation

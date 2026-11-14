@@ -77,7 +77,13 @@ async def test_expired_tickets_are_rejected(pods):
 async def test_a_due_monitor_is_claimed_by_exactly_one_pod(pods):
     a, b = pods
     mon = await MonitorRepository(a).create(
-        target="acme.example", target_type="domain", max_depth=1, interval_hours=24, purpose="cluster", created_by="t"
+        target="acme.example",
+        target_type="domain",
+        max_depth=1,
+        interval_hours=24,
+        purpose="cluster",
+        created_by="t",
+        workspace_id="ws_default",
     )
     results = []
     for _ in range(3):  # several rounds of both pods racing for the same monitor

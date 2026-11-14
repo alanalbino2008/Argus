@@ -12,6 +12,8 @@ from argus.storage import Database, InvestigationRecorder, InvestigationReposito
 from tests.conftest import database_url
 from tests.test_engine import FanOutModule
 
+WS = "ws_default"
+
 
 @pytest.fixture
 async def repo(tmp_path):
@@ -85,19 +87,19 @@ async def test_history_listing_search_and_delete(repo):
     await run_recorded(repo, a)
     await run_recorded(repo, b)
 
-    listed = await repo.list_investigations()
+    listed = await repo.list_investigations(workspace_id=WS)
     assert [r["target"] for r in listed] == ["beta.com", "alpha.com"]  # newest first
     assert listed[0]["threat_exposure_score"] is not None
-    assert [r["target"] for r in await repo.list_investigations(target="ALPHA")] == ["alpha.com"]
+    assert [r["target"] for r in await repo.list_investigations(workspace_id=WS, target="ALPHA")] == ["alpha.com"]
 
-    hits = await repo.search_entities("n1.alpha")
+    hits = await repo.search_entities("n1.alpha", workspace_id=WS)
     assert len(hits) == 1 and hits[0]["investigation_target"] == "alpha.com"
-    assert len(await repo.search_entities("n0.", entity_type="subdomain")) == 2
+    assert len(await repo.search_entities("n0.", workspace_id=WS, entity_type="subdomain")) == 2
 
     assert await repo.delete_investigation(a.investigation_id) is True
     assert await repo.get_investigation(a.investigation_id) is None
     assert await repo.load_graph(a.investigation_id) is None
-    assert await repo.search_entities("alpha") == []
+    assert await repo.search_entities("alpha", workspace_id=WS) == []
     assert await repo.delete_investigation(a.investigation_id) is False
 
 

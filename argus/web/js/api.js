@@ -20,6 +20,19 @@ export function clearKey() {
 let memoryKey = "";
 const currentKey = () => storedKey() || memoryKey;
 
+// ------------------------------------------------------------------ active workspace
+const WS = "argus.workspace";
+let memoryWorkspace = "";
+
+export function activeWorkspace() {
+  try { return localStorage.getItem(WS) || memoryWorkspace; } catch { return memoryWorkspace; }
+}
+
+export function setActiveWorkspace(id) {
+  memoryWorkspace = id || "";
+  try { if (id) localStorage.setItem(WS, id); else localStorage.removeItem(WS); } catch { /* ignore */ }
+}
+
 export class ApiError extends Error {
   constructor(status, message) {
     super(message);
@@ -37,6 +50,7 @@ function describe(body, status) {
 export async function request(path, { method = "GET", body, raw = false } = {}) {
   const headers = {};
   if (currentKey()) headers.Authorization = `Bearer ${currentKey()}`;
+  if (activeWorkspace()) headers["X-Argus-Workspace"] = activeWorkspace(); // every call is scoped to one team
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 401) {
@@ -56,6 +70,7 @@ export const api = {
   get: (path) => request(path),
   post: (path, body) => request(path, { method: "POST", body: body ?? {} }),
   patch: (path, body) => request(path, { method: "PATCH", body }),
+  put: (path, body) => request(path, { method: "PUT", body }),
   del: (path) => request(path, { method: "DELETE" }),
 };
 

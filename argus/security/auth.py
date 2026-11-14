@@ -35,6 +35,18 @@ class Principal:
     key_id: str
     name: str
     role: Role
+    # API keys bound to one workspace carry it here; None = not bound (platform key or a user,
+    # whose access comes from workspace memberships).
+    workspace_id: str | None = None
+
+    @property
+    def user_id(self) -> str | None:
+        return self.key_id.removeprefix("user:") if self.key_id.startswith("user:") else None
+
+    @property
+    def platform_admin(self) -> bool:
+        """Administers every workspace: an admin user, or an admin API key not bound to a workspace."""
+        return self.role == Role.ADMIN and self.workspace_id is None
 
     def has(self, required: Role) -> bool:
         return self.role.rank >= required.rank

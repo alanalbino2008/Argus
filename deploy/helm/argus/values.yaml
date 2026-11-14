@@ -62,6 +62,8 @@ sso:
   viewerGroups: []
   defaultRole: viewer        # viewer | analyst | none (refuse users in no mapped group)
   adminEmails: []            # bootstrap administrators
+  defaultWorkspace: default  # slug every SSO user joins on first sign-in ("" = none; admins add people)
+  workspaceGroups: {}        # IdP group -> workspace slug, e.g. {red-team: red-team}; mirrored at each sign-in
   sessionTtlHours: 8
 
 # External URL users open (builds the OIDC redirect URI). Defaults to the ingress host.

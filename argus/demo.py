@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import (
+    DEFAULT_WORKSPACE_ID,
     Entity,
     EntityType,
     Investigation,
@@ -535,8 +536,19 @@ def _build(inv_id: str, previous: bool) -> IntelligenceGraph:
     return graph
 
 
-def build_demo(previous: bool = False) -> tuple[Investigation, IntelligenceGraph]:
-    inv_id = DEMO_PREVIOUS_ID if previous else DEMO_ID
+def demo_ids(workspace_id: str = DEFAULT_WORKSPACE_ID) -> tuple[str, str]:
+    """(latest, previous) demo ids. Each workspace gets its own copy: demo data is never shared."""
+    if workspace_id == DEFAULT_WORKSPACE_ID:
+        return DEMO_ID, DEMO_PREVIOUS_ID
+    suffix = workspace_id.removeprefix("ws_")
+    return f"{DEMO_ID}_{suffix}", f"{DEMO_ID}_{suffix}_prev"
+
+
+def build_demo(
+    previous: bool = False, workspace_id: str = DEFAULT_WORKSPACE_ID
+) -> tuple[Investigation, IntelligenceGraph]:
+    latest, earlier = demo_ids(workspace_id)
+    inv_id = earlier if previous else latest
     graph = _build(inv_id, previous)
     finished = datetime.now(timezone.utc) - (timedelta(days=30) if previous else timedelta())
     investigation = Investigation(
@@ -551,14 +563,15 @@ def build_demo(previous: bool = False) -> tuple[Investigation, IntelligenceGraph
         analytics=GraphIntelligenceAnalyzer.analyze(graph),
         created_by="demo",
         purpose="Built-in demonstration dataset (fictional, reserved .example domains and TEST-NET IPs)",
+        workspace_id=workspace_id,
     )
     return investigation, graph
 
 
-async def load_demo(repo: InvestigationRepository) -> str:
-    """Save (or refresh) the demo investigation and its earlier snapshot; returns the latest id."""
+async def load_demo(repo: InvestigationRepository, workspace_id: str = DEFAULT_WORKSPACE_ID) -> str:
+    """Save (or refresh) a workspace's demo investigation and its earlier snapshot; returns the latest id."""
     for previous in (True, False):
-        investigation, graph = build_demo(previous)
+        investigation, graph = build_demo(previous, workspace_id)
         await repo.save_investigation(investigation)
         await repo.save_graph(graph)
-    return DEMO_ID
+    return demo_ids(workspace_id)[0]

@@ -80,6 +80,18 @@ class UserRepository:
             rows = (await s.execute(select(UserRow).order_by(UserRow.created_at))).scalars().all()
         return [_user(r) for r in rows]
 
+    async def has_platform_admin(self) -> bool:
+        async with self.db.session() as s:
+            row = (
+                await s.execute(select(UserRow.id).where(UserRow.role == "admin", UserRow.disabled.is_(False)).limit(1))
+            ).first()
+        return row is not None
+
+    async def find_by_email(self, email: str) -> dict[str, Any] | None:
+        async with self.db.session() as s:
+            row = (await s.execute(select(UserRow).where(UserRow.email == email.lower()))).scalars().first()
+        return _user(row) if row else None
+
     async def update(self, user_id: str, *, role: str | None = None, disabled: bool | None = None) -> dict | None:
         async with self.db.session() as s, s.begin():
             row = await s.get(UserRow, user_id)

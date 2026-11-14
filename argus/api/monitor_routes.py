@@ -5,9 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from argus.api.deps import audit, require
+from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.core.models import EntityType
-from argus.security.auth import Principal, Role
+from argus.security.auth import Role
 from argus.security.network import validate_scan_target
 
 router = APIRouter(prefix="/api", tags=["monitoring"])
@@ -28,16 +28,18 @@ class UpdateMonitorRequest(BaseModel):
 
 
 @router.get("/monitors")
-async def list_monitors(request: Request, _: Principal = Depends(require(Role.VIEWER))):
-    return await request.app.state.monitors.list_monitors()
+async def list_monitors(request: Request, ws: WorkspaceContext = Depends(in_workspace(Role.VIEWER))):
+    return await request.app.state.monitors.list_monitors(workspace_id=ws.id)
 
 
 @router.post("/monitors", status_code=201)
 async def create_monitor(
-    body: CreateMonitorRequest, request: Request, principal: Principal = Depends(require(Role.ANALYST))
+    body: CreateMonitorRequest, request: Request, ws: WorkspaceContext = Depends(in_workspace(Role.ANALYST))
 ):
     """Watch a target: it is scanned now and then every ``interval_hours``; material changes raise alerts."""
     from argus.cli.console import detect_target_type
+
+    principal = ws.principal
 
     target = body.target.strip()
     if not body.authorized:
@@ -57,6 +59,7 @@ async def create_monitor(
         interval_hours=body.interval_hours,
         purpose=body.purpose,
         created_by=principal.name,
+        workspace_id=ws.id,
     )
     await audit(
         request,
@@ -72,24 +75,27 @@ async def create_monitor(
     )
     if request.app.state.settings.monitors_enabled:
         await request.app.state.scheduler.tick()  # first (baseline) scan starts immediately
-    return await request.app.state.monitors.get(monitor["id"])
+    return await request.app.state.monitors.get(monitor["id"], workspace_id=ws.id)
 
 
 @router.patch("/monitors/{monitor_id}")
 async def update_monitor(
-    monitor_id: str, body: UpdateMonitorRequest, request: Request, principal: Principal = Depends(require(Role.ANALYST))
+    monitor_id: str,
+    body: UpdateMonitorRequest,
+    request: Request,
+    ws: WorkspaceContext = Depends(in_workspace(Role.ANALYST)),
 ):
-    if not await request.app.state.monitors.set_enabled(monitor_id, body.enabled):
+    if not await request.app.state.monitors.set_enabled(monitor_id, body.enabled, workspace_id=ws.id):
         raise HTTPException(status_code=404, detail="Monitor not found")
-    await audit(request, principal, "monitor.update", monitor_id, details={"enabled": body.enabled})
-    return await request.app.state.monitors.get(monitor_id)
+    await audit(request, ws.principal, "monitor.update", monitor_id, details={"enabled": body.enabled})
+    return await request.app.state.monitors.get(monitor_id, workspace_id=ws.id)
 
 
 @router.delete("/monitors/{monitor_id}", status_code=204)
-async def delete_monitor(monitor_id: str, request: Request, principal: Principal = Depends(require(Role.ANALYST))):
-    if not await request.app.state.monitors.delete(monitor_id):
+async def delete_monitor(monitor_id: str, request: Request, ws: WorkspaceContext = Depends(in_workspace(Role.ANALYST))):
+    if not await request.app.state.monitors.delete(monitor_id, workspace_id=ws.id):
         raise HTTPException(status_code=404, detail="Monitor not found")
-    await audit(request, principal, "monitor.delete", monitor_id)
+    await audit(request, ws.principal, "monitor.delete", monitor_id)
     return Response(status_code=204)
 
 
@@ -98,14 +104,16 @@ async def list_alerts(
     request: Request,
     unacknowledged: bool = False,
     limit: int = Query(50, ge=1, le=500),
-    _: Principal = Depends(require(Role.VIEWER)),
+    ws: WorkspaceContext = Depends(in_workspace(Role.VIEWER)),
 ):
-    return await request.app.state.monitors.alerts(limit=limit, unacknowledged_only=unacknowledged)
+    return await request.app.state.monitors.alerts(workspace_id=ws.id, limit=limit, unacknowledged_only=unacknowledged)
 
 
 @router.post("/alerts/{alert_id}/acknowledge")
-async def acknowledge_alert(alert_id: str, request: Request, principal: Principal = Depends(require(Role.ANALYST))):
-    if not await request.app.state.monitors.acknowledge(alert_id, principal.name):
+async def acknowledge_alert(
+    alert_id: str, request: Request, ws: WorkspaceContext = Depends(in_workspace(Role.ANALYST))
+):
+    if not await request.app.state.monitors.acknowledge(alert_id, ws.principal.name, workspace_id=ws.id):
         raise HTTPException(status_code=404, detail="Unacknowledged alert not found")
-    await audit(request, principal, "alert.acknowledge", alert_id)
+    await audit(request, ws.principal, "alert.acknowledge", alert_id)
     return {"status": "acknowledged", "alert_id": alert_id}

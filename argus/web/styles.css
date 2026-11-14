@@ -436,6 +436,11 @@ details.more .more-body { margin-top: 10px; display: grid; grid-template-columns
 details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* ---------------------------------------------------------------- workspaces */
+.workspace-switch { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; color: var(--text-3); }
+.workspace-switch svg { width: 16px; height: 16px; }
+.workspace-switch .select { font-weight: 600; color: var(--text); max-width: 200px; }
+
 /* ---------------------------------------------------------------- sign-in */
 .sso-btn { width: 100%; justify-content: center; text-decoration: none; margin-top: 4px; }
 .sso-btn:hover { text-decoration: none; }

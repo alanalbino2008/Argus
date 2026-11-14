@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+DEFAULT_WORKSPACE_ID = "ws_default"
+
 
 class EntityType(str, Enum):
     """Supported entity categories in the Argus knowledge graph."""
@@ -206,6 +208,7 @@ class Investigation(BaseModel):
     created_by: str | None = None
     purpose: str | None = None
     monitor_id: str | None = None
+    workspace_id: str = "ws_default"  # the team that owns it (DEFAULT_WORKSPACE_ID)
 
 
 class SystemMetrics(BaseModel):

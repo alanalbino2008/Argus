@@ -222,6 +222,11 @@ Microsoft Entra ID, Okta, Keycloak or any OpenID Connect provider — with roles
 an email-domain allow-list, secure server-side sessions and user management; API keys remain for
 automation ([`docs/explained/13-single-sign-on.md`](docs/explained/13-single-sign-on.md)).
 
+**Team workspaces**: one deployment serves many teams with hard isolation. Each workspace has its
+own investigations, monitors, alerts, API keys and audit trail. Roles are per workspace, membership
+can be mapped from identity-provider groups, and every endpoint is tested to return 404 for another
+workspace's data ([`docs/explained/14-team-workspaces.md`](docs/explained/14-team-workspaces.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 12 unit-tested alert rules with runbooks and a Grafana dashboard —
