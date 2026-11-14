@@ -32,6 +32,7 @@ import aiohttp
 
 from argus import __version__
 from argus.core.runctx import report_error, report_ok
+from argus.observability import metrics
 from argus.security.network import BlockedDestinationError, assert_public_host
 
 logger = logging.getLogger("argus.http")
@@ -205,6 +206,7 @@ class HttpClient:
                 assert_public_host(host)
             except BlockedDestinationError as exc:
                 self.stats.blocked += 1
+                metrics.OUTBOUND_REQUESTS.labels("blocked").inc()
                 report_error(host, exc)
                 raise
 
@@ -221,10 +223,12 @@ class HttpClient:
                     if isinstance(os_error, BlockedDestinationError):
                         # Egress guard refused the resolved address: retrying cannot help.
                         self.stats.blocked += 1
+                        metrics.OUTBOUND_REQUESTS.labels("blocked").inc()
                         report_error(host, os_error)
                         raise
                     if attempt >= self.max_retries:
                         self.stats.failures += 1
+                        metrics.OUTBOUND_REQUESTS.labels("network_error").inc()
                         report_error(host, exc)
                         raise
                     error: BaseException | None = exc
@@ -232,6 +236,7 @@ class HttpClient:
                 except Exception as exc:
                     # Non-transient (TLS failure, proxy refusal, bad URL...): count and surface.
                     self.stats.failures += 1
+                    metrics.OUTBOUND_REQUESTS.labels("network_error").inc()
                     report_error(host, exc)
                     raise
                 else:
@@ -240,14 +245,17 @@ class HttpClient:
             if resp is not None:
                 self.stats.status_counts[resp.status] += 1
                 if resp.status not in RETRYABLE_STATUS:
+                    metrics.OUTBOUND_REQUESTS.labels("http_error" if resp.status >= 400 else "ok").inc()
                     report_ok()
                     return resp
                 if attempt >= self.max_retries:
+                    metrics.OUTBOUND_REQUESTS.labels("http_error").inc()
                     report_error(host, f"HTTP {resp.status} after {attempt} retries")
                     return resp
                 retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
                 if resp.status == 429:
                     self.stats.throttled += 1
+                    metrics.OUTBOUND_REQUESTS.labels("throttled").inc()
                 resp.release()
                 delay = min(retry_after, self.max_retry_after) if retry_after is not None else self._backoff(attempt)
                 if resp.status == 429:
@@ -259,4 +267,5 @@ class HttpClient:
 
             attempt += 1
             self.stats.retries += 1
+            metrics.OUTBOUND_REQUESTS.labels("retried").inc()
             await asyncio.sleep(delay)

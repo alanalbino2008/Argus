@@ -2,76 +2,270 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "Argus Helm values",
   "type": "object",
-  "required": ["image", "replicaCount", "postgresql", "externalDatabase", "secrets", "config"],
+  "required": [
+    "image",
+    "replicaCount",
+    "postgresql",
+    "externalDatabase",
+    "secrets",
+    "config"
+  ],
   "properties": {
     "image": {
       "type": "object",
-      "required": ["repository"],
+      "required": [
+        "repository"
+      ],
       "properties": {
-        "repository": {"type": "string", "minLength": 1},
-        "tag": {"type": "string"},
-        "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
       }
     },
-    "replicaCount": {"type": "integer", "minimum": 1},
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
     "externalDatabase": {
       "type": "object",
       "properties": {
-        "existingSecret": {"type": "string"},
-        "existingSecretKey": {"type": "string", "minLength": 1}
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingSecretKey": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "postgresql": {
       "type": "object",
       "properties": {
-        "enabled": {"type": "boolean"},
-        "database": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*$"},
-        "username": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*$"},
-        "password": {"type": "string", "pattern": "^[A-Za-z0-9._~-]*$",
-                     "description": "URL-safe characters only (it is embedded in the database URL)"}
+        "enabled": {
+          "type": "boolean"
+        },
+        "database": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]*$"
+        },
+        "username": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]*$"
+        },
+        "password": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._~-]*$",
+          "description": "URL-safe characters only (it is embedded in the database URL)"
+        }
       }
     },
-    "migrations": {"type": "object", "properties": {"enabled": {"type": "boolean"}}},
+    "migrations": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
     "secrets": {
       "type": "object",
       "properties": {
-        "existingSecret": {"type": "string"},
-        "bootstrapAdminKey": {"type": "string", "anyOf": [{"maxLength": 0}, {"minLength": 32}],
-                              "description": "Empty (generated) or at least 32 characters"}
+        "existingSecret": {
+          "type": "string"
+        },
+        "bootstrapAdminKey": {
+          "type": "string",
+          "anyOf": [
+            {
+              "maxLength": 0
+            },
+            {
+              "minLength": 32
+            }
+          ],
+          "description": "Empty (generated) or at least 32 characters"
+        }
       }
     },
     "config": {
       "type": "object",
       "properties": {
-        "maxConcurrentScans": {"type": "integer", "minimum": 1},
-        "scansPerMinute": {"type": "integer", "minimum": 1},
-        "monitorsEnabled": {"type": "boolean"},
-        "scanStaleSeconds": {"type": "number", "minimum": 10},
-        "allowPrivateTargets": {"type": "boolean"},
-        "corsOrigins": {"type": "array", "items": {"type": "string"}},
-        "logLevel": {"enum": ["critical", "error", "warning", "info", "debug", "trace"]},
-        "extraEnv": {"type": "object", "propertyNames": {"pattern": "^ARGUS_[A-Z0-9_]+$"},
-                     "additionalProperties": {"type": ["string", "number", "boolean"]}}
+        "maxConcurrentScans": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scansPerMinute": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "monitorsEnabled": {
+          "type": "boolean"
+        },
+        "scanStaleSeconds": {
+          "type": "number",
+          "minimum": 10
+        },
+        "allowPrivateTargets": {
+          "type": "boolean"
+        },
+        "corsOrigins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "logLevel": {
+          "enum": [
+            "critical",
+            "error",
+            "warning",
+            "info",
+            "debug",
+            "trace"
+          ]
+        },
+        "extraEnv": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^ARGUS_[A-Z0-9_]+$"
+          },
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "logFormat": {
+          "enum": [
+            "json",
+            "text"
+          ]
+        }
       }
     },
-    "service": {"type": "object", "properties": {"type": {"enum": ["ClusterIP", "NodePort", "LoadBalancer"]}, "port": {"type": "integer"}}},
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ]
+        },
+        "port": {
+          "type": "integer"
+        }
+      }
+    },
     "autoscaling": {
       "type": "object",
       "properties": {
-        "enabled": {"type": "boolean"},
-        "minReplicas": {"type": "integer", "minimum": 1},
-        "maxReplicas": {"type": "integer", "minimum": 1},
-        "targetCPUUtilizationPercentage": {"type": "integer", "minimum": 1, "maximum": 100}
+        "enabled": {
+          "type": "boolean"
+        },
+        "minReplicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxReplicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "targetCPUUtilizationPercentage": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
       }
     },
     "networkPolicy": {
       "type": "object",
       "properties": {
-        "enabled": {"type": "boolean"},
-        "databaseCIDRs": {"type": "array", "items": {"type": "string"}},
-        "blockedEgressCIDRs": {"type": "array", "items": {"type": "string"}}
+        "enabled": {
+          "type": "boolean"
+        },
+        "databaseCIDRs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "blockedEgressCIDRs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
-    "terminationGracePeriodSeconds": {"type": "integer", "minimum": 30}
+    "terminationGracePeriodSeconds": {
+      "type": "integer",
+      "minimum": 30
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "podAnnotations": {
+          "type": "boolean"
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "interval": {
+              "type": "string",
+              "pattern": "^[0-9]+[smh]$"
+            },
+            "labels": {
+              "type": "object"
+            }
+          }
+        },
+        "prometheusRule": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            }
+          }
+        },
+        "grafanaDashboard": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "labels": {
+              "type": "object"
+            },
+            "folder": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
   }
 }

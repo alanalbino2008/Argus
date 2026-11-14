@@ -4,3 +4,4 @@
 *.tmp
 .git/
 ci/
+files/*.test.yaml

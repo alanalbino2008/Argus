@@ -1,0 +1,119 @@
+# Argus alerting rules (Prometheus rule-file format; also embedded in the chart's PrometheusRule).
+# Each alert says what is wrong, why it matters and what to check first.
+groups:
+  - name: argus.availability
+    rules:
+      - alert: ArgusDown
+        expr: absent(argus_build_info)
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: No Argus replica is reporting metrics
+          description: Prometheus has not scraped any Argus replica for 5 minutes. The service is down or unreachable.
+          runbook: Check `kubectl get pods -l app.kubernetes.io/name=argus`, recent events and the readiness probe.
+
+      - alert: ArgusDatabaseUnreachable
+        expr: min(argus_database_up) == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: Argus cannot reach PostgreSQL
+          description: At least one replica's health check failed to query the database for 2 minutes; affected pods are out of the load balancer.
+          runbook: Check database availability, credentials (database-url secret) and the NetworkPolicy databaseCIDRs.
+
+      - alert: ArgusHighErrorRate
+        expr: |
+          sum(rate(argus_http_requests_total{status=~"5..",route!~"/api/health|/api/live|/metrics"}[5m]))
+            / clamp_min(sum(rate(argus_http_requests_total{route!~"/api/health|/api/live|/metrics"}[5m])), 1e-9) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: More than 5% of API requests fail
+          description: "{{ $value | humanizePercentage }} of API requests returned 5xx over the last 5 minutes."
+          runbook: Search the JSON logs for level=error and correlate with request_id.
+
+      - alert: ArgusSlowApi
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(argus_http_request_duration_seconds_bucket{route!~"/ws/.*|/metrics"}[5m]))) > 1
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: API p95 latency above 1 second
+          description: "95th percentile API latency is {{ $value | humanizeDuration }}."
+          runbook: Check database latency (argus_checkpoint_duration_seconds), CPU throttling and running scan count.
+
+  - name: argus.scans
+    rules:
+      - alert: ArgusScansFailing
+        expr: |
+          sum(increase(argus_scans_finished_total{status="failed"}[1h]))
+            / clamp_min(sum(increase(argus_scans_finished_total[1h])), 1) > 0.25
+          and sum(increase(argus_scans_finished_total[1h])) >= 4
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Over a quarter of scans failed in the last hour
+          description: "{{ $value | humanizePercentage }} of finished scans failed."
+          runbook: Open a failed investigation and read its errors; check argus_scans_interrupted_total for crashed replicas.
+
+      - alert: ArgusReplicaLostScans
+        expr: sum(increase(argus_scans_interrupted_total{reason="replica_unresponsive"}[15m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: A replica stopped responding while running scans
+          description: "{{ $value }} scan(s) were failed because the replica running them stopped sending heartbeats."
+          runbook: Look for OOMKilled or evicted pods; consider raising memory limits.
+
+      - alert: ArgusCheckpointsFailing
+        expr: sum(increase(argus_checkpoint_failures_total[10m])) > 5
+        labels: {severity: warning}
+        annotations:
+          summary: Running scans cannot save their progress
+          description: Checkpoints or heartbeats are failing; other replicas may wrongly treat these scans as crashed.
+          runbook: Check database health and connection limits.
+
+      - alert: ArgusAtScanCapacity
+        expr: max(argus_cluster_scans_running) >= max(argus_scan_capacity)
+        for: 30m
+        labels: {severity: info}
+        annotations:
+          summary: The cluster has been at its concurrent-scan limit for 30 minutes
+          description: New scans are being refused with HTTP 429. Raise config.maxConcurrentScans if the database can take it.
+
+  - name: argus.sources
+    rules:
+      - alert: ArgusDataSourceDown
+        expr: sum by (module) (increase(argus_module_circuit_breaker_trips_total[1h])) >= 3
+        labels: {severity: warning}
+        annotations:
+          summary: "Collector {{ $labels.module }} keeps tripping its circuit breaker"
+          description: The module was disabled mid-scan 3+ times in an hour - its upstream API is probably down, rate-limiting or has changed.
+          runbook: Check the module's errors in recent investigations; verify API keys and quotas.
+
+      - alert: ArgusSourcesThrottling
+        expr: sum(rate(argus_outbound_requests_total{outcome="throttled"}[15m])) > 0.2
+        for: 15m
+        labels: {severity: info}
+        annotations:
+          summary: OSINT sources are rate-limiting Argus
+          description: Scans slow down while Argus backs off; add API keys or lower concurrency.
+
+  - name: argus.security
+    rules:
+      - alert: ArgusAuthFailureSpike
+        expr: sum(rate(argus_auth_failures_total{reason=~"invalid_key|websocket_ticket|metrics_token"}[5m])) > 1
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: Many invalid credentials presented - possible key guessing
+          description: "{{ $value | humanize }} rejected credentials per second. Invalid-key attempts are also in the audit log (auth.failed)."
+          runbook: Review `/api/audit?action=auth.failed`, block the source at the ingress, rotate any leaked key.
+
+      - alert: ArgusEgressBlocked
+        expr: sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) > 0
+        labels: {severity: info}
+        annotations:
+          summary: Argus refused to contact a private or metadata address
+          description: The SSRF guard blocked an outbound request (e.g. a target redirecting to an internal address). Usually a hostile or misconfigured target - worth a look.
+          runbook: Find the investigation in the JSON logs (outcome=blocked) and review its target.

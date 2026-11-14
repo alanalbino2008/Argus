@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.12.0] — Phase 12: Observability
+
+### Added
+- **Prometheus metrics** at `/metrics` (`argus/observability/metrics.py`): API requests/latency by
+  route template, scans (started, finished, running, cluster-wide, capacity, duration, interrupted),
+  findings by type, module runs/duration/circuit-breaker trips, outbound requests by outcome
+  (incl. SSRF blocks), WebSockets, checkpoints, monitors, drift alerts, auth failures, rate limits,
+  audit events, database reachability, process CPU/memory. Optional bearer token
+  (`ARGUS_METRICS_TOKEN`); `ARGUS_METRICS_ENABLED`.
+- **Structured logging** (`ARGUS_LOG_FORMAT=json`, `ARGUS_LOG_LEVEL`): one JSON object per line with
+  `request_id` (from/echoed as `X-Request-ID`), `investigation_id` and `instance`; a single access log
+  with route templates and no query strings. Argus's own INFO logs were previously not emitted.
+- **12 alert rules** with severities and runbooks, unit-tested with `promtool test rules`.
+- **Grafana dashboard** (33 panels) generated from code; tests check every query and alert uses a real
+  metric.
+- Helm: optional ServiceMonitor, PrometheusRule and dashboard ConfigMap, Prometheus pod annotations,
+  JSON logs by default, metrics token; `helm test` checks `/metrics`. Compose: Prometheus + Grafana
+  overlay with provisioning.
+- CI: CRD schema validation, `promtool check rules` + `promtool test rules`, dashboard-up-to-date check.
+- `docs/explained/12-observability.md`.
+
+### Changed
+- uvicorn's access log is disabled in the image and chart (Argus logs each request once, structured).
+- nginx (Compose) keeps upstream connections alive and forwards an `X-Request-ID`.
+
+### Fixed
+- Health-probe 503s during a database outage no longer also trigger the API error-rate alert.
+
 ## [1.11.0] — Phase 11: Kubernetes & PostgreSQL
 
 ### Added

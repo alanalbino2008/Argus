@@ -3,6 +3,7 @@ kind: Service
 metadata:
   name: {{ include "argus.fullname" . }}
   labels: {{- include "argus.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
 spec:
   type: {{ .Values.service.type }}
   # Plain round-robin: replicas share state through PostgreSQL, so no session affinity.

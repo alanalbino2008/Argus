@@ -14,6 +14,7 @@ x-argus: &argus
   environment: &argus-env
     ARGUS_DATABASE_URL: postgresql+asyncpg://argus:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/argus
     ARGUS_AUTO_MIGRATE: "false"
+    ARGUS_LOG_FORMAT: json
     ARGUS_BOOTSTRAP_ADMIN_KEY: ${ARGUS_BOOTSTRAP_ADMIN_KEY:-}
 
 services:

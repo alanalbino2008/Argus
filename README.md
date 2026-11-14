@@ -217,6 +217,11 @@ metadata endpoint. Replicas coordinate through PostgreSQL — scan ownership wit
 cancellation from any replica, live streaming of scans running elsewhere, shared WebSocket
 tickets, exactly-once scheduling and a concurrency-safe audit chain — so no sticky sessions or
 message broker are needed. Every push installs the chart on a real Kubernetes cluster in CI.
+**Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
+SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
+`investigation_id`, and ships 12 unit-tested alert rules with runbooks and a Grafana dashboard —
+as a ServiceMonitor, PrometheusRule and dashboard ConfigMap on Kubernetes, or a Prometheus + Grafana
+overlay for Docker Compose ([`docs/explained/12-observability.md`](docs/explained/12-observability.md)).
 Operator guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · How it works:
 [`docs/explained/11-kubernetes-and-postgresql.md`](docs/explained/11-kubernetes-and-postgresql.md).
 

@@ -26,6 +26,11 @@ spec:
         # Roll the pods when configuration or secrets change.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if and .Values.metrics.enabled .Values.metrics.podAnnotations (not .Values.secrets.metricsToken) }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+        {{- end }}
         {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
     spec:
       serviceAccountName: {{ include "argus.serviceAccountName" . }}
@@ -59,6 +64,7 @@ spec:
           command: ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000",
                     "--proxy-headers", "--forwarded-allow-ips", "*",
                     "--log-level", {{ .Values.config.logLevel | quote }},
+                    "--no-access-log",  # Argus writes its own access log (route templates, request ids, no query strings)
                     "--timeout-graceful-shutdown", "30"]
           ports:
             - {name: http, containerPort: 8000, protocol: TCP}
@@ -74,7 +80,7 @@ spec:
             - name: ARGUS_BOOTSTRAP_ADMIN_KEY
               valueFrom:
                 secretKeyRef: {name: {{ include "argus.secretName" . }}, key: bootstrap-admin-key, optional: true}
-            {{- range $env, $key := dict "ARGUS_GITHUB_TOKEN" "github-token" "ARGUS_VIRUSTOTAL_API_KEY" "virustotal-api-key" "ARGUS_HIBP_API_KEY" "hibp-api-key" "ARGUS_SHODAN_API_KEY" "shodan-api-key" }}
+            {{- range $env, $key := dict "ARGUS_GITHUB_TOKEN" "github-token" "ARGUS_VIRUSTOTAL_API_KEY" "virustotal-api-key" "ARGUS_HIBP_API_KEY" "hibp-api-key" "ARGUS_SHODAN_API_KEY" "shodan-api-key" "ARGUS_METRICS_TOKEN" "metrics-token" }}
             - name: {{ $env }}
               valueFrom:
                 secretKeyRef: {name: {{ include "argus.secretName" $ }}, key: {{ $key }}, optional: true}

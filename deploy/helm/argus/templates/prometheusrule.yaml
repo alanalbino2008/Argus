@@ -1,0 +1,11 @@
+{{- if and .Values.metrics.enabled .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  # Same rules as files/alerts.yaml (also usable with plain Prometheus via rule_files).
+{{ .Files.Get "files/alerts.yaml" | indent 2 }}
+{{- end }}

@@ -28,6 +28,7 @@ Replicas coordinate through the shared database - no sticky sessions, no extra b
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -61,6 +62,8 @@ from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
 from argus.modules import get_default_modules, get_module_catalog, plugin_report
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
+from argus.observability import logs, metrics
+from argus.observability.middleware import ObservabilityMiddleware
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.headers import SecurityHeadersMiddleware
 from argus.security.network import validate_scan_target
@@ -124,6 +127,8 @@ async def ws_dispatcher(event: Event) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    logs.configure(settings.log_format, settings.log_level, settings.instance_id)
+    metrics.init(settings.instance_id, settings.max_concurrent_scans)
     db = Database(settings.database_url, echo=settings.db_echo)
     if settings.auto_migrate:
         await upgrade_database(db)
@@ -133,6 +138,7 @@ async def lifespan(app: FastAPI):
     # scans are left alone.
     interrupted = await repo.mark_interrupted(owned_by=settings.instance_id, stale_seconds=settings.scan_stale_seconds)
     if interrupted:
+        metrics.SCANS_INTERRUPTED.labels("restart").inc(interrupted)
         logger.warning("Marked %d interrupted investigation(s) as failed", interrupted)
 
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
@@ -236,6 +242,7 @@ app = FastAPI(
 )
 
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(ObservabilityMiddleware)  # outermost: times and labels everything, incl. errors
 # Same-origin by default. The UI is served by this app, so CORS is only needed for
 # separate front-ends, which must be listed explicitly (never "*").
 _cors_origins = get_settings().cors_origins
@@ -365,6 +372,7 @@ async def cluster_running_scans(app: FastAPI) -> int:
     """Scans running on any replica (live heartbeat), so the concurrency cap is cluster-wide."""
     try:
         remote = len(await app.state.repo.active_scans(app.state.settings.scan_stale_seconds))
+        metrics.CLUSTER_SCANS_RUNNING.set(remote)
     except Exception:
         logger.warning("Could not count cluster-wide scans; using this replica's count", exc_info=True)
         remote = 0
@@ -383,7 +391,9 @@ async def _janitor(app: FastAPI) -> None:
                 reason="Interrupted: the replica running this scan stopped responding.",
             )
             if count:
+                metrics.SCANS_INTERRUPTED.labels("replica_unresponsive").inc(count)
                 logger.warning("Marked %d scan(s) of unresponsive replicas as failed", count)
+            await cluster_running_scans(app)  # refreshes argus_cluster_scans_running
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -411,6 +421,7 @@ async def launch_scan(
     if monitor_id:
         task.add_done_callback(lambda _t: _spawn(_evaluate_drift(app, engine), f"drift-{engine.investigation_id}"))
     SCAN_TASKS[engine.investigation_id] = task
+    metrics.SCANS_STARTED.labels("monitor" if monitor_id else "manual").inc()
     return engine
 
 
@@ -451,6 +462,7 @@ async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:
         headline=headline(diff, inv.config.target),
         summary={k: diff[k] for k in ("summary", "new_paths", "escalated_paths", "resolved_paths")},
     )
+    metrics.ALERTS_RAISED.labels(worst).inc()
     await app.state.audit.record(
         SCHEDULER, "alert.raised", alert["id"], details={"severity": worst, "target": inv.config.target}
     )
@@ -463,6 +475,23 @@ def _on_scan_done(task: asyncio.Task[None]) -> None:
 
 
 # --------------------------------------------------------------------------- REST
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics(request: Request):
+    """Prometheus scrape endpoint (one per replica). Optionally protected by ARGUS_METRICS_TOKEN."""
+    settings: Settings = request.app.state.settings
+    if not settings.metrics_enabled:
+        raise HTTPException(status_code=404, detail="Not found")
+    if settings.metrics_token is not None:
+        expected = f"Bearer {settings.metrics_token.get_secret_value()}"
+        if not hmac.compare_digest(request.headers.get("authorization", ""), expected):
+            metrics.AUTH_FAILURES.labels("metrics_token").inc()
+            raise HTTPException(
+                status_code=401, detail="Metrics token required", headers={"WWW-Authenticate": "Bearer"}
+            )
+    body, content_type = metrics.render()
+    return Response(body, media_type=content_type)
+
+
 @app.get("/api/live")
 async def live():
     """Liveness probe: the process is up and serving. Deliberately ignores the database, so a
@@ -478,9 +507,11 @@ async def health(request: Request):
         async with db.engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         db_ok = True
+        metrics.DATABASE_UP.set(1)
     except Exception:
         logger.warning("Health check: database unreachable", exc_info=True)
         db_ok = False
+        metrics.DATABASE_UP.set(0)
     body = {
         "status": "ok" if db_ok else "degraded",
         "database": {"backend": db.dialect, "reachable": db_ok},
@@ -577,11 +608,13 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if await cluster_running_scans(request.app) >= settings.max_concurrent_scans:
+        metrics.RATE_LIMITED.labels("concurrent_scans").inc()
         raise HTTPException(
             status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
         )
     limiter: SlidingWindowLimiter = request.app.state.scan_limiter
     if not limiter.hit(principal.key_id):
+        metrics.RATE_LIMITED.labels("scans_per_minute").inc()
         raise HTTPException(
             status_code=429,
             detail="Scan rate limit exceeded",
@@ -792,6 +825,7 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
     """
     ticket = websocket.query_params.get("ticket")
     if websocket.app.state.settings.auth_enabled and await websocket.app.state.ws_tickets.redeem(ticket) is None:
+        metrics.AUTH_FAILURES.labels("websocket_ticket").inc()
         await websocket.close(code=4401)
         return
     repo: InvestigationRepository = websocket.app.state.repo
@@ -863,6 +897,8 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
         except WebSocketDisconnect:
             client_gone = True
 
+    ws_mode = "tail" if tail_graph is not None else "live" if engine is not None else "replay"
+    metrics.WS_CONNECTIONS.labels(ws_mode).inc()
     try:
         # Structured concurrency (anyio, which Starlette itself uses): whichever of
         # sender / receiver / overflow-watch finishes first cancels the other two,
@@ -884,6 +920,7 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
                 start_graph = tail_graph
                 tg.start_soon(first_to_finish_wins, lambda: tail_database(start_graph))
     finally:
+        metrics.WS_CONNECTIONS.labels(ws_mode).dec()
         conns = CONNECTIONS.get(inv_id)
         if conns is not None:
             conns.discard(conn)
@@ -891,6 +928,8 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
                 CONNECTIONS.pop(inv_id, None)
 
     if not client_gone:  # server-side ending (e.g. slow client): tell the browser
+        if conn.dead.is_set():
+            metrics.WS_SLOW_CLIENTS.inc()
         try:
             await websocket.close(code=1013)
         except Exception as exc:  # noqa: BLE001 - best-effort notice to a client that may already be gone

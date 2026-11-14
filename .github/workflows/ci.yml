@@ -98,8 +98,19 @@ jobs:
           for values in "" deploy/helm/argus/ci/*.yaml; do
             echo "== ${values:-defaults}"
             helm template argus deploy/helm/argus ${values:+-f $values} \
-              | ./kubeconform -strict -summary -kubernetes-version 1.30.0
+              | ./kubeconform -strict -summary -kubernetes-version 1.30.0 -schema-location default \
+                  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           done
+      - name: Validate alerting rules (promtool)
+        run: |
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/helm/argus/files:/rules:ro" \
+            prom/prometheus:v3.1.0 check rules /rules/alerts.yaml
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/helm/argus/files:/rules:ro" -w /rules \
+            prom/prometheus:v3.1.0 test rules alerts.test.yaml
+      - name: Dashboard is up to date with its generator
+        run: |
+          python3 deploy/observability/build_dashboard.py
+          git diff --exit-code deploy/helm/argus/files/argus-dashboard.json
       - uses: docker/setup-buildx-action@v4
       - name: Build image
         uses: docker/build-push-action@v7

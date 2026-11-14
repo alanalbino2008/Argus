@@ -10,6 +10,9 @@ data:
   ARGUS_MONITORS_ENABLED: {{ .Values.config.monitorsEnabled | quote }}
   ARGUS_SCAN_STALE_SECONDS: {{ .Values.config.scanStaleSeconds | quote }}
   ARGUS_ALLOW_PRIVATE_TARGETS: {{ .Values.config.allowPrivateTargets | quote }}
+  ARGUS_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  ARGUS_LOG_LEVEL: {{ .Values.config.logLevel | upper | quote }}
+  ARGUS_METRICS_ENABLED: {{ .Values.metrics.enabled | quote }}
   ARGUS_CORS_ORIGINS: {{ .Values.config.corsOrigins | toJson | quote }}
   {{- range $k, $v := .Values.config.extraEnv }}
   {{ $k }}: {{ $v | quote }}

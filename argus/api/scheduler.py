@@ -26,6 +26,7 @@ from typing import Any
 
 from argus.core.models import EntityType, ScanConfig
 from argus.core.settings import Settings
+from argus.observability import metrics
 from argus.security.auth import Principal, Role
 from argus.security.network import validate_scan_target
 from argus.storage.monitor_repo import MonitorRepository
@@ -63,6 +64,7 @@ class MonitorScheduler:
             if running >= self.settings.max_concurrent_scans:
                 break  # try again next tick
             if not await self.monitors.claim(monitor["id"]):
+                metrics.MONITOR_CLAIMS_LOST.inc()
                 continue  # another replica took it
             await self._run(monitor, launched)
         return launched
@@ -92,6 +94,7 @@ class MonitorScheduler:
             await self.monitors.release(monitor["id"])  # retry on the next tick
             return
         await self.monitors.mark_started(monitor["id"], inv_id)
+        metrics.MONITOR_RUNS.inc()
         await self.audit.record(
             SCHEDULER, "monitor.run", monitor["id"], details={"investigation_id": inv_id, "target": monitor["target"]}
         )

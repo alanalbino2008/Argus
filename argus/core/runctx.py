@@ -34,6 +34,7 @@ class ModuleRunReport:
     source_errors: int = 0
     items: int = 0
     errors: list[str] = field(default_factory=list)
+    outcome_override: str | None = None  # "timeout" / "failed" when the run raised
 
     def record_error(self, source: str, error: object) -> None:
         self.source_errors += 1
@@ -52,6 +53,11 @@ class ModuleRunReport:
         if self.source_ok > 0 or self.items > 0:
             return "degraded"
         return "failed"
+
+    @property
+    def final_outcome(self) -> str:
+        """For metrics: success | degraded | failed | timeout."""
+        return self.outcome_override or self.outcome
 
 
 current_run: ContextVar[ModuleRunReport | None] = ContextVar("argus_module_run", default=None)

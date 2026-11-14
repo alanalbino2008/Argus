@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
 
+from argus.observability import metrics
 from argus.security.auth import ANONYMOUS_ADMIN, Principal, Role
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage.security_repo import ApiKeyRepository, AuditLog
@@ -52,6 +53,7 @@ async def get_principal(request: Request) -> Principal:
     keys: ApiKeyRepository = request.app.state.keys
     principal = await keys.authenticate(key) if key else None
     if principal is None:
+        metrics.AUTH_FAILURES.labels("invalid_key" if key else "missing_key").inc()
         ip = client_ip(request) or "unknown"
         # Only a *presented but invalid* key is a security signal (guessing, leaked or
         # revoked credentials). A visitor who has not signed in yet is just noise.
@@ -78,6 +80,7 @@ def require(role: Role):
 
     async def checker(request: Request, principal: Principal = Depends(get_principal)) -> Principal:
         if not principal.has(role):
+            metrics.AUTH_FAILURES.labels("insufficient_role").inc()
             await audit(
                 request,
                 principal,

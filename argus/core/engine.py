@@ -47,6 +47,8 @@ from argus.core.runctx import ModuleRunReport, current_run
 from argus.modules import get_default_modules
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.modules.base import BaseModule
+from argus.observability import metrics
+from argus.observability.logs import investigation_id
 from argus.security.network import GuardedResolver, configured_proxy_hosts
 from argus.security.secrets import redact
 
@@ -132,6 +134,9 @@ class ArgusEngine:
         self._is_running = True
         self.investigation.status = InvestigationStatus.RUNNING
         started = time.monotonic()
+        investigation_id.set(self.investigation_id)  # every log line of this scan carries its id
+        metrics.SCANS_RUNNING.inc()
+        self._counted_running = True
 
         await self._emit(
             EventType.SCAN_STARTED,
@@ -275,16 +280,21 @@ class ArgusEngine:
             )
         except asyncio.TimeoutError:
             stats.timed_out += 1
+            report.outcome_override = "timeout"
             await self._record_failure(module, entity, f"timed out after {self.config.module_timeout_seconds:.0f}s")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - a buggy module must never crash the whole scan
+            report.outcome_override = "failed"
             await self._record_failure(module, entity, repr(exc))
         else:
             await self._classify_run(module, entity, report)
         finally:
-            stats.total_seconds += time.monotonic() - started
+            elapsed = time.monotonic() - started
+            stats.total_seconds += elapsed
             stats.source_errors += report.source_errors
+            metrics.MODULE_DURATION.labels(module.name).observe(elapsed)
+            metrics.MODULE_RUNS.labels(module.name, report.final_outcome).inc()
 
         await self._emit(
             EventType.MODULE_FINISHED,
@@ -353,6 +363,7 @@ class ArgusEngine:
         if not self.graph.add_entity(item):
             return
         stats.entities_found += 1
+        metrics.ENTITIES_DISCOVERED.labels(item.type.value).inc()
         await self._emit(
             EventType.ENTITY_DISCOVERED,
             {
@@ -383,6 +394,7 @@ class ArgusEngine:
         await self._emit(EventType.LOG_MESSAGE, {"level": "ERROR", "message": msg})
         if not stats.disabled and stats.consecutive_failures >= self.config.circuit_breaker_threshold:
             stats.disabled = True
+            metrics.CIRCUIT_BREAKER_TRIPS.labels(module.name).inc()
             notice = (
                 f"Circuit breaker opened: {module.name} disabled after "
                 f"{stats.consecutive_failures} consecutive failures."
@@ -402,6 +414,11 @@ class ArgusEngine:
 
     def _finalize(self, status: InvestigationStatus, started: float) -> None:
         self._is_running = False
+        if getattr(self, "_counted_running", False):
+            self._counted_running = False
+            metrics.SCANS_RUNNING.dec()
+            metrics.SCANS_FINISHED.labels(status.value).inc()
+            metrics.SCAN_DURATION.observe(time.monotonic() - started)
         inv = self.investigation
         inv.status = status
         inv.completed_at = datetime.now(timezone.utc)

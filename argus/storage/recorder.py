@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, EventType
+from argus.observability import metrics
 from argus.storage.repository import InvestigationRepository
 
 logger = logging.getLogger("argus.storage.recorder")
@@ -77,8 +79,10 @@ class InvestigationRecorder:
     async def _flush_loop(self) -> None:
         while True:
             await asyncio.sleep(self.flush_interval)
+            started = time.perf_counter()
             try:
                 await self.flush()
+                metrics.CHECKPOINT_DURATION.observe(time.perf_counter() - started)
                 # Heartbeat: proves to other replicas this scan is alive, and carries
                 # cancellation requests made through any replica.
                 cancel = bool(self.owner) and await self.repo.heartbeat(self.engine.investigation_id)
@@ -88,6 +92,7 @@ class InvestigationRecorder:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                metrics.CHECKPOINT_FAILURES.inc()
                 logger.exception("Checkpoint failed for %s; will retry", self.engine.investigation_id)
 
     async def flush(self) -> None:

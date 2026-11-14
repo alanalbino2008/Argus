@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yaml
+
+scrape_configs:
+  # Every Argus replica: Docker's DNS returns one A record per container of the "argus" service.
+  - job_name: argus
+    dns_sd_configs:
+      - names: [argus]
+        type: A
+        port: 8000
+        refresh_interval: 15s
+    metrics_path: /metrics

@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import socket
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,6 +60,16 @@ class Settings(BaseSettings):
     monitors_enabled: bool = Field(default=True, description="Run the scheduler that re-scans monitored targets")
     monitor_poll_seconds: float = Field(
         default=60.0, ge=1, description="How often the scheduler checks for due monitors"
+    )
+    # --- Observability ---------------------------------------------------------------------
+    log_format: Literal["text", "json"] = Field(
+        default="text", description="'json' for one JSON object per line (log platforms); 'text' for humans"
+    )
+    log_level: str = Field(default="INFO", description="Level for Argus's own loggers")
+    metrics_enabled: bool = Field(default=True, description="Expose Prometheus metrics at /metrics")
+    metrics_token: SecretStr | None = Field(
+        default=None,
+        description="If set, /metrics requires 'Authorization: Bearer <token>' (otherwise restrict it by network)",
     )
     # --- Clustering (several replicas sharing one PostgreSQL database) ---------------------
     instance_id: str = Field(

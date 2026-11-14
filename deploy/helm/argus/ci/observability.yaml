@@ -1,0 +1,7 @@
+# CI render check: full observability stack (Prometheus Operator CRDs + Grafana sidecar).
+metrics:
+  serviceMonitor: {enabled: true, labels: {release: kube-prometheus-stack}}
+  prometheusRule: {enabled: true}
+  grafanaDashboard: {enabled: true}
+secrets:
+  metricsToken: ci-scrape-token-0123456789

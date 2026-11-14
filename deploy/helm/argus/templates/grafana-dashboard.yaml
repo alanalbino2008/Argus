@@ -1,0 +1,13 @@
+{{- if .Values.metrics.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "argus.fullname" . }}-dashboard
+  labels: {{- include "argus.labels" . | nindent 4 }}
+    {{- with .Values.metrics.grafanaDashboard.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+  annotations:
+    grafana_folder: {{ .Values.metrics.grafanaDashboard.folder | quote }}
+data:
+  argus-dashboard.json: |-
+{{ .Files.Get "files/argus-dashboard.json" | indent 4 }}
+{{- end }}

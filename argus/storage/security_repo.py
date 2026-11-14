@@ -13,6 +13,7 @@ from typing import Any, cast
 from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.engine import CursorResult
 
+from argus.observability import metrics
 from argus.security.auth import Principal, Role, generate_api_key, hash_api_key, key_display_prefix
 from argus.storage.db import ApiKeyRow, AuditEventRow, Database, WsTicketRow
 
@@ -173,6 +174,7 @@ class AuditLog:
                 await s.execute(select(AuditEventRow.hash).order_by(AuditEventRow.id.desc()).limit(1))
             ).scalar_one_or_none() or GENESIS_HASH
             s.add(AuditEventRow(**entry, prev_hash=prev, hash=self._digest(prev, entry)))
+        metrics.AUDIT_EVENTS.labels(outcome).inc()
 
     async def list(
         self, limit: int = 100, action: str | None = None, actor_id: str | None = None

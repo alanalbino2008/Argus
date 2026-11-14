@@ -28,4 +28,9 @@ spec:
               assert body["status"] == "ok" and body["database"]["reachable"], body
               seen.add(body["instance"])
           print("healthy replicas answering:", sorted(seen))
+          {{- if and .Values.metrics.enabled (not .Values.secrets.metricsToken) }}
+          scrape = opener.open("http://{{ include "argus.fullname" . }}:{{ .Values.service.port }}/metrics").read().decode()
+          assert "argus_build_info" in scrape and "argus_http_requests_total" in scrape, "metrics missing"
+          print("metrics exposed:", sum(1 for line in scrape.splitlines() if line.startswith("argus_")), "argus series")
+          {{- end }}
       securityContext: {{- include "argus.containerSecurityContext" . | nindent 8 }}

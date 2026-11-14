@@ -50,4 +50,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 
 # 0.0.0.0 inside the container is required for port publishing; access is still API-key protected.
 # --proxy-headers: trust X-Forwarded-* from the ingress so audit logs record real client IPs.
-CMD ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*", "--timeout-graceful-shutdown", "20"]
+# --no-access-log: Argus writes its own access log (route templates, request ids, no query strings).
+CMD ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*", "--timeout-graceful-shutdown", "20", "--no-access-log"]

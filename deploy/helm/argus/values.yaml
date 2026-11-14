@@ -56,6 +56,8 @@ secrets:
   virustotalApiKey: ""
   hibpApiKey: ""
   shodanApiKey: ""
+  # If set, /metrics requires "Authorization: Bearer <token>" (the ServiceMonitor sends it).
+  metricsToken: ""
 
 # ---------------------------------------------------------------------------- application
 config:
@@ -66,8 +68,30 @@ config:
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone
   corsOrigins: []
   logLevel: info
+  # json: one object per line with request_id / investigation_id / instance (Loki, ELK, CloudWatch...).
+  logFormat: json
   # Any other ARGUS_* setting, e.g. {ARGUS_PERSIST_FLUSH_INTERVAL: "1.0"}
   extraEnv: {}
+
+# ---------------------------------------------------------------------------- observability
+metrics:
+  enabled: true
+  # Plain-Prometheus discovery via pod annotations (skipped when a metrics token is set).
+  podAnnotations: true
+  # Prometheus Operator / kube-prometheus-stack integration.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}            # e.g. {release: kube-prometheus-stack}
+  prometheusRule:
+    enabled: false
+    labels: {}
+  # Grafana dashboard as a ConfigMap picked up by the Grafana sidecar.
+  grafanaDashboard:
+    enabled: false
+    labels:
+      grafana_dashboard: "1"
+    folder: Argus
 
 # ---------------------------------------------------------------------------- networking
 service:
