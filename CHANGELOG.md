@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.8.0] — Phase 8: Interface redesign
+
+### Added
+- Redesigned web interface: left navigation with dedicated Overview, Graph, Attack Paths, Monitoring,
+  History and Settings pages; welcome page with "Try the demo"; single New-investigation dialog with
+  live type detection, depth slider, rules of engagement and "Keep watching".
+- Overview dashboard: risk gauge, attack paths by severity, asset breakdown, exposure flags, exports.
+- Graph: icons per entity type, size by importance, constant-size labels with importance-based
+  visibility, hover focus, label-aware layouts, filterable legend, search; side panel linking each
+  entity to its neighbours, attack paths and other investigations.
+- Settings page: API-key management, audit log with one-click integrity verification, plugin status.
+- Light and dark themes (system-aware, no flash), toasts, progress bar and Stop button, first-run
+  tour, tooltips, keyboard shortcuts, phone layout.
+- `docs/explained/08-interface-design.md`.
+
+### Changed
+- Front end rewritten as ES modules; all HTML built with an auto-escaping template (XSS-safe by
+  construction). Still no inline scripts under the strict CSP.
+- The three novelty themes are replaced by Light / Dark / System.
+
 ## [1.7.0] — Phase 7: Continuous monitoring & drift detection
 
 ### Added

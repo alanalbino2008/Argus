@@ -3,310 +3,260 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Argus // All-Seeing OSINT Intelligence & Graph Platform</title>
+  <title>Argus · OSINT & Attack Surface Intelligence</title>
+  <meta name="description" content="Argus: autonomous OSINT reconnaissance, attack path analysis and attack-surface monitoring.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;650;700;750&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
-  <!-- Cytoscape.js core -->
-  <!-- Vendored (MIT, see vendor/cytoscape-LICENSE): works offline/air-gapped and under a strict CSP -->
+  <!-- Sets the theme before first paint (no inline scripts: strict CSP). -->
+  <script src="/static/js/theme.js"></script>
+  <!-- Vendored (MIT, see vendor/cytoscape-LICENSE): works offline and under a strict CSP -->
   <script src="/static/vendor/cytoscape-3.28.1.min.js"></script>
 </head>
 <body>
+  <div class="app">
+    <!-- ================================================================ navigation -->
+    <nav class="nav" aria-label="Main">
+      <div class="brand" title="Argus"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logo"/></svg></div>
+      <button class="nav-item" data-view="overview" title="Overview (O)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-overview"/></svg>Overview</button>
+      <button class="nav-item" data-view="graph" title="Graph (G)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-graph"/></svg>Graph</button>
+      <button class="nav-item" data-view="paths" title="Attack paths (P)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-paths"/></svg>Paths<span class="nav-dot" id="paths-dot" hidden></span></button>
+      <button class="nav-item" data-view="monitoring" title="Monitoring (M)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>Monitor<span class="nav-dot" id="alerts-dot" hidden></span></button>
+      <button class="nav-item" data-view="history" title="History (H)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-history"/></svg>History</button>
+      <div class="nav-spacer"></div>
+      <button class="nav-item" data-view="settings" title="Settings"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"/></svg>Settings</button>
+    </nav>
 
-  <!-- Top Navigation Bar -->
-  <header>
-    <div class="brand">
-      <div class="brand-icon">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"></circle>
-          <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"></path>
-        </svg>
+    <!-- ================================================================ top bar -->
+    <header class="topbar" style="position: relative;">
+      <div class="context">
+        <span id="context-status" class="status" hidden><span class="dot"></span><span></span></span>
+        <span id="context-title" class="context-title">No investigation open</span>
+        <span id="context-meta" class="context-meta"></span>
       </div>
-      <div>
-        <div class="brand-title">ARGUS</div>
-        <div class="brand-subtitle">Autonomous OSINT & Graph Link Analysis</div>
+      <div class="topbar-actions">
+        <button id="btn-stop" class="btn sm danger" hidden><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-stop"/></svg>Stop scan</button>
+        <button id="btn-theme" class="btn ghost icon" title="Toggle light / dark theme" aria-label="Toggle theme"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-moon"/></svg></button>
+        <button id="btn-shortcuts" class="btn ghost icon hide-sm" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-keyboard"/></svg></button>
+        <button id="btn-new" class="btn primary"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg><span class="hide-sm">New investigation</span></button>
+        <button id="btn-user" class="btn ghost hide-sm" title="Sign out"><span id="user-name"></span><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-logout"/></svg></button>
       </div>
-    </div>
+      <div id="scan-progress" class="scan-progress" hidden></div>
+    </header>
 
-    <!-- Quick Scan Bar -->
-    <div class="scan-bar">
-      <input type="text" id="target-input" class="scan-input" placeholder="Enter Domain, Username, Email, or IP..." autocomplete="off">
-      <select id="type-select" class="scan-select">
-        <option value="">Auto-Detect</option>
-        <option value="domain">Domain</option>
-        <option value="username">Username</option>
-        <option value="email">Email</option>
-        <option value="ip_address">IP Address</option>
-      </select>
-      <div class="scan-depth">
-        <span>Depth:</span>
-        <input type="number" id="depth-input" value="2" min="1" max="3">
-      </div>
-      <button id="launch-btn" class="btn-launch">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3"></polygon>
-        </svg>
-        Launch Recon
-      </button>
-    </div>
+    <!-- ================================================================ views -->
+    <main class="main">
+      <section id="view-overview" class="view" aria-label="Overview"></section>
 
-    <!-- Telemetry Badges & Theme Toggle -->
-    <div class="telemetry-badges">
-      <select id="theme-select" class="theme-select" title="Switch Interface Theme">
-        <option value="cyberpunk">Cyber Obsidian</option>
-        <option value="matrix">Matrix Green</option>
-        <option value="soc">SOC Blue</option>
-      </select>
-      <div class="stat-pill">
-        <span>Status:</span>
-        <span id="status-badge" style="color: var(--text-muted); font-weight: 700;">Idle</span>
-      </div>
-      <div class="stat-pill">
-        <span>Nodes:</span>
-        <span id="node-counter" class="num">0</span>
-      </div>
-      <div class="stat-pill">
-        <span>Edges:</span>
-        <span id="edge-counter" class="num">0</span>
-      </div>
-      <div class="stat-pill user-pill" id="user-pill" hidden>
-        <span id="user-name"></span>
-        <button id="btn-logout" class="link-btn" title="Sign out">Sign out</button>
-      </div>
-    </div>
-  </header>
-
-  <!-- Sign-in -->
-  <div id="login-modal" class="modal-overlay">
-    <form id="login-form" class="auth-card" autocomplete="off">
-      <h2 class="auth-title">Sign in to Argus</h2>
-      <p class="auth-hint">Paste your API key. On first start an admin key is printed once in the server log.</p>
-      <label class="form-label" for="api-key-input">API key</label>
-      <input type="password" id="api-key-input" class="scan-input form-input" placeholder="argus_..." required>
-      <div id="login-error" class="form-error" role="alert"></div>
-      <div class="auth-actions">
-        <button type="submit" class="btn-launch">Sign in</button>
-      </div>
-    </form>
-  </div>
-
-  <!-- Rules of engagement: every scan must be justified and authorised -->
-  <div id="roe-modal" class="modal-overlay">
-    <form id="roe-form" class="auth-card">
-      <h2 class="auth-title">Rules of Engagement</h2>
-      <p class="auth-hint">Target: <code id="roe-target"></code></p>
-      <div id="roe-interval-row" hidden>
-        <label class="form-label" for="roe-interval">Re-scan every</label>
-        <select id="roe-interval" class="scan-select form-input">
-          <option value="6">6 hours</option>
-          <option value="24" selected>24 hours</option>
-          <option value="168">7 days</option>
-          <option value="720">30 days</option>
-        </select>
-      </div>
-      <label class="form-label" for="roe-purpose">Purpose / engagement reference</label>
-      <textarea id="roe-purpose" class="scan-input form-input" rows="3" maxlength="500"
-        placeholder="e.g. HackerOne program ACME, report #1234 · CTF challenge · own infrastructure audit" required></textarea>
-      <label class="checkbox-row">
-        <input type="checkbox" id="roe-authorized">
-        <span>I confirm I am authorised to investigate this target and will act within the law and the programme's scope.
-          This request is recorded in the audit log.</span>
-      </label>
-      <div id="roe-error" class="form-error" role="alert"></div>
-      <div class="auth-actions">
-        <button type="button" id="roe-cancel" class="btn-secondary">Cancel</button>
-        <button type="submit" class="btn-launch">Launch Recon</button>
-      </div>
-    </form>
-  </div>
-
-  <!-- Main Layout -->
-  <main class="main-layout">
-    <!-- Graph Container -->
-    <div id="cy-container">
-      <div id="cy"></div>
-
-      <!-- Floating Canvas Controls -->
-      <div class="graph-floating-controls">
-        <select id="layout-select" class="layout-select" title="Switch Graph Layout Engine">
-          <option value="cose">Physics (CoSE)</option>
-          <option value="concentric">Concentric (Radial)</option>
-          <option value="breadthfirst">Tree (Hierarchy)</option>
-          <option value="circle">Circular Orbit</option>
-        </select>
-        <button id="btn-fit" class="control-btn" title="Fit to Screen">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-          </svg>
-        </button>
-        <button id="btn-zoom-in" class="control-btn" title="Zoom In">+</button>
-        <button id="btn-zoom-out" class="control-btn" title="Zoom Out">-</button>
-        <button id="btn-relayout" class="control-btn" title="Re-simulate Layout">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-          </svg>
-        </button>
-      </div>
-
-      <!-- Entity Legend -->
-      <div class="graph-legend">
-        <div class="legend-item"><span class="legend-dot" style="background: #00f0ff;"></span> Domain</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #38bdf8;"></span> Subdomain</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #10b981;"></span> IP Address</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #a855f7;"></span> Username</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #d946ef;"></span> Profile</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #ef4444;"></span> Vuln (CVE)</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #06b6d4;"></span> Port</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #eab308;"></span> Cert</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #3b82f6;"></span> Tech</div>
-        <div class="legend-item"><span class="legend-dot" style="background: #f97316;"></span> Org</div>
-      </div>
-    </div>
-
-    <!-- Right Sidebar / Intelligence Panel -->
-    <aside class="sidebar">
-      <div class="sidebar-tabs">
-        <button class="tab-btn active" data-tab="tab-inspector">Inspector</button>
-        <button class="tab-btn" data-tab="tab-paths">Attack Paths <span id="paths-badge" class="tab-badge" hidden>0</span></button>
-        <button class="tab-btn" data-tab="tab-activity">Activity</button>
-        <button class="tab-btn" data-tab="tab-analytics">Threat Intel</button>
-        <button class="tab-btn" data-tab="tab-history">History <span id="alerts-badge" class="tab-badge sev-critical" hidden>0</span></button>
-      </div>
-
-      <div class="sidebar-content">
-        <!-- Inspector Pane -->
-        <div id="tab-inspector" class="tab-pane active">
-          <div id="inspector-content">
-            <div style="text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 0.85rem;">
-              Click on any entity node in the intelligence graph to inspect attributes and connections.
-            </div>
-          </div>
-        </div>
-
-        <!-- Activity Feed Pane -->
-        <div id="tab-activity" class="tab-pane">
-          <div id="event-feed" class="event-feed">
-            <div style="text-align: center; color: var(--text-muted); margin-top: 20px; font-size: 0.85rem;">
-              Telemetry will stream live as reconnaissance executes.
-            </div>
-          </div>
-        </div>
-
-        <!-- Attack Paths Pane (signature capability) -->
-        <div id="tab-paths" class="tab-pane">
-          <div class="paths-intro">
-            Findings chained into realistic attacker scenarios, ranked by risk. Select one to light it up on the graph.
-          </div>
-          <div id="paths-summary" class="paths-summary"></div>
-          <button id="btn-clear-path" class="btn-secondary" hidden>Clear highlight</button>
-          <div id="paths-list">
-            <div class="history-empty">Attack paths appear once findings arrive.</div>
-          </div>
-        </div>
-
-        <!-- Investigation History Pane -->
-        <div id="tab-history" class="tab-pane">
-          <section class="monitor-section">
-            <div class="section-title">🔔 Alerts</div>
-            <div id="alerts-list" class="alerts-list"></div>
-          </section>
-          <section class="monitor-section">
-            <div class="section-title">👁 Monitors</div>
-            <div id="monitors-list" class="monitors-list"></div>
-          </section>
-          <div class="section-title">🗂 Investigations</div>
-          <input type="search" id="history-filter" class="scan-input history-filter" placeholder="Filter by target..." autocomplete="off">
-          <div id="history-list" class="history-list"></div>
-        </div>
-
-        <!-- Analytics & Threat Intel Pane -->
-        <div id="tab-analytics" class="tab-pane">
-          <div class="inspector-card">
-            <div class="inspector-title">Attack Surface Risk Score</div>
-            <div class="score-circle-container">
-              <div class="score-box">
-                <span id="threat-score-num" class="score-num">0</span>
-                <span class="score-label">Surface Score</span>
+      <section id="view-graph" class="view" aria-label="Graph">
+        <div id="workspace" class="workspace">
+          <div class="canvas-wrap">
+            <div class="toolbar">
+              <div class="floating">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" style="margin-left:6px;color:var(--text-3)"><use href="#i-search"/></svg>
+                <input id="graph-search" class="input" type="search" placeholder="Find in graph…  ( / )" aria-label="Find in graph">
+              </div>
+              <div class="floating">
+                <select id="layout-select" class="select" aria-label="Layout" title="Layout">
+                  <option value="cose">Organic</option>
+                  <option value="concentric">Rings</option>
+                  <option value="breadthfirst">Tree</option>
+                  <option value="circle">Circle</option>
+                </select>
+              </div>
+              <div class="grow"></div>
+              <div class="floating">
+                <button class="btn ghost sm icon" id="btn-zoom-in" title="Zoom in" aria-label="Zoom in"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-zoomin"/></svg></button>
+                <button class="btn ghost sm icon" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-zoomout"/></svg></button>
+                <button class="btn ghost sm icon" id="btn-fit" title="Fit to screen" aria-label="Fit"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-fit"/></svg></button>
+                <button class="btn ghost sm icon" id="btn-panel" title="Toggle side panel" aria-label="Toggle panel"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-panel"/></svg></button>
               </div>
             </div>
+            <div id="cy"></div>
+            <div id="graph-empty" class="graph-empty"></div>
+            <div id="legend" class="legend"></div>
           </div>
-
-          <div class="inspector-card">
-            <div class="inspector-title">Top Pivots & Network Hubs</div>
-            <div id="hubs-list">
-              <div style="color: var(--text-muted); font-size: 0.8rem;">No graph hubs calculated yet.</div>
+          <aside class="panel" aria-label="Details">
+            <div class="panel-tabs" role="tablist">
+              <button class="panel-tab active" data-pane="details" role="tab">Details</button>
+              <button class="panel-tab" data-pane="intel" role="tab">Intelligence</button>
+              <button class="panel-tab" data-pane="activity" role="tab">Activity</button>
             </div>
-          </div>
-
-          <div class="inspector-card">
-            <div class="inspector-title">Exposure Flags & Anomalies</div>
-            <div id="risk-flags-list">
-              <div style="color: var(--text-muted); font-size: 0.8rem;">No anomalies detected.</div>
+            <div class="panel-body">
+              <div class="panel-pane" id="pane-details"></div>
+              <div class="panel-pane" id="pane-intel" hidden></div>
+              <div class="panel-pane" id="pane-activity" hidden></div>
             </div>
-          </div>
-
-          <div class="inspector-card">
-            <div class="inspector-title">MITRE ATT&amp;CK · Reconnaissance (TA0043)</div>
-            <div id="attack-list">
-              <div style="color: var(--text-muted); font-size: 0.8rem;">Techniques appear once findings arrive.</div>
-            </div>
-          </div>
-
-          <div class="inspector-card">
-            <div class="inspector-title">Intelligence Exports & Briefings</div>
-            <div class="export-actions">
-              <a id="btn-export-json" href="#" class="btn-secondary" download>JSON Graph</a>
-              <a id="btn-export-csv" href="#" class="btn-secondary" download>Maltego CSV</a>
-            </div>
-            <div class="export-actions" style="margin-top: 8px;">
-              <a id="btn-export-stix" href="#" class="btn-secondary" download title="STIX 2.1 bundle for OpenCTI / MISP (TLP:AMBER)">STIX 2.1</a>
-              <a id="btn-export-navigator" href="#" class="btn-secondary" download title="Open in MITRE ATT&amp;CK Navigator">ATT&amp;CK Layer</a>
-            </div>
-            <div style="margin-top: 10px;">
-              <button id="btn-open-report" class="btn-secondary" style="width: 100%; border-color: var(--accent-cyan); color: var(--accent-cyan);">
-                📑 Generate Executive Dossier (Print / PDF)
-              </button>
-            </div>
-          </div>
+          </aside>
         </div>
-      </div>
-    </aside>
-  </main>
+      </section>
 
-  <!-- Attack-surface drift (compare two scans) -->
-  <div id="diff-modal" class="modal-overlay">
-    <div class="report-card">
-      <div class="report-header">
+      <section id="view-paths" class="view" aria-label="Attack paths"></section>
+      <section id="view-monitoring" class="view" aria-label="Monitoring"></section>
+      <section id="view-history" class="view" aria-label="History"></section>
+      <section id="view-settings" class="view" aria-label="Settings"></section>
+    </main>
+  </div>
+
+  <!-- ================================================================ new investigation -->
+  <div id="new-modal" class="modal-root" aria-hidden="true">
+    <form id="new-form" class="modal" role="dialog" aria-labelledby="new-title" novalidate>
+      <div class="modal-head">
         <div>
-          <h2 style="font-size: 1.1rem; color: #fff; margin: 0;">What changed</h2>
-          <div id="diff-subtitle" style="font-size: 0.75rem; color: #94a3b8;"></div>
+          <h2 id="new-title">New investigation</h2>
+          <p>Argus maps everything publicly discoverable about a target, then finds attack paths.</p>
         </div>
-        <button id="btn-close-diff" class="link-btn" style="font-size: 1.2rem;" aria-label="Close">✕</button>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
       </div>
-      <div id="diff-body" class="report-body diff-body"></div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="label" for="new-target">Target</label>
+          <input id="new-target" class="input" placeholder="example.com, 203.0.113.10, name@company.com or a username" autocomplete="off" autofocus>
+          <div class="hint" id="new-type-hint">Type is detected automatically.</div>
+        </div>
+        <div class="field">
+          <label class="label" for="new-type">Target type</label>
+          <select id="new-type" class="select">
+            <option value="">Auto-detect</option>
+            <option value="domain">Domain</option>
+            <option value="ip_address">IP address</option>
+            <option value="email">Email</option>
+            <option value="username">Username</option>
+            <option value="phone">Phone</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="new-depth">Depth <span class="tip-icon" tabindex="0" data-tip="How many hops Argus follows from the target. 1 = only direct findings; 3 = findings about findings about findings. Higher is more thorough but slower.">?</span></label>
+          <div class="depth-row"><input id="new-depth" type="range" min="1" max="3" value="2"><b id="new-depth-value">2</b></div>
+        </div>
+        <div class="field">
+          <label class="label" for="new-purpose">Purpose / engagement reference</label>
+          <textarea id="new-purpose" class="textarea" maxlength="500" placeholder="e.g. Bug bounty programme ACME (report #1234) · CTF · our own infrastructure"></textarea>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="new-watch"> <span><b>Keep watching</b> — re-scan on a schedule and alert me when the attack surface changes</span></label>
+          <select id="new-interval" class="select" hidden aria-label="Re-scan interval">
+            <option value="6">Every 6 hours</option>
+            <option value="24" selected>Every day</option>
+            <option value="168">Every week</option>
+            <option value="720">Every 30 days</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="new-authorized"> <span>I confirm I'm authorised to investigate this target and will act within the law and the programme's scope. This is recorded in the audit log.</span></label>
+        </div>
+        <div class="error-text" id="new-error" role="alert"></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn ghost" data-close>Cancel</button>
+        <button type="submit" class="btn primary" id="new-submit">Start investigation</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ================================================================ what changed -->
+  <div id="diff-modal" class="modal-root" aria-hidden="true">
+    <div class="modal wide" role="dialog" aria-labelledby="diff-title">
+      <div class="modal-head">
+        <div><h2 id="diff-title">What changed</h2><p id="diff-subtitle"></p></div>
+        <button class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body" id="diff-body"></div>
     </div>
   </div>
 
-  <!-- Executive Dossier Printable Modal -->
-  <div id="report-modal" class="modal-overlay">
-    <div class="report-card">
-      <div class="report-header">
-        <div>
-          <h2 style="font-size: 1.1rem; color: #fff; margin: 0;">ARGUS INTELLIGENCE REPORT</h2>
-          <div style="font-size: 0.75rem; color: #94a3b8;">Confidential OSINT Reconnaissance Dossier</div>
+  <!-- ================================================================ report -->
+  <div id="report-modal" class="modal-root" aria-hidden="true">
+    <div class="modal wide" role="dialog" aria-labelledby="report-title">
+      <div class="modal-head no-print">
+        <div><h2 id="report-title">Executive report</h2><p>Print or save as PDF to share with stakeholders.</p></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn primary sm" id="btn-print"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-download"/></svg>Print / PDF</button>
+          <button class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
         </div>
-        <button id="btn-close-report" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">✕</button>
       </div>
-      <div id="report-modal-body" class="report-body">
-        <!-- Injected via JavaScript -->
-      </div>
-      <div class="report-footer">
-        <button id="btn-print-report" class="btn-launch" style="background: var(--accent-cyan);">🖨️ Print / Save as PDF</button>
+      <div class="modal-body"><div id="report-print" class="report"></div></div>
+    </div>
+  </div>
+
+  <!-- ================================================================ confirm -->
+  <div id="confirm-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="alertdialog" aria-labelledby="confirm-title">
+      <div class="modal-head"><div><h2 id="confirm-title"></h2><p id="confirm-message"></p></div></div>
+      <div class="modal-foot" style="padding-top:20px">
+        <button class="btn ghost" id="confirm-cancel" data-close>Cancel</button>
+        <button class="btn primary" id="confirm-ok">Confirm</button>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <!-- ================================================================ key created -->
+  <div id="key-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="key-title">
+      <div class="modal-head"><div><h2 id="key-title">API key created</h2><p>Copy it now — for security it is stored only as a hash and can't be shown again.</p></div></div>
+      <div class="modal-body"><div class="key-reveal"><span id="key-value"></span></div></div>
+      <div class="modal-foot">
+        <button class="btn" id="key-copy">Copy</button>
+        <button class="btn primary" data-close>Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ shortcuts -->
+  <div id="shortcuts-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="shortcuts-title">
+      <div class="modal-head">
+        <div><h2 id="shortcuts-title">Keyboard shortcuts</h2></div>
+        <button class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <table class="table">
+          <tbody>
+            <tr><td><span class="kbd">N</span></td><td>New investigation</td></tr>
+            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">M</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · Monitoring · History</td></tr>
+            <tr><td><span class="kbd">/</span></td><td>Find in graph</td></tr>
+            <tr><td><span class="kbd">F</span></td><td>Fit graph to screen</td></tr>
+            <tr><td><span class="kbd">T</span></td><td>Toggle light / dark theme</td></tr>
+            <tr><td><span class="kbd">Esc</span></td><td>Close dialog · clear highlight</td></tr>
+            <tr><td><span class="kbd">?</span></td><td>Show this list</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ tour -->
+  <div id="tour-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="tour-title">
+      <div class="modal-body" id="tour-body" style="padding-top:24px"></div>
+      <div class="modal-foot" style="justify-content:space-between;align-items:center">
+        <div class="tour-progress" id="tour-progress"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn ghost" id="tour-skip">Skip</button>
+          <button class="btn primary" id="tour-next">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================ sign in -->
+  <div id="signin" class="signin-root" hidden>
+    <form id="signin-form" class="card signin" autocomplete="off">
+      <div class="brand"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logo"/></svg></div>
+      <h1>Sign in to Argus</h1>
+      <p>Paste your API key. On first start, an admin key is printed once in the server log.</p>
+      <div class="field">
+        <label class="label" for="signin-key">API key</label>
+        <input id="signin-key" class="input mono" type="password" placeholder="argus_…" autocomplete="off">
+      </div>
+      <div class="error-text" id="signin-error" role="alert" style="margin-top:8px"></div>
+      <button type="submit" class="btn primary" style="width:100%;margin-top:8px">Sign in</button>
+    </form>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

@@ -75,6 +75,8 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8000/api/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8000/api/health | grep -q '"status":"ok"'
           curl -fsS -o /dev/null http://127.0.0.1:8000/static/vendor/cytoscape-3.28.1.min.js
+          curl -fsS -o /dev/null http://127.0.0.1:8000/static/js/main.js
+          curl -fsS -o /dev/null http://127.0.0.1:8000/static/js/views/overview.js
       - uses: actions/upload-artifact@v7
         with:
           name: dist
