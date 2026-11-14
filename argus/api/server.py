@@ -28,13 +28,15 @@ Replicas coordinate through the shared database - no sticky sessions, no extra b
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
@@ -46,9 +48,10 @@ from sqlalchemy import text
 
 from argus import __version__
 from argus.api.auth_routes import router as auth_router
-from argus.api.deps import WorkspaceContext, audit, in_workspace, require_platform_admin
+from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.notification_routes import router as notification_router
+from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.workspace_routes import router as workspace_router
@@ -68,6 +71,8 @@ from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.notify.dispatcher import NotificationDispatcher
 from argus.observability import logs, metrics
 from argus.observability.middleware import ObservabilityMiddleware
+from argus.reports.data import ReportData, ReportOptions, build_report_data
+from argus.reports.pdf import render_pdf
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.crypto import secret_box_from_settings
 from argus.security.headers import SecurityHeadersMiddleware
@@ -78,6 +83,7 @@ from argus.storage import Database, InvestigationRecorder, InvestigationReposito
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
+from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 from argus.storage.user_repo import UserRepository
@@ -161,6 +167,7 @@ async def lifespan(app: FastAPI):
     await _bootstrap_admin_key(app)
     await _audit_plugins(app)
     app.state.monitors = MonitorRepository(db)
+    app.state.reports = ReportRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
     app.state.notifications = NotificationRepository(db, app.state.secret_box)
     app.state.notifier = NotificationDispatcher(app.state.notifications, settings)
@@ -281,6 +288,7 @@ app.include_router(auth_router)
 app.include_router(workspace_router)
 app.include_router(monitor_router)
 app.include_router(notification_router)
+app.include_router(report_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -866,6 +874,97 @@ async def export_stix(inv_id: str, request: Request, ws: WorkspaceContext = VIEW
         bundle.serialize(pretty=True),
         media_type="application/stix+json;version=2.1",
         headers={"Content-Disposition": f"attachment; filename=argus_{inv_id}_stix.json"},
+    )
+
+
+class ReportRequest(BaseModel):
+    prepared_for: str = Field(default="", max_length=200, description="Client or recipient shown on the cover")
+    tlp: Literal["CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"] = "AMBER"
+    include_inventory: bool = True
+    compare_previous: bool = True
+    include_personal_details: bool = Field(
+        default=False, description="Name the people in attack paths instead of pseudonymising them (audited)"
+    )
+
+
+_report_limiter = SlidingWindowLimiter(limit=10, window=60)  # per principal: PDF rendering costs CPU
+
+
+@app.post("/api/investigation/{inv_id}/report")
+async def generate_report(
+    inv_id: str, request: Request, body: ReportRequest | None = None, ws: WorkspaceContext = ANALYST
+):
+    """Client-ready PDF report. Each file's SHA-256 is registered so recipients can verify it."""
+    principal = ws.principal
+    options = body or ReportRequest()
+    repo = get_repo(request)
+    inv = await _resolve(inv_id, repo, ws.id)
+    if inv.status.value in ACTIVE_STATUSES:
+        raise HTTPException(status_code=409, detail="The scan is still running; generate the report when it finishes")
+    if not _report_limiter.hit(principal.key_id):
+        metrics.RATE_LIMITED.labels("report").inc()
+        raise HTTPException(status_code=429, detail="Too many reports; try again in a minute")
+    graph = await _resolve_graph(inv_id, repo, ws.id)
+    previous = None
+    if options.compare_previous and (earlier := await repo.find_previous(inv)) is not None:
+        earlier_graph = await repo.load_graph(earlier.id)
+        previous = (earlier, earlier_graph) if earlier_graph is not None else None
+    reports: ReportRepository = request.app.state.reports
+    branding = await reports.branding(ws.id, default_org=ws.workspace.get("name") or "Argus")
+    report_options = ReportOptions(
+        prepared_for=options.prepared_for.strip(),
+        tlp=options.tlp,
+        include_inventory=options.include_inventory,
+        compare_previous=options.compare_previous,
+        include_personal_details=options.include_personal_details,
+    )
+    verify_url = f"{public_base_url(request)}/api/reports/verify/<sha256>"
+
+    def render() -> tuple[ReportData, bytes]:  # CPU-bound: keep it off the event loop
+        data = build_report_data(
+            inv, graph, report_options, branding, previous=previous, generator=f"Argus {__version__}"
+        )
+        return data, render_pdf(data, verify_url=verify_url)
+
+    data, pdf = await anyio.to_thread.run_sync(render)
+    digest = hashlib.sha256(pdf).hexdigest()
+    await reports.record(
+        id=data.report_id,
+        workspace_id=ws.id,
+        investigation_id=inv_id,
+        target=inv.config.target[:512],
+        sha256=digest,
+        size=len(pdf),
+        tlp=options.tlp,
+        prepared_for=report_options.prepared_for or None,
+        issued_by_org=branding.organisation,
+        created_by=principal.name,
+    )
+    await audit(
+        request,
+        principal,
+        "report.generate",
+        inv_id,
+        details={
+            "report_id": data.report_id,
+            "sha256": digest,
+            "tlp": options.tlp,
+            "prepared_for": options.prepared_for,
+            "personal_details": options.include_personal_details,
+        },
+    )
+    metrics.REPORTS_GENERATED.inc()
+    slug = re.sub(r"[^a-z0-9]+", "-", inv.config.target.lower()).strip("-")[:60] or "target"
+    filename = f"argus-report-{slug}-{data.generated_at:%Y%m%d}-{data.report_id}.pdf"
+    return Response(
+        pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Argus-Report-Id": data.report_id,
+            "X-Argus-Report-Sha256": digest,
+        },
     )
 
 

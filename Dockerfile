@@ -27,6 +27,11 @@ LABEL org.opencontainers.image.title="Argus OSINT" \
       org.opencontainers.image.licenses="LicenseRef-Proprietary" \
       org.opencontainers.image.version="${VERSION}"
 
+# DejaVu fonts: PDF reports render names in any script (the PDF base fonts only cover Latin-1).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 # Fixed numeric UID/GID so Kubernetes can enforce runAsNonRoot (it cannot verify user *names*).
 RUN groupadd --system --gid 10001 argus \
     && useradd --system --uid 10001 --gid argus --home-dir /app argus \

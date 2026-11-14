@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, event, false, text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, event, false, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -283,6 +283,40 @@ class NotificationDeliveryRow(Base):
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportBrandingRow(Base):
+    """How a workspace's client reports look: organisation name, accent colour, logo."""
+
+    __tablename__ = "report_branding"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    organisation: Mapped[str] = mapped_column(String(128))
+    accent: Mapped[str] = mapped_column(String(7))
+    footer_note: Mapped[str] = mapped_column(String(200), default="")
+    logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # re-encoded, metadata stripped
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class ReportRow(Base):
+    """Every report issued, with the SHA-256 of the exact file, so a copy can be verified later."""
+
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    investigation_id: Mapped[str] = mapped_column(String(64), index=True)
+    target: Mapped[str] = mapped_column(String(512))
+    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    size: Mapped[int] = mapped_column(Integer)
+    tlp: Mapped[str] = mapped_column(String(16))
+    prepared_for: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    issued_by_org: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_by: Mapped[str] = mapped_column(String(128))
 
 
 class Database:

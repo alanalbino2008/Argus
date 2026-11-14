@@ -8,3 +8,4 @@ pip-audit==2.10.1
 pre-commit==4.7.0; python_version >= "3.11"
 pre-commit==4.6.2; python_version < "3.11"  # 4.7 dropped Python 3.10
 build==1.6.1
+pypdf==5.4.0  # tests read generated reports

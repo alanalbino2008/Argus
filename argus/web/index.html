@@ -177,16 +177,40 @@
 
   <!-- ================================================================ report -->
   <div id="report-modal" class="modal-root" aria-hidden="true">
-    <div class="modal wide" role="dialog" aria-labelledby="report-title">
-      <div class="modal-head no-print">
-        <div><h2 id="report-title">Executive report</h2><p>Print or save as PDF to share with stakeholders.</p></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn primary sm" id="btn-print"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-download"/></svg>Print / PDF</button>
-          <button class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
-        </div>
+    <form class="modal wide" role="dialog" aria-labelledby="report-title" id="report-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="report-title">Client report</h2><p>A branded PDF: executive summary, prioritised fixes, attack paths, inventory and methodology.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
       </div>
-      <div class="modal-body"><div id="report-print" class="report"></div></div>
-    </div>
+      <div class="modal-body">
+        <div class="field">
+          <label class="label" for="report-for">Prepared for</label>
+          <input id="report-for" class="input" maxlength="200" placeholder="Client or recipient, e.g. Acme Corporation" autocomplete="off">
+        </div>
+        <div class="field">
+          <label class="label" for="report-tlp">Sharing (Traffic Light Protocol) <span class="tip-icon" tabindex="0" data-tip="Printed on every page. AMBER: the recipient may share it inside their organisation on a need-to-know basis. RED: named recipients only.">?</span></label>
+          <select id="report-tlp" class="select">
+            <option value="RED">TLP:RED — named recipients only</option>
+            <option value="AMBER+STRICT">TLP:AMBER+STRICT — recipient's organisation only</option>
+            <option value="AMBER" selected>TLP:AMBER — recipient's organisation, need-to-know</option>
+            <option value="GREEN">TLP:GREEN — recipient's community</option>
+            <option value="CLEAR">TLP:CLEAR — no restriction</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="check"><input type="checkbox" id="report-inventory" checked> Include the full asset inventory</label>
+          <label class="check"><input type="checkbox" id="report-compare" checked> Compare with the previous scan of this target</label>
+          <label class="check"><input type="checkbox" id="report-personal"> Name the people in attack paths <span class="muted small">(off: pseudonymised, e.g. “Person A”, d•••@company.com; recorded in the audit log)</span></label>
+        </div>
+        <div id="report-history"></div>
+        <div class="error-text" id="report-error" role="alert"></div>
+      </div>
+      <div class="modal-foot">
+        <span class="muted small" id="report-branding-hint" style="margin-right:auto"></span>
+        <button class="btn" type="button" data-close>Cancel</button>
+        <button class="btn primary" type="submit" id="report-submit"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-download"/></svg>Download PDF</button>
+      </div>
+    </form>
   </div>
 
   <!-- ================================================================ confirm -->

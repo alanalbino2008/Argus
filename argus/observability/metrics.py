@@ -130,6 +130,8 @@ ALERTS_RAISED = Counter(
 )
 AUDIT_EVENTS = Counter("argus_audit_events_total", "Audit-log entries written", ["outcome"], registry=REGISTRY)
 
+REPORTS_GENERATED = Counter("argus_reports_generated_total", "PDF reports issued", registry=REGISTRY)
+
 # ------------------------------------------------------------------ outbound notifications
 NOTIFICATIONS = Counter(
     "argus_notifications_total",

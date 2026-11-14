@@ -234,6 +234,13 @@ with backoff for about 7 hours, and replicas share the work without duplicates. 
 are SSRF-guarded and encrypted at rest with AES-256-GCM
 ([`docs/explained/15-outbound-alerts.md`](docs/explained/15-outbound-alerts.md)).
 
+**Client reports**: a branded PDF for any investigation, with an executive summary and risk
+gauge, prioritised recommendations, attack paths with MITRE ATT&CK and remediation, inventory
+and methodology. It's classified with FIRST TLP 2.0 on every page, and personal data is
+pseudonymised by default. Every report's SHA-256 fingerprint is registered, so recipients can
+verify a copy is genuine and unmodified, even without an account
+([`docs/explained/16-client-reports.md`](docs/explained/16-client-reports.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

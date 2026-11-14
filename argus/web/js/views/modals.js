@@ -1,4 +1,4 @@
-// Dialogs: new investigation, what changed (drift), executive report, first-run tour.
+// Dialogs: new investigation, what changed (drift), first-run tour.
 
 import { api, enc } from "../api.js";
 import { empty, ico, severityPill } from "../components.js";
@@ -40,7 +40,6 @@ export function initModals(appActions) {
   });
   ["#new-purpose", "#new-authorized"].forEach((s) => $(s).addEventListener("input", () => { $("#new-error").textContent = ""; }));
   form.addEventListener("submit", submitNew);
-  $("#btn-print").addEventListener("click", () => window.print());
   $("#tour-next").addEventListener("click", nextTourStep);
   $("#tour-skip").addEventListener("click", endTour);
 }
@@ -134,45 +133,6 @@ export async function openDiff(invId, againstId) {
       </div>
     </div>`);
   if (state.investigation?.id === invId) graph.markNew(Object.values(d.added).flat().map((e) => e.id));
-}
-
-// ------------------------------------------------------------------ executive report
-export function openReport() {
-  const inv = state.investigation;
-  if (!inv) return;
-  const a = state.analytics || {};
-  const paths = state.paths?.paths || [];
-  const byType = {};
-  state.entities.forEach((e) => { if (e.depth > 0) (byType[e.type] ||= []).push(e.label); });
-  setHTML($("#report-print"), html`
-    <p class="muted small">ARGUS · ATTACK-SURFACE INTELLIGENCE REPORT · TLP:AMBER</p>
-    <h1 style="margin:6px 0 4px">${inv.target}</h1>
-    <p class="muted">${inv.completed_at ? `Scanned ${formatDate(inv.completed_at)}` : "Scan in progress"}${inv.purpose ? ` · Purpose: ${inv.purpose}` : ""}</p>
-
-    <h2>1. Summary</h2>
-    <p>Argus discovered <b>${state.entities.size}</b> assets and <b>${state.relations.size}</b> connections. The surface risk score is
-      <b>${a.threat_exposure_score ?? "—"}/100</b>, with <b>${paths.length}</b> attack path${paths.length === 1 ? "" : "s"} identified
-      (${["critical", "high", "medium", "low"].map((s) => `${state.paths?.summary.by_severity[s] || 0} ${s}`).join(", ")}).</p>
-
-    <h2>2. Prioritised attack paths</h2>
-    ${paths.length ? html`<table class="table"><thead><tr><th>Risk</th><th>Scenario</th><th>Attack route (MITRE ATT&amp;CK)</th><th>First fix</th></tr></thead><tbody>
-      ${paths.slice(0, 10).map((p) => html`<tr><td><b>${p.score}</b><br>${p.severity}</td><td><b>${p.title}</b><br><span class="muted">${p.narrative}</span></td>
-        <td>${p.techniques.map((t, i) => html`${i ? html`<br>→ ` : ""}${t.id} ${t.name}`)}</td><td>${p.remediation[0] || ""}</td></tr>`)}
-      </tbody></table>` : html`<p>No attack paths were identified.</p>`}
-
-    <h2>3. Exposure flags</h2>
-    ${(a.risk_flags || []).length ? html`<ul>${a.risk_flags.map((f) => html`<li>${f}</li>`)}</ul>` : html`<p>None.</p>`}
-
-    <h2>4. Assets by category</h2>
-    <table class="table"><thead><tr><th>Category</th><th>Count</th><th>Examples</th></tr></thead><tbody>
-      ${Object.entries(byType).sort((x, y) => y[1].length - x[1].length).map(([type, items]) => html`<tr><td>${typeInfo(type).label}</td><td>${items.length}</td><td>${items.slice(0, 5).join(", ")}${items.length > 5 ? `, +${items.length - 5} more` : ""}</td></tr>`)}
-    </tbody></table>
-
-    <h2>5. Methodology</h2>
-    <p class="muted">Findings were gathered from public sources: DNS, Certificate Transparency logs, RDAP, public scan databases and public profiles. Two modules are
-      <em>active</em> and contacted the target directly with ordinary, single requests (a TLS handshake and an HTTP request). No exploitation, credential testing or
-      brute forcing was performed. Attack paths are rule-based assessments of plausible attacker routes, not confirmed exploitation; verify before acting.</p>`);
-  openModal("report-modal");
 }
 
 // ------------------------------------------------------------------ first-run tour

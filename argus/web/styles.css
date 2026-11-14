@@ -671,19 +671,6 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
   background: var(--surface-2);
 }
 
-/* ---------------------------------------------------------------- report (print) */
-.report { font-size: 13px; line-height: 1.6; color: var(--text); }
-.report h2 { font-size: 15px; margin: 22px 0 10px; }
-.report .table td { vertical-align: top; }
-
-@media print {
-  body * { visibility: hidden !important; }
-  #report-print, #report-print * { visibility: visible !important; }
-  #report-print { position: absolute; inset: 0; padding: 24px; background: #fff; color: #111; }
-  .modal-root { background: none; backdrop-filter: none; }
-  .no-print { display: none !important; }
-}
-
 /* ---------------------------------------------------------------- responsive */
 @media (max-width: 1100px) {
   .grid.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -736,3 +723,18 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .channel-type:disabled { opacity: .45; cursor: not-allowed; }
 .pill.warn { background: color-mix(in srgb, var(--sev-high) 14%, transparent); color: var(--sev-high); }
 .delivery-error { color: var(--text-3); font-size: 12px; max-width: 360px; overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------------ reports */
+.brand-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px 20px; align-items: end; }
+.brand-form .field + .field { margin-top: 0; }
+.brand-form > :last-child { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brand-form > .field:nth-last-child(2) { grid-column: 1 / -1; }
+.brand-logo { display: flex; gap: 10px; align-items: center; }
+#brand-logo-preview { min-width: 120px; height: 44px; display: flex; align-items: center; padding: 4px 8px; border: 1px dashed var(--border); border-radius: var(--radius); background: #fff; }
+#brand-logo-preview img { max-height: 36px; max-width: 160px; }
+.verify { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radius); margin-top: 10px; font-size: 13px; }
+.verify svg { width: 18px; height: 18px; flex: none; margin-top: 1px; }
+.verify.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--text); }
+.verify.ok svg { color: var(--ok); }
+.verify.bad { background: color-mix(in srgb, var(--sev-critical) 12%, transparent); color: var(--text); }
+.verify.bad svg { color: var(--sev-critical); }

@@ -58,7 +58,7 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
     throw new ApiError(401, "Please sign in");
   }
   if (raw) {
-    if (!res.ok) throw new ApiError(res.status, `Request failed (${res.status})`);
+    if (!res.ok) throw new ApiError(res.status, describe(await res.json().catch(() => null), res.status));
     return res;
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
@@ -111,6 +111,21 @@ export async function download(path, filename) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** POST that returns a file (e.g. a PDF report): saves it and returns the response headers. */
+export async function downloadPost(path, body) {
+  const res = await request(path, { method: "POST", body, raw: true });
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "download";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return res.headers;
 }
 
 export const enc = encodeURIComponent;

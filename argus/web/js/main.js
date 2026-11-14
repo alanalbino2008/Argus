@@ -8,7 +8,8 @@ import { closeInvestigation, openInvestigation, startScan, stopScan } from "./li
 import { emit, isRunning, on, state } from "./state.js";
 import { initGraphView } from "./views/graphview.js";
 import { initHistory, refresh as refreshHistory } from "./views/history.js";
-import { initModals, openDiff, openNewInvestigation, openReport, startTour } from "./views/modals.js";
+import { initModals, openDiff, openNewInvestigation, startTour } from "./views/modals.js";
+import { initReports, openReport } from "./views/reports.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
@@ -270,6 +271,7 @@ async function boot() {
   setupAuth();
   setupShortcuts();
   initModals(actions);
+  initReports();
   initGraphView(actions);
   initOverview($("#view-overview"), actions);
   initPaths($("#view-paths"), actions);

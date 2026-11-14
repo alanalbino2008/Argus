@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.16.0] — Phase 16: Client reports
+
+### Added
+- **Server-side PDF reports** (`argus/reports/`, ReportLab):
+  - cover with overall exposure rating;
+  - contents with PDF bookmarks and "Page X of Y";
+  - executive summary with risk gauge, severity chart and change since the previous scan;
+  - prioritised, deduplicated recommendations;
+  - attack paths with chain, MITRE ATT&CK, evidence and remediation;
+  - exposure indicators, aggregated people exposure, asset inventory, ATT&CK coverage;
+  - scope, methodology and limitations, definitions, and verification instructions.
+
+  DejaVu fonts render non-Latin names. The Docker image installs them; reports still render
+  with the base fonts if they are missing.
+- `POST /api/investigation/{id}/report`: options for the recipient, TLP 2.0 label, inventory,
+  comparison with the previous scan, and personal details (off by default). Analysts and up,
+  10 a minute per user, rendered off the event loop. The response returns the report id and
+  SHA-256 in headers.
+- **Report registry and verification** (migration `0008`): every issued file's SHA-256 is
+  recorded. `GET /api/reports` lists them. `GET /api/reports/verify/{sha256}` is public and
+  rate-limited, so recipients without an account can confirm a copy is genuine and unmodified.
+- **Per-workspace branding**: organisation, accent colour, footer note and logo
+  (`GET/PUT /api/reports/branding`, admin only, audited).
+- Web app: a report dialog (recipient, TLP, options, history with fingerprints), *Report
+  branding* and *Verify a report* in Settings. Verification hashes the file in the browser
+  and never uploads it.
+- Metric `argus_reports_generated_total`; audit events `report.generate` (with the
+  fingerprint) and `report.branding_update`.
+- `docs/explained/16-client-reports.md`.
+
+### Changed
+- The printable HTML "executive report" is replaced by the PDF report.
+
+### Security and privacy
+- Every untrusted value is escaped before reaching ReportLab's paragraph markup, which can read
+  local files (`<img src>`) and create links. Tests plant these payloads.
+- Personal data is pseudonymised in attack paths ("Person A", `d•••@acme.com`) and only
+  aggregated elsewhere. Full names require an explicit, audited opt-in.
+- Logos are size- and dimension-checked before decoding (decompression bombs), accepted only as
+  PNG or JPEG by content, and re-encoded so EXIF/GPS metadata and embedded payloads are removed.
+
 ## [1.15.0] — Phase 15: Outbound alerts
 
 ### Added

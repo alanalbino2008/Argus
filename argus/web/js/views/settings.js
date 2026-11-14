@@ -1,9 +1,13 @@
 // Settings: appearance, account and (for admins) API keys, audit log and plugins.
 
-import { api, enc } from "../api.js";
+import { api, enc, request } from "../api.js";
 import { empty, ico } from "../components.js";
 import { $, confirmDialog, copyText, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, on as onState, state } from "../state.js";
+import { verifyFile } from "./reports.js";
+
+let pendingLogo; // undefined = keep, "" = remove, "data:..." = replace
+let logoUrl = null;
 
 let root;
 let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null, members: null };
@@ -15,6 +19,11 @@ export function initSettings(el) {
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     try {
+      if (act === "brand-logo-remove") {
+        pendingLogo = "";
+        setHTML($("#brand-logo-preview"), html`<span class="muted small">Logo will be removed when you save</span>`);
+        return;
+      }
       if (act === "member-remove") {
         if (!(await confirmDialog({ title: "Remove from this workspace?", message: "They lose access to its investigations immediately.", confirm: "Remove", danger: true }))) return;
         await api.del(`/api/workspaces/${enc(state.workspace.id)}/members/${enc(id)}`);
@@ -64,7 +73,45 @@ export function initSettings(el) {
       await refresh();
     }
   });
+  root.addEventListener("change", async (e) => {
+    if (e.target.id === "brand-logo-file") {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 1_000_000) return toast("The logo must be smaller than 1 MB", "error");
+      pendingLogo = await new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(file); });
+      setHTML($("#brand-logo-preview"), html`<img src="${pendingLogo}" alt="New logo preview">`);
+    } else if (e.target.id === "brand-accent-picker") {
+      $("#brand-accent").value = e.target.value;
+    } else if (e.target.id === "verify-file") {
+      const file = e.target.files[0];
+      if (!file) return;
+      const out = $("#verify-result");
+      setHTML(out, html`<p class="muted small">Checking ${file.name}…</p>`);
+      try {
+        const { sha, ok, body } = await verifyFile(file);
+        setHTML(out, ok
+          ? html`<div class="verify ok">${ico("check")}<div><b>Genuine and unmodified.</b> Report ${body.report_id}, issued by ${body.issued_by} on ${formatDate(body.issued_at)} for ${body.target}${body.prepared_for ? html` (prepared for ${body.prepared_for})` : ""} · ${body.classification}</div></div>`
+          : html`<div class="verify bad">${ico("alert")}<div><b>Not verified.</b> ${body.detail || "No report with this fingerprint was issued here."}<div class="muted small mono">SHA-256 ${sha}</div></div></div>`);
+      } catch (err) {
+        setHTML(out, html`<p class="error-text">${err.message}</p>`);
+      }
+      e.target.value = "";
+    }
+  });
   root.addEventListener("submit", async (e) => {
+    if (e.target.id === "brand-form") {
+      e.preventDefault();
+      try {
+        const body = { organisation: $("#brand-org").value.trim(), accent: $("#brand-accent").value.trim(), footer_note: $("#brand-footer").value.trim() };
+        if (pendingLogo !== undefined) body.logo = pendingLogo;
+        await api.put("/api/reports/branding", body);
+        pendingLogo = undefined;
+        toast("Report branding saved", "success");
+        data.branding = null;
+        await refresh();
+      } catch (err) { toast(err.message, "error"); }
+      return;
+    }
     if (e.target.id === "member-form" || e.target.id === "ws-form") {
       e.preventDefault();
       try {
@@ -109,9 +156,15 @@ export async function refresh() {
     platform ? api.get("/api/plugins").catch(() => null) : null,
     platform ? api.get("/api/users").catch(() => null) : null,
     wsAdmin && ws ? api.get(`/api/workspaces/${ws}/members`).catch(() => null) : null,
+    wsAdmin ? api.get("/api/reports/branding").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members] = await Promise.all(tasks);
-  data = { ...data, health, keys, audit, plugins, users, members };
+  const [health, keys, audit, plugins, users, members, branding] = await Promise.all(tasks);
+  data = { ...data, health, keys, audit, plugins, users, members, branding };
+  if (logoUrl) URL.revokeObjectURL(logoUrl);
+  logoUrl = null;
+  if (branding?.has_logo) {
+    try { logoUrl = URL.createObjectURL(await (await request("/api/reports/branding/logo", { raw: true })).blob()); } catch { /* no preview */ }
+  }
   render();
 }
 
@@ -139,6 +192,37 @@ function keysCard() {
         <td>${formatDate(k.created_at)}</td>
         <td class="actions">${k.revoked ? html`<span class="pill">revoked</span>` : html`<button class="btn sm ghost danger" data-act="revoke" data-id="${k.id}">Revoke</button>`}</td>
       </tr>`)}</tbody></table>` : html`<p class="muted">Loading…</p>`}
+  </div>`;
+}
+
+function brandingCard() {
+  const b = data.branding;
+  if (!b) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Report branding</h2><p class="muted small">How this workspace's PDF reports look to clients. Logos are re-encoded on upload (PNG or JPEG, up to 1 MB) so no hidden metadata reaches a report.</p></div></div>
+    <form id="brand-form" class="brand-form">
+      <div class="field"><label class="label" for="brand-org">Organisation (shown as “Prepared by”)</label>
+        <input id="brand-org" class="input" maxlength="128" value="${b.organisation}" required></div>
+      <div class="field"><label class="label" for="brand-accent">Accent colour</label>
+        <div style="display:flex;gap:8px;align-items:center"><input type="color" id="brand-accent-picker" value="${b.accent}" aria-label="Pick accent colour" style="width:42px;height:34px;border:0;background:none">
+        <input id="brand-accent" class="input mono" value="${b.accent}" pattern="#[0-9a-fA-F]{6}" style="max-width:120px"></div></div>
+      <div class="field"><label class="label" for="brand-footer">Footer note (optional)</label>
+        <input id="brand-footer" class="input" maxlength="200" value="${b.footer_note}" placeholder="e.g. Confidential — Northwind Security Ltd"></div>
+      <div class="field"><span class="label">Logo</span>
+        <div class="brand-logo"><div id="brand-logo-preview">${logoUrl ? html`<img src="${logoUrl}" alt="Current logo">` : html`<span class="muted small">No logo</span>`}</div>
+          <label class="btn sm">${ico("plus")}Choose image<input type="file" id="brand-logo-file" accept="image/png,image/jpeg" hidden></label>
+          ${b.has_logo ? html`<button type="button" class="btn sm ghost danger" data-act="brand-logo-remove">Remove</button>` : ""}</div></div>
+      <div><button class="btn primary" type="submit">Save branding</button>
+        ${b.updated_by ? html`<span class="muted small" style="margin-left:8px">Last changed by ${b.updated_by} ${timeAgo(b.updated_at)}</span>` : ""}</div>
+    </form>
+  </div>`;
+}
+
+function verifyCard() {
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Verify a report</h2><p class="muted small">Check that a PDF really was issued by this Argus and has not been altered. The file never leaves your browser: only its SHA-256 fingerprint is looked up. Recipients without an account can do the same with <code>sha256sum</code> and <code>/api/reports/verify/&lt;fingerprint&gt;</code>.</p></div>
+      <label class="btn">${ico("shield")}Choose PDF<input type="file" id="verify-file" accept="application/pdf" hidden></label></div>
+    <div id="verify-result"></div>
   </div>`;
 }
 
@@ -247,6 +331,8 @@ function render() {
       </div>
     </div>
     ${workspacesCard()}
+    ${brandingCard()}
+    ${verifyCard()}
     ${admin ? html`${platform ? usersCard() : ""}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);

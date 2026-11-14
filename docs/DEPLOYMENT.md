@@ -148,6 +148,18 @@ Workspace admins add destinations in *Monitoring → Notifications*. The operato
 Slack, Teams and public webhooks need nothing else: they use the normal internet egress, and
 private addresses stay blocked. Watch `ArgusNotificationsFailing` and `ArgusNotificationBacklog`.
 
+### Client reports
+
+Reports need no setup: the image includes the fonts, and every report's fingerprint is
+recorded in the database.
+
+* Set `publicUrl` so the verification address printed in each report is the one clients can
+  reach.
+* `GET /api/reports/verify/<sha256>` is intentionally reachable **without signing in**, so
+  recipients can check a report. It only answers for the exact file and is rate-limited. If
+  Argus sits behind a VPN-only ingress, either expose this path publicly or verify reports for
+  clients on request.
+
 ### Monitoring
 
 ```bash
