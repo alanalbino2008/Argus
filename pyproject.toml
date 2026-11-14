@@ -35,6 +35,7 @@ dependencies = [
     "cryptography>=42.0.0",
     "alembic>=1.13.0",
     "stix2>=3.0.1",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +49,7 @@ version = { attr = "argus.__version__" }  # single source of truth: argus/__init
 include = ["argus*"]
 
 [tool.setuptools.package-data]
-argus = ["web/*.html", "web/*.css", "web/js/*.js", "web/js/views/*.js", "web/vendor/*", "storage/migrations/*.mako"]
+argus = ["data/*.json", "web/*.html", "web/*.css", "web/js/*.js", "web/js/views/*.js", "web/vendor/*", "storage/migrations/*.mako"]
 
 [project.scripts]
 argus = "argus.cli.console:cli_entrypoint"
@@ -108,7 +109,7 @@ strict_equality = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["networkx.*", "dns.*", "rich.*", "stix2.*"]
+module = ["networkx.*", "dns.*", "rich.*", "stix2.*", "defusedxml.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

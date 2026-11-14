@@ -20,7 +20,15 @@ def test_demo_uses_only_reserved_identifiers():
     for e in graph.get_all_entities():
         if e.type == EntityType.IP_ADDRESS:
             assert ipaddress.ip_address(e.value) in ipaddress.ip_network("203.0.113.0/24")  # TEST-NET-3
-        if e.type in (EntityType.DOMAIN, EntityType.SUBDOMAIN, EntityType.EMAIL, EntityType.SOCIAL_PROFILE):
+        if e.type == EntityType.PHONE:
+            assert e.value.startswith("+44113496"), e.value  # Ofcom range reserved for drama/fiction
+        if e.type in (
+            EntityType.DOMAIN,
+            EntityType.SUBDOMAIN,
+            EntityType.EMAIL,
+            EntityType.SOCIAL_PROFILE,
+            EntityType.URL,
+        ):
             host = urlsplit(e.value).hostname if "://" in e.value else e.value.rsplit("@", 1)[-1]
             assert host.endswith(".example"), e.value  # RFC 2606
 
@@ -40,6 +48,10 @@ def test_demo_triggers_every_attack_path_rule():
         "malicious_reputation",
         "web_information_leak",
         "end_of_life_software",
+        "leaked_secret_in_code",
+        "exposed_sensitive_file",
+        "public_cloud_storage",
+        "staff_enumeration",
     }
     assert fired == names and len(expected) == len(names)
 

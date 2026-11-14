@@ -51,6 +51,16 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
             "registration_date": "2009-03-14",
             "security_headers_grade": "D",
             "missing_security_headers": ["content-security-policy", "permissions-policy", "x-frame-options"],
+            "wayback": {
+                "urls_archived": 4182,
+                "first_archived": "2009-05-02",
+                "subdomains": 9,
+                "interesting": {"document": 23, "sensitive_file": 1, "admin_panel": 4, "api": 2},
+            },
+            "passive_dns": {"sources_answered": ["hackertarget", "alienvault-otx", "anubis", "urlscan"], "hosts": 7},
+            "public_code": {"files": 6, "files_with_secrets": 1},
+            "security_txt": {"present": True, "contacts": [f"mailto:security@{DEMO_TARGET}"], "expires": None},
+            "cloud_storage": {"names_checked": 48, "found": 1},
         },
     ),
     "www": (E.SUBDOMAIN, f"www.{DEMO_TARGET}", f"www.{DEMO_TARGET}", 1, "subdomain_finder", {}),
@@ -295,6 +305,151 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
     ),
 }
 
+# ---- Phase 10 deep recon: archives, documents, GitHub, code, cloud storage, PGP, website
+_ENTITIES.update(
+    {
+        "wb_env": (
+            E.URL,
+            f"https://{DEMO_TARGET}/.env",
+            f"{DEMO_TARGET}/.env",
+            1,
+            "wayback",
+            {
+                "category": "sensitive_file",
+                "origin": "web archive",
+                "archived_on": "2022-03-14",
+                "archived_status": "200",
+                "archive_url": f"https://web.archive.org/web/20220314101500/https://{DEMO_TARGET}/.env",
+                "live": "unverified",
+            },
+        ),
+        "git_exposed": (
+            E.URL,
+            f"https://legacy.{DEMO_TARGET}/.git/HEAD",
+            f"legacy.{DEMO_TARGET}/.git/HEAD",
+            2,
+            "web_recon",
+            {
+                "category": "exposed_file",
+                "file": "Git repository metadata",
+                "evidence": "ref: refs/",
+                "origin": "live website",
+                "live": "confirmed",
+            },
+        ),
+        "doc": (
+            E.URL,
+            f"https://{DEMO_TARGET}/files/2023-supplier-onboarding.docx",
+            f"{DEMO_TARGET}/files/2023-supplier-onboarding.docx",
+            1,
+            "wayback",
+            {
+                "category": "document",
+                "origin": "web archive",
+                "archived_on": "2023-06-02",
+                "archive_url": f"https://web.archive.org/web/20230602080000/https://{DEMO_TARGET}/files/2023-supplier-onboarding.docx",
+                "document": {
+                    "authors": ["jsmith", "Aisha Patel"],
+                    "software": ["Microsoft Office Word 2016+"],
+                    "company": "Acme Corp",
+                    "created": "2023-05-30T09:12:00Z",
+                },
+            },
+        ),
+        "doc_user": (E.USERNAME, "jsmith", "jsmith", 2, "document_metadata", {"origin": "document metadata"}),
+        "doc_person": (E.PERSON, "Aisha Patel", "Aisha Patel", 2, "document_metadata", {"origin": "document metadata"}),
+        "doc_sw": (
+            E.TECHNOLOGY,
+            "Microsoft Office Word 2016+",
+            "Microsoft Office Word 2016+",
+            2,
+            "document_metadata",
+            {"category": "Desktop software"},
+        ),
+        "gh_org": (
+            E.SOCIAL_PROFILE,
+            "https://github.example/acme-corp",
+            "GitHub org: acme-corp",
+            1,
+            "github_org",
+            {
+                "platform": "GitHub",
+                "username": "acme-corp",
+                "account_type": "organization",
+                "verified": True,
+                "verified_domain": True,
+                "public_members": 2,
+                "profile": {"display_name": "Acme Corp", "website": f"https://{DEMO_TARGET}", "public_repos": 14},
+            },
+        ),
+        "member2": (
+            E.USERNAME,
+            "sokafor-acme",
+            "sokafor-acme",
+            2,
+            "github_org",
+            {"origin": "public member of GitHub org acme-corp", "organization": "acme-corp"},
+        ),
+        "leak": (
+            E.URL,
+            "https://github.example/sokafor-acme/infra-scripts/blob/main/deploy.sh",
+            "sokafor-acme/infra-scripts/deploy.sh",
+            1,
+            "code_leaks",
+            {
+                "category": "code",
+                "origin": "public code",
+                "repository": "sokafor-acme/infra-scripts",
+                "path": "deploy.sh",
+                "repository_owner": "sokafor-acme",
+                "secrets": [{"type": "AWS access key", "preview": "AKIA… (20 chars)"}],
+                "hostnames": [f"build01.corp.{DEMO_TARGET}"],
+            },
+        ),
+        "build": (
+            E.SUBDOMAIN,
+            f"build01.corp.{DEMO_TARGET}",
+            f"build01.corp.{DEMO_TARGET}",
+            2,
+            "code_leaks",
+            {"origin": "public code"},
+        ),
+        "bucket": (
+            E.URL,
+            "https://acme-corp-backups.s3.example/",
+            "Amazon S3: acme-corp-backups",
+            1,
+            "cloud_storage",
+            {
+                "category": "cloud_storage",
+                "provider": "Amazon S3",
+                "bucket": "acme-corp-backups",
+                "public_listing": True,
+                "sample_keys": ["db/2026-10-01-crm.sql.gz", "exports/customers-q3.csv", "logo.png"],
+                "ownership": "unverified (name match)",
+                "live": "confirmed",
+            },
+        ),
+        "pgp_email": (
+            E.EMAIL,
+            "dana.w@mail.example",
+            "dana.w@mail.example",
+            2,
+            "pgp_keyserver",
+            {"origin": "PGP key", "pgp_key": "89ABCDEF01234567", "key_created": "2017-07-14", "revoked": False},
+        ),
+        "phone": (E.PHONE, "+441134960123", "+441134960123", 1, "web_recon", {"origin": "published on website"}),
+        "sec_contact": (
+            E.EMAIL,
+            f"security@{DEMO_TARGET}",
+            f"security@{DEMO_TARGET}",
+            1,
+            "web_recon",
+            {"origin": "security.txt", "role_mailbox": True},
+        ),
+    }
+)
+
 _RELATIONS: list[tuple[str, str, RelationType, str]] = [
     ("www", "seed", R.SUBDOMAIN_OF, "Subdomain of"),
     ("vpn", "seed", R.SUBDOMAIN_OF, "Subdomain of"),
@@ -333,11 +488,27 @@ _RELATIONS: list[tuple[str, str, RelationType, str]] = [
     ("keybase", "place", R.LOCATED_IN, "Declared location"),
     ("github", "place", R.LOCATED_IN, "Declared location"),
     ("github", "company", R.ASSOCIATED_WITH, "Declared employer"),
+    ("seed", "wb_env", R.EXPOSES, "Archived sensitive file"),
+    ("legacy", "git_exposed", R.EXPOSES, "Exposes Git repository metadata"),
+    ("seed", "doc", R.ASSOCIATED_WITH, "Archived document"),
+    ("doc", "doc_user", R.ASSOCIATED_WITH, "Document author"),
+    ("doc", "doc_person", R.ASSOCIATED_WITH, "Document author"),
+    ("doc", "doc_sw", R.USES_TECH, "Created with"),
+    ("seed", "gh_org", R.OPERATES, "GitHub organisation"),
+    ("handle", "gh_org", R.BELONGS_TO, "Public member"),
+    ("member2", "gh_org", R.BELONGS_TO, "Public member"),
+    ("seed", "leak", R.EXPOSES, "Secret in public code"),
+    ("build", "seed", R.SUBDOMAIN_OF, "Found in public code"),
+    ("seed", "bucket", R.EXPOSES, "Publicly listable storage (name match)"),
+    ("email_ceo", "pgp_email", R.ASSOCIATED_WITH, "Same PGP key"),
+    ("ceo", "pgp_email", R.HAS_ACCOUNT, "PGP user ID"),
+    ("phone", "seed", R.ASSOCIATED_WITH, "Published on website"),
+    ("seed", "sec_contact", R.ASSOCIATED_WITH, "Security contact"),
 ]
 
 
 # A month earlier the surface looked different - used to demonstrate drift detection.
-_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1"}
+_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket"}
 _ONLY_PREVIOUSLY: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
     "p21": (E.PORT, "203.0.113.30:21", "Port 21 (FTP)", 3, "shodan_internetdb", {"port_number": 21}),
 }

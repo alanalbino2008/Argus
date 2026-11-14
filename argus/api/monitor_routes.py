@@ -18,6 +18,7 @@ class CreateMonitorRequest(BaseModel):
     target_type: EntityType | None = None
     interval_hours: int = Field(default=24, ge=1, le=24 * 30)
     max_depth: int = Field(default=2, ge=0, le=4)
+    passive_only: bool = False
     purpose: str = Field(min_length=5, max_length=500)
     authorized: bool = Field(description="Confirms you are authorised to monitor this target on an ongoing basis")
 
@@ -52,6 +53,7 @@ async def create_monitor(
         target=target,
         target_type=ttype.value,
         max_depth=body.max_depth,
+        passive_only=body.passive_only,
         interval_hours=body.interval_hours,
         purpose=body.purpose,
         created_by=principal.name,

@@ -121,6 +121,13 @@ def _parse_retry_after(value: str | None) -> float | None:
         return None
 
 
+async def read_limited(resp: Any, limit: int) -> bytes | None:
+    """Read at most ``limit`` bytes of a body; None if it is larger (documents, archives)."""
+    content = getattr(resp, "content", None)
+    data = await content.read(limit + 1) if content is not None and hasattr(content, "read") else await resp.read()
+    return None if len(data) > limit else bytes(data)
+
+
 class _RetryingRequest:
     """Async context manager returned by ``HttpClient.request``."""
 

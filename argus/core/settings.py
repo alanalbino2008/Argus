@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     virustotal_api_key: SecretStr | None = Field(default=None, description="VirusTotal v3 API key")
     hibp_api_key: SecretStr | None = Field(default=None, description="Have I Been Pwned v3 API key")
     shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
+    github_token: SecretStr | None = Field(
+        default=None, description="GitHub token: enables public code-leak search (GitHub requires auth for code search)"
+    )
+    extra_platforms_file: str | None = Field(
+        default=None, description="JSON file of extra username platforms (same format as argus/data/platforms.json)"
+    )
     plugins: list[str] = Field(
         default_factory=list,
         description='Entry-point names of third-party plugin modules to load, e.g. ["crtsh_plus"]. Empty = none.',

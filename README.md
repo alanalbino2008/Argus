@@ -17,7 +17,7 @@
 
 Argus bridges the gap between fragmented CLI tools and expensive enterprise intelligence suites by fusing the best features of industry standards with modern web-scale engineering:
 
-* ⚡ **Sherlock-Class Identity Hunting:** Asynchronous, concurrent account hunting across 35 platforms (GitHub, GitLab, DockerHub, PyPI, Bluesky, Telegram, Keybase, etc.) with smart false-positive rejection — then follows each account to learn more about the person behind it.
+* ⚡ **Sherlock-Class Identity Hunting:** Asynchronous, concurrent account hunting across 120+ platforms (developer, security, social, fediverse, creative, gaming…) with **self-calibration**: every hit is re-checked against a random, unregistered handle, so sites that answer "yes" to everything are discarded instead of producing false positives — then follows each account to learn more about the person behind it.
 * 🕸️ **Spiderfoot-Style Recursive Infrastructure Mapping:** Automated multi-hop enrichment: Domain ➔ DNS ➔ IP ➔ GeoIP/ASN ➔ RDAP Registrant ➔ Subdomains via Certificate Transparency ➔ TLS SANs ➔ Web Tech Stack.
 * 🔮 **Maltego-Grade Visual Link Analysis:** Interactive physics-driven graph visualization built on **Cytoscape.js** with real-time WebSocket telemetry streaming. Nodes and relationships animate live onto the canvas as intelligence is discovered.
 * 🛡️ **Novel Innovation — Attack Surface Scoring & Pivot Analysis:** Topological analysis utilizing graph degree centrality to identify single-point-of-failure infrastructure hubs, detect missing defensive headers (HSTS, CSP), and calculate a quantitative exposure score.
@@ -103,6 +103,22 @@ Most OSINT tools return a list of findings. Argus **chains them into the attack 
 
 Try it without scanning anything: `python -m argus.cli.console --load-demo` loads a fictional company (reserved `.example` domains and TEST-NET IPs) that triggers every rule. How it works: [`docs/explained/06-attack-path-engine.md`](docs/explained/06-attack-path-engine.md).
 
+### Deep Recon — finding what is hidden
+
+Beyond live DNS and websites, Argus digs where organisations forget to look:
+
+| Source | What it uncovers |
+|---|---|
+| **Internet Archive** | Forgotten sub-domains, once-public `.env`/`.git`/backup files, admin panels, API specs, documents, credentials in URLs (redacted) |
+| **Document metadata** (FOCA technique) | Authors and *internal account names* (`jsmith`), software versions and company from public PDFs and Office files — read from the archive's copy, never the target |
+| **Five passive-DNS datasets** | Sub-domains certificates never revealed (HackerTarget, AlienVault OTX, Anubis, CertSpotter, urlscan), each host tagged with which sources saw it |
+| **GitHub** | The organisation (verified against the domain) and its public members' handles; public code mentioning the domain, scanned for leaked keys and passwords (stored only as a 4-character preview) |
+| **PGP keyservers** | Real names and the other email addresses bound to the same key |
+| **The website itself** *(active)* | `security.txt`, `robots.txt`, exposed `.git`/`.env`/`server-status` confirmed by content, published emails and phone numbers |
+| **Cloud storage** *(active)* | Amazon S3 / Google Cloud buckets named after the organisation, and whether anyone can list them |
+
+Findings seen by several independent sources gain confidence automatically (and show *who* saw them). Argus learns the organisation's **email format** (`first.last@`) and predicts — clearly marked as *inferred* — the work address of staff found without one. Four new attack paths turn this into risk: **leaked secrets in code**, **exposed sensitive files**, **public cloud storage** and **staff enumeration for password spraying**. Tick **Passive only** (or `--passive-only`) and nothing touches the target's own systems. See [`docs/explained/10-deep-recon.md`](docs/explained/10-deep-recon.md).
+
 ### People & Software Intelligence
 
 A username or email is a starting point, not an answer. When Argus finds an account it reads the platform's **official public API** for what the owner chose to publish — display name, bio, location, employer, website, join date and *linked accounts* — and follows those links. **Identity resolution** then groups the fragments into **people**, each with a dossier: accounts, emails, handles, locations, employer, a timeline (joined GitHub 2014 → password exposed in a 2023 breach) and the exposures and attack paths they are part of. Every link is graded **verified** (proven by Keybase or Mastodon), **strong** or **possible** (same handle — may be someone else), shared inboxes like `info@` are never treated as people, viewing a dossier is audited, and remote avatars are never loaded, so the analyst's IP doesn't leak to the subject's platforms.
@@ -122,7 +138,7 @@ Watch a target and Argus re-scans it on a schedule, compares each scan with the 
 | **STIX 2.1 bundle** | Import into OpenCTI, MISP or any STIX platform (TLP:AMBER) |
 | **Maltego CSV / JSON graph** | Link analysis in Maltego or your own tooling |
 
-Optional modules unlock with an API key — `ARGUS_VIRUSTOTAL_API_KEY`, `ARGUS_HIBP_API_KEY`, `ARGUS_SHODAN_API_KEY` — and third-party plugins load only when allowlisted in `ARGUS_PLUGINS`. See [`docs/explained/05-intelligence-features.md`](docs/explained/05-intelligence-features.md).
+Optional modules unlock with an API key — `ARGUS_VIRUSTOTAL_API_KEY`, `ARGUS_HIBP_API_KEY`, `ARGUS_SHODAN_API_KEY`, `ARGUS_GITHUB_TOKEN` (public code-leak search) — and third-party plugins load only when allowlisted in `ARGUS_PLUGINS`. See [`docs/explained/05-intelligence-features.md`](docs/explained/05-intelligence-features.md).
 
 ### Security Model
 
@@ -213,7 +229,7 @@ Argus includes a **Rich** command-line interface with automatic entity type dete
 # Scan a domain (Recursion Depth: 1)
 python -m argus.cli.console example.com -d 1
 
-# Sherlock-style username hunting across 35 platforms
+# Sherlock-style username hunting across 120+ platforms (self-calibrating)
 python -m argus.cli.console torvalds -t username
 
 # Scan an IP address with JSON export
@@ -235,6 +251,14 @@ python -m argus.cli.console security@example.com --export-csv maltego_export.csv
 | **`shodan_internetdb`** | `IP_ADDRESS` | `PORT`, `VULNERABILITY` (CVEs), `DOMAIN` (Hostnames) | Passive Shodan exposure API querying open ports and known CVEs |
 | **`dns_recon`** | `DOMAIN`, `SUBDOMAIN` | `IP_ADDRESS`, `DOMAIN` (MX/NS), `DNS_RECORD` (SPF/DMARC) | Asynchronous DNS resolution via `dnspython` |
 | **`subdomain_finder`** | `DOMAIN` | `SUBDOMAIN`, `SUBDOMAIN_OF` | Passive Certificate Transparency log indexing (`crt.sh`) |
+| **`passive_dns`** | `DOMAIN` | `SUBDOMAIN` (with per-source provenance) | HackerTarget, AlienVault OTX, Anubis, CertSpotter, urlscan.io |
+| **`wayback`** | `DOMAIN` | `SUBDOMAIN`, `URL` (sensitive files, admin panels, APIs, documents) | Internet Archive CDX API |
+| **`document_metadata`** | `URL` (documents) | `PERSON`, `USERNAME`, `TECHNOLOGY`, `ORGANIZATION` | OOXML/ODF/PDF metadata from the archived copy (defusedxml, zip-bomb guards) |
+| **`github_org`** | `DOMAIN` | GitHub organisation, member `USERNAME`s | GitHub REST API; org must point back to the domain |
+| **`code_leaks`** *(key)* | `DOMAIN` | `URL` (with redacted secrets), `SUBDOMAIN`, `EMAIL` | GitHub code search + secret patterns |
+| **`pgp_keyserver`** | `EMAIL`, `DOMAIN` | `PERSON`, linked `EMAIL`s | HKP machine-readable index (keyserver.ubuntu.com) |
+| **`web_recon`** *(active)* | `DOMAIN`, `SUBDOMAIN` | `URL` (exposed files), `EMAIL`, `PHONE` | security.txt, robots.txt, content-verified exposure checks |
+| **`cloud_storage`** *(active)* | `DOMAIN` | `URL` (buckets) | S3 / GCS name probing and public-listing check |
 | **`ip_intelligence`** | `IP_ADDRESS` | `ASN`, `ORGANIZATION`, `DOMAIN` (PTR) | Reverse DNS + BGP autonomous system & GeoIP resolution |
 | **`whois_lookup`** | `DOMAIN` | `ORGANIZATION` (Registrar/Registrant), `EMAIL` (Abuse) | RFC 7480 RDAP protocol queries |
 | **`tls_analyzer`** | `DOMAIN`, `SUBDOMAIN` | `CERTIFICATE`, `SUBDOMAIN` (via SANs) | TLS handshake on 443, certificate chain extraction |

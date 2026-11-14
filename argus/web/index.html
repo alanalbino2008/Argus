@@ -137,6 +137,9 @@
           <textarea id="new-purpose" class="textarea" maxlength="500" placeholder="e.g. Bug bounty programme ACME (report #1234) · CTF · our own infrastructure"></textarea>
         </div>
         <div class="field">
+          <label class="check"><input type="checkbox" id="new-passive"> <span><b>Passive only</b> — never contact the target's own systems (use public sources only; required by some bug bounty programmes)</span></label>
+        </div>
+        <div class="field">
           <label class="check"><input type="checkbox" id="new-watch"> <span><b>Keep watching</b> — re-scan on a schedule and alert me when the attack surface changes</span></label>
           <select id="new-interval" class="select" hidden aria-label="Re-scan interval">
             <option value="6">Every 6 hours</option>

@@ -14,7 +14,21 @@ let pivotsFor = null;
 let pivots = [];
 
 // Keys shown in their own panels (or not at all) rather than the generic details list.
-const HIDDEN_META = new Set(["full_record", "profile", "lifecycle", "intel", "verified"]);
+const HIDDEN_META = new Set([
+  "full_record", "profile", "lifecycle", "intel", "verified", "sources", "document", "secrets", "hostnames",
+  "wayback", "passive_dns", "passive_sources", "security_txt", "public_code", "cloud_storage", "pgp_keys",
+  "sample_keys", "archive_url", "exposed_files", "platforms_unreliable", "platforms_checked", "platforms_unreachable",
+  "public_listing", "evidence", "file", "category", "live", "repository", "path", "repository_owner", "bucket",
+  "provider", "ownership", "archived_on", "archived_status",
+]);
+
+const CATEGORY_LABEL = {
+  sensitive_file: "Sensitive file (archived)", credential_in_url: "Credentials in URL (archived)",
+  admin_panel: "Admin / login panel", api: "API description", document: "Public document",
+  code: "Public source code", exposed_file: "Exposed file", cloud_storage: "Cloud storage", robots: "Hidden from search engines",
+};
+
+const humanSource = (s) => String(s).replace(/_/g, " ");
 
 export function initGraphView(appActions) {
   actions = appActions;
@@ -146,7 +160,10 @@ function renderDetails() {
     <dl class="kv">
       <dt>Confidence</dt><dd>${Math.round((entity.confidence ?? 1) * 100)}%</dd>
       <dt>Distance</dt><dd>${entity.depth === 0 ? "The target itself" : `${entity.depth} hop${entity.depth > 1 ? "s" : ""} from the target`}</dd>
-      <dt>Found by</dt><dd>${entity.source_module}</dd>
+      <dt>Found by</dt><dd>${(entity.metadata?.sources?.length > 1)
+        ? html`${entity.metadata.sources.length} independent sources <span class="muted">(${entity.metadata.sources.map(humanSource).join(", ")})</span>`
+        : humanSource(entity.source_module)}</dd>
+      ${entity.metadata?.category ? html`<dt>Kind</dt><dd>${CATEGORY_LABEL[entity.metadata.category] || humanSource(entity.metadata.category)}</dd>` : ""}
     </dl>
     ${involved.length ? html`<div class="section"><div class="section-title">Part of ${involved.length} attack path${involved.length > 1 ? "s" : ""}</div>
       ${involved.map(({ p, i }) => html`<div class="list-row clickable" data-path="${i}">${severityPill(p.severity)}<div class="list-main"><div class="list-title">${p.title}</div></div></div>`)}</div>` : ""}
@@ -173,6 +190,54 @@ function intelBlocks(entity) {
     blocks.push(html`<div class="section"><div class="section-title">Public profile${md.verified ? html` <span class="pill ok">Verified link</span>` : ""}</div>
       <dl class="kv">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>
       <p class="muted small" style="margin-top:8px">Self-declared by the account owner; treat as a lead, not a fact.</p></div>`);
+  }
+  if (md.secrets?.length) {
+    blocks.push(html`<div class="section"><div class="section-title">Leaked credentials</div>
+      <div class="intel-badges"><span class="pill critical">${md.secrets.length} secret${md.secrets.length > 1 ? "s" : ""} in public code</span></div>
+      ${md.secrets.map((s) => html`<div class="flag"><span class="dot" style="background:var(--sev-critical)"></span><span><b>${s.type}</b> <span class="mono muted">${s.preview}</span></span></div>`)}
+      <dl class="kv" style="margin-top:8px">${md.repository ? html`<dt>Repository</dt><dd>${md.repository}</dd>` : ""}${md.path ? html`<dt>File</dt><dd>${md.path}</dd>` : ""}
+        ${md.hostnames?.length ? html`<dt>Internal hosts</dt><dd>${md.hostnames.join(", ")}</dd>` : ""}</dl>
+      <p class="muted small" style="margin-top:8px">Only a short preview is stored — never the secret itself. Rotate it: deleting the file does not remove it from Git history.</p></div>`);
+  }
+  if (md.category === "exposed_file") {
+    blocks.push(html`<div class="section"><div class="section-title">Exposed file</div>
+      <div class="intel-badges"><span class="pill critical">Live — confirmed by content</span></div>
+      <dl class="kv"><dt>What</dt><dd>${md.file}</dd><dt>Evidence</dt><dd>${md.evidence}</dd></dl></div>`);
+  }
+  if (md.archive_url) {
+    blocks.push(html`<div class="section"><div class="section-title">Web archive</div>
+      <div class="intel-badges"><span class="pill medium">Archived copy — not verified as live</span></div>
+      <dl class="kv"><dt>Captured</dt><dd>${formatDay(md.archived_on)}</dd>${md.archived_status ? html`<dt>Status then</dt><dd>HTTP ${md.archived_status}</dd>` : ""}</dl>
+      <p class="small" style="margin-top:8px"><a href="${md.archive_url}" target="_blank" rel="noopener noreferrer nofollow" referrerpolicy="no-referrer">Open the archived copy ↗</a></p></div>`);
+  }
+  if (md.document) {
+    const d = md.document;
+    blocks.push(html`<div class="section"><div class="section-title">Hidden document metadata</div><dl class="kv">
+      ${d.authors?.length ? html`<dt>Authors</dt><dd>${d.authors.join(", ")}</dd>` : ""}
+      ${d.software?.length ? html`<dt>Made with</dt><dd>${d.software.join(", ")}</dd>` : ""}
+      ${d.company ? html`<dt>Company</dt><dd>${d.company}</dd>` : ""}
+      ${d.title ? html`<dt>Title</dt><dd>${d.title}</dd>` : ""}
+      ${d.created ? html`<dt>Created</dt><dd>${formatDay(d.created)}</dd>` : ""}</dl>
+      <p class="muted small" style="margin-top:8px">Author fields often hold internal account names — the login format attackers need for password spraying.</p></div>`);
+  }
+  if (md.category === "cloud_storage") {
+    blocks.push(html`<div class="section"><div class="section-title">Cloud storage</div>
+      <div class="intel-badges">${md.public_listing ? html`<span class="pill critical">Anyone can list files</span>` : html`<span class="pill">Exists — private</span>`}<span class="pill">${md.ownership}</span></div>
+      <dl class="kv"><dt>Provider</dt><dd>${md.provider}</dd><dt>Bucket</dt><dd>${md.bucket}</dd>
+        ${md.sample_keys?.length ? html`<dt>Sample files</dt><dd>${md.sample_keys.join(", ")}</dd>` : ""}</dl></div>`);
+  }
+  const recon = [];
+  if (md.wayback) recon.push(["Web archive", md.wayback.urls_archived ? `${md.wayback.urls_archived} URLs since ${md.wayback.first_archived || "?"}${md.wayback.interesting && Object.keys(md.wayback.interesting).length ? ` · ${Object.entries(md.wayback.interesting).map(([k, v]) => `${v} ${(CATEGORY_LABEL[k] || k).toLowerCase()}`).join(", ")}` : ""}` : "Never archived"]);
+  if (md.passive_dns) recon.push(["Passive DNS", `${md.passive_dns.hosts} hosts from ${md.passive_dns.sources_answered.length} sources`]);
+  if (md.passive_sources) recon.push(["Seen in", md.passive_sources.join(", ")]);
+  if (md.public_code) recon.push(["Public code", `${md.public_code.files} file(s)${md.public_code.files_with_secrets ? `, ${md.public_code.files_with_secrets} with secrets` : ""}`]);
+  if (md.security_txt) recon.push(["security.txt", md.security_txt.present ? (md.security_txt.contacts || []).join(", ") || "Present" : "Missing — researchers have no official way to report issues"]);
+  if (md.exposed_files) recon.push(["Exposed files", md.exposed_files.length ? md.exposed_files.join(", ") : "None found"]);
+  if (md.cloud_storage) recon.push(["Cloud storage", `${md.cloud_storage.found} of ${md.cloud_storage.names_checked} likely names exist`]);
+  if (md.platforms_checked) recon.push(["Sites checked", `${md.platforms_checked}${md.platforms_unreliable?.length ? ` · ${md.platforms_unreliable.length} ignored as unreliable (${md.platforms_unreliable.join(", ")})` : ""}`]);
+  if (md.pgp_keys?.length) recon.push(["PGP keys", md.pgp_keys.map((k) => `${k.key_id} (${k.created || "?"}${k.revoked ? ", revoked" : ""})`).join(", ")]);
+  if (recon.length) {
+    blocks.push(html`<div class="section"><div class="section-title">Deep recon</div><dl class="kv">${recon.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl></div>`);
   }
   if (md.lifecycle) {
     const l = md.lifecycle;

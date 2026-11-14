@@ -235,6 +235,7 @@ class StartScanRequest(BaseModel):
     target: str = Field(min_length=1, max_length=253)
     target_type: EntityType | None = None
     max_depth: int = Field(default=2, ge=0, le=4)
+    passive_only: bool = Field(default=False, description="Skip modules that contact the target's own systems")
     enabled_modules: list[str] | None = None
     concurrency_limit: int = Field(default=15, ge=1, le=50)
     purpose: str = Field(
@@ -523,6 +524,7 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
             target=target,
             target_type=ttype,
             max_depth=req.max_depth,
+            passive_only=req.passive_only,
             enabled_modules=req.enabled_modules,
             concurrency_limit=req.concurrency_limit,
             allow_private_targets=settings.allow_private_targets,
@@ -544,6 +546,7 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
             "target": target,
             "target_type": ttype.value,
             "max_depth": req.max_depth,
+            "passive_only": req.passive_only,
             "purpose": req.purpose,
             "authorized_confirmed": True,
         },

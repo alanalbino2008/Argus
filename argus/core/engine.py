@@ -97,6 +97,8 @@ class ArgusEngine:
 
         if config.enabled_modules:
             self.modules = {name: mod for name, mod in self.modules.items() if name in config.enabled_modules}
+        if config.passive_only:
+            self.modules = {name: mod for name, mod in self.modules.items() if not mod.active}
 
         self.investigation = Investigation(
             id=self.investigation_id,

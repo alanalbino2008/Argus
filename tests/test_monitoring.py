@@ -28,8 +28,11 @@ def test_demo_drift_is_detected_precisely():
     _, new = build_demo()
     d = compare(old, new)
     s = d["summary"]
-    assert (s["added"], s["removed"], s["changed"]) == (4, 1, 2)
-    assert {p["title"] for p in d["new_paths"]} >= {"Redis exposed to the internet on 203.0.113.30"}
+    assert (s["added"], s["removed"], s["changed"]) == (7, 1, 2)
+    new_titles = {p["title"] for p in d["new_paths"]}
+    assert "Redis exposed to the internet on 203.0.113.30" in new_titles
+    assert "Publicly listable cloud storage: acme-corp-backups" in new_titles
+    assert any(t.startswith("Credentials leaked in public code") for t in new_titles)
     assert [p["title"] for p in d["resolved_paths"]] == ["FTP exposed to the internet on 203.0.113.30"]
     # same scenario, worse: identity is rule + subject, so it escalates rather than "new + resolved"
     assert [(p["score_before"], p["score"]) for p in d["escalated_paths"]] == [(40, 80)]
@@ -164,3 +167,22 @@ def test_scheduler_disables_monitors_that_fall_out_of_scope(make_client):
 def _clean_background():
     yield
     server.BACKGROUND_TASKS.clear()
+
+
+def test_passive_monitors_keep_rescans_passive(make_client, monkeypatch):
+    monkeypatch.setattr(engine_module, "get_default_modules", lambda: {"fan_out": FanOutModule(fan=1)})
+    client = make_client(monitors_enabled="false")
+    scheduler = client.app.state.scheduler
+    seen = []
+    real = scheduler.launch
+
+    async def spy(config, *args):
+        seen.append(config.passive_only)
+        return await real(config, *args)
+
+    scheduler.launch = spy
+    mon = client.post("/api/monitors", json={**MON, "passive_only": True}).json()
+    assert mon["passive_only"] is True
+    client.portal.call(scheduler.tick)
+    _wait_for_background(client)
+    assert seen == [True]

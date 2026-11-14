@@ -108,12 +108,15 @@ function overview(inv) {
   const people = data.personas;
   return html`${head}
     <div class="callout" style="margin-bottom:16px">${ico("info")}<span>Only public information is shown. Links are graded: <b>verified</b> (proven by the platform), <b>strong</b> and <b>possible</b> (same handle — may be someone else). Viewing dossiers is recorded in the audit log.</span></div>
+    ${data.email_format ? html`<div class="card card-pad" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      ${ico("email")}<div style="flex:1;min-width:220px"><div class="list-title">Email format: <span class="mono">${data.email_format.example}</span></div>
+      <div class="list-sub">Learned from ${plural(data.email_format.evidence, "known address", "known addresses")}. Likely addresses for people found without one are marked <i>inferred</i>.</div></div></div>` : ""}
     ${people.length ? html`<div class="persona-grid">${people.map(personaCard)}</div>`
       : html`<div class="card">${empty("persona", "No people found", "This investigation didn't surface any linked identities. Try a username or email address as the target.")}</div>`}
-    ${data.role_mailboxes.length ? html`<div class="card card-pad" style="margin-top:16px">
-      <div class="section-title">Shared mailboxes</div>
-      <p class="muted small" style="margin:0 0 10px">Team inboxes are not people, so Argus doesn't hunt their names on social networks.</p>
-      <div class="chips">${data.role_mailboxes.map((m) => html`<span class="chip">${m}</span>`)}</div></div>` : ""}`;
+    ${data.role_mailboxes.length || data.public_phones?.length ? html`<div class="card card-pad" style="margin-top:16px">
+      <div class="section-title">Public contact points</div>
+      <p class="muted small" style="margin:0 0 10px">Team inboxes and switchboard numbers belong to the organisation, not a person — Argus doesn't hunt them on social networks.</p>
+      <div class="chips">${[...data.role_mailboxes, ...(data.public_phones || [])].map((m) => html`<span class="chip">${m}</span>`)}</div></div>` : ""}`;
 }
 
 function personaCard(p) {
@@ -126,7 +129,7 @@ function personaCard(p) {
     <div class="persona-top">
       ${avatar(p)}
       <div class="persona-name"><div class="list-title">${p.name}</div>
-        <div class="list-sub">${p.usernames.slice(0, 3).map((u) => `@${u}`).join(" · ") || p.emails[0] || (p.shared_mailboxes[0] && `Contact for ${p.shared_mailboxes[0]}`) || p.phones[0] || ""}</div></div>
+        <div class="list-sub">${p.usernames.slice(0, 3).map((u) => `@${u}`).join(" · ") || p.emails[0] || (p.likely_email && `${p.likely_email.address} (inferred)`) || (p.shared_mailboxes[0] && `Contact for ${p.shared_mailboxes[0]}`) || p.phones[0] || ""}</div></div>
     </div>
     ${p.bio ? html`<p class="persona-bio">${p.bio}</p>` : ""}
     <div class="persona-meta">
@@ -142,6 +145,7 @@ function dossier(p) {
     ["Also known as", p.names.filter((n) => n !== p.name).join(", ")],
     ["Handles", p.usernames.map((u) => `@${u}`).join(", ")],
     ["Email", p.emails.join(", ")],
+    ["Likely work email", p.likely_email ? `${p.likely_email.address} — inferred from the ${p.likely_email.basis} format, not confirmed` : ""],
     ["Phone", p.phones.join(", ")],
     ["Location", p.locations.join(" · ")],
     ["Works at", p.organisations.join(", ")],

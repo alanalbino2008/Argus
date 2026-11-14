@@ -52,6 +52,7 @@ const P = {
   breach: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/>',
   location: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
   persona: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+  url: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1"/><path d="M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1"/>',
   generic: '<circle cx="12" cy="12" r="6"/>',
 };
 
@@ -73,6 +74,7 @@ export const ENTITY_TYPES = {
   port: { label: "Open port", color: "#f76b15" },
   breach: { label: "Breach", color: "#c62a2f" },
   location: { label: "Location", color: "#3e9b4f" },
+  url: { label: "Web resource", color: "#5d6b82" },
   generic: { label: "Other", color: "#8b8d98" },
 };
 

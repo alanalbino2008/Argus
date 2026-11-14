@@ -59,6 +59,22 @@ class GraphIntelligenceAnalyzer:
                 else:
                     risk_flags.append(f"Known CVE Vulnerability: {entity.label}")
 
+            # Deep-recon findings (Phase 10)
+            if entity.type == EntityType.URL:
+                md = entity.metadata
+                if md.get("secrets"):
+                    exposure_points += 20
+                    risk_flags.insert(0, f"Credentials leaked in public code: {entity.label}")
+                elif md.get("category") == "exposed_file":
+                    exposure_points += 20
+                    risk_flags.insert(0, f"Exposed {md.get('file', 'sensitive file')}: {entity.value}")
+                elif md.get("category") == "cloud_storage" and md.get("public_listing"):
+                    exposure_points += 15
+                    risk_flags.append(f"Publicly listable cloud storage: {md.get('bucket')}")
+                elif md.get("category") in ("sensitive_file", "credential_in_url"):
+                    exposure_points += 5
+                    risk_flags.append(f"Sensitive file in the web archive: {entity.label}")
+
             # Flag software whose vendor no longer ships security fixes
             life = entity.metadata.get("lifecycle") or {}
             if life.get("eol"):

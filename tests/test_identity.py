@@ -160,3 +160,68 @@ def test_people_endpoint_on_demo_is_audited(client):
     assert body["summary"]["personas"] >= 1
     assert any(p["accounts"] for p in body["personas"])
     assert client.get("/api/audit", params={"action": "investigation.people"}).json()
+
+
+def test_email_format_is_learned_and_applied_only_to_people_tied_to_the_target():
+    from argus.intel.identity import infer_email_format
+
+    assert (
+        infer_email_format([("Dana Whitfield", "dana.whitfield@acme.example")], "acme.example")["pattern"]
+        == "first.last"
+    )
+    assert infer_email_format([("Dana Whitfield", "dwhitfield@acme.example")], "acme.example")["pattern"] == "flast"
+    assert infer_email_format([("Dana Whitfield", "dana@other.example")], "acme.example") is None
+
+    g, _ = graph_of(
+        [
+            ("domain", E.DOMAIN, "acme.example", {}),
+            ("email", E.EMAIL, "dana.whitfield@acme.example", {}),
+            ("dana", E.PERSON, "Dana Whitfield", {}),
+            ("doc", E.URL, "https://acme.example/a.docx", {"metadata": {"category": "document"}}),
+            ("aisha", E.PERSON, "Aisha Patel", {"source_module": "document_metadata"}),
+            ("stranger", E.PERSON, "Random Person", {}),
+            ("stranger_mail", E.EMAIL, "random@else.example", {}),
+            ("phone", E.PHONE, "+441134960123", {}),
+            ("staff", E.USERNAME, "jsmith", {"source_module": "document_metadata"}),
+        ],
+        [
+            ("domain", "email"),
+            ("dana", "email"),
+            ("doc", "aisha"),
+            ("stranger", "stranger_mail"),
+            ("phone", "domain"),
+            ("doc", "staff"),
+        ],
+    )
+    result = resolve_people(g)
+    assert result["email_format"]["pattern"] == "first.last"
+    by_name = {p["name"]: p for p in result["personas"]}
+    assert by_name["Aisha Patel"]["likely_email"] == {
+        "address": "aisha.patel@acme.example",
+        "basis": "first.last",
+        "inferred": True,
+    }
+    assert by_name["Random Person"]["likely_email"] is None  # not linked to the target's assets
+    assert by_name["Dana Whitfield"]["likely_email"] is None  # already known
+    assert "jsmith" in by_name  # staff handle from document metadata is kept as a lead
+    assert result["public_phones"] == ["+441134960123"]
+
+
+def test_organisation_accounts_never_merge_their_members():
+    g, _ = graph_of(
+        [
+            ("domain", E.DOMAIN, "acme.example", {}),
+            (
+                "org",
+                E.SOCIAL_PROFILE,
+                "https://github.com/acme",
+                {"metadata": {"platform": "GitHub", "account_type": "organization"}},
+            ),
+            ("alice", E.USERNAME, "alice", {"source_module": "github_org"}),
+            ("bob", E.USERNAME, "bob", {"source_module": "github_org"}),
+        ],
+        [("domain", "org"), ("alice", "org"), ("bob", "org")],
+    )
+    personas = resolve_people(g)["personas"]
+    assert sorted(p["name"] for p in personas) == ["alice", "bob"]
+    assert all(not p["accounts"] for p in personas)  # the org profile is nobody's personal account

@@ -43,6 +43,7 @@ class IntelligenceGraph:
             self._seed_ids.add(entity.id)
 
         if is_new:
+            entity.metadata.setdefault("sources", [entity.source_module] if entity.source_module else [])
             self._entities[entity.id] = entity
             self._graph.add_node(
                 entity.id,
@@ -58,8 +59,19 @@ class IntelligenceGraph:
         else:
             # Merge metadata if entity already exists
             existing = self._entities[entity.id]
-            existing.metadata.update(entity.metadata)
-            self._graph.nodes[entity.id]["metadata"].update(entity.metadata)
+            sources = list(existing.metadata.get("sources") or [existing.source_module])
+            incoming = {k: v for k, v in entity.metadata.items() if k != "sources"}
+            existing.metadata.update(incoming)
+            self._graph.nodes[entity.id]["metadata"].update(incoming)
+            # Corroboration: an independent source confirming the same fact raises confidence
+            # (noisy-OR: 1 - (1-a)(1-b)), capped below certainty.
+            if entity.source_module and entity.source_module not in sources:
+                sources.append(entity.source_module)
+                fused = 1 - (1 - existing.confidence) * (1 - entity.confidence)
+                existing.confidence = round(min(0.99, max(existing.confidence, fused)), 3)
+                self._graph.nodes[entity.id]["confidence"] = existing.confidence
+            existing.metadata["sources"] = sources
+            self._graph.nodes[entity.id]["metadata"]["sources"] = sources
             if entity.depth < existing.depth:
                 existing.depth = entity.depth
                 self._graph.nodes[entity.id]["depth"] = entity.depth

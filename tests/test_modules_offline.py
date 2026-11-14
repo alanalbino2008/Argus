@@ -40,14 +40,18 @@ CONFIG = ScanConfig(target="x", target_type=EntityType.DOMAIN)
 class FakeResponse:
     def __init__(self, status: int = 200, body: Any = "", headers: dict[str, str] | None = None):
         self.status = status
-        self._body = body if isinstance(body, str) else json.dumps(body)
+        self._raw = body if isinstance(body, bytes) else None
+        self._body = body if isinstance(body, str) else "" if isinstance(body, bytes) else json.dumps(body)
         self.headers = CIMultiDict(headers or {})
+
+    async def read(self) -> bytes:
+        return self._raw if self._raw is not None else self._body.encode()
 
     async def json(self, content_type: str | None = None) -> Any:
         return json.loads(self._body)
 
     async def text(self, errors: str = "strict") -> str:
-        return self._body
+        return self._raw.decode("utf-8", errors="ignore") if self._raw is not None else self._body
 
     def release(self) -> None:
         pass
@@ -296,39 +300,81 @@ async def test_http_fingerprint_tech_stack_and_grade():
 
 
 async def test_username_hunter_detection_strategies(monkeypatch):
+    from argus.modules.identity.platforms import Platform
+
     monkeypatch.setattr(
         username_hunter,
-        "PLATFORM_SIGNATURES",
-        [
-            {
-                "name": "CodeHub",
-                "url_template": "https://codehub.test/{}",
-                "check_url": "https://codehub.test/{}",
-                "check_type": "status_code",
-            },
-            {
-                "name": "Forum",
-                "url_template": "https://forum.test/u/{}",
-                "check_url": "https://forum.test/u/{}",
-                "check_type": "body_not_contains",
-                "missing_text": "User not found",
-            },
-            {
-                "name": "Ghost",
-                "url_template": "https://ghost.test/{}",
-                "check_url": "https://ghost.test/{}",
-                "check_type": "status_code",
-            },
+        "get_platforms",
+        lambda: [
+            Platform(name="CodeHub", category="Developer", url="https://codehub.test/{}"),
+            Platform(
+                name="Forum",
+                category="Community",
+                url="https://forum.test/u/{}",
+                detect="absent",
+                text="User not found",
+            ),
+            Platform(name="Ghost", category="Social", url="https://ghost.test/{}"),
+            # Answers 200 to everything (e.g. a login wall): the canary check must reject it.
+            Platform(name="Liar", category="Social", url="https://liar.test/{}"),
+            Platform(name="Subby", category="Blogging", url="https://{}.subby.test"),
         ],
     )
     session = FakeSession(
         {
             r"codehub\.test/jdoe": FakeResponse(200, "<h1>jdoe</h1>"),
             r"forum\.test/u/jdoe": FakeResponse(200, "<p>User not found</p>"),  # soft-404: not a hit
+            r"liar\.test/": FakeResponse(200, "<h1>Welcome</h1>"),
         }
     )
-    entities, _ = await collect(UsernameHunterModule(), Entity.create(EntityType.USERNAME, "jdoe"), session)
+    seed = Entity.create(EntityType.USERNAME, "j.doe_")
+    seed2 = Entity.create(EntityType.USERNAME, "jdoe")
+    mod = UsernameHunterModule()
+    await collect(mod, seed, session)
+    assert seed.metadata["platforms_checked"] == 4  # "j.doe_" is not a valid sub-domain label
+    entities, _ = await collect(mod, seed2, session)
     assert values(entities, EntityType.SOCIAL_PROFILE) == ["https://codehub.test/jdoe"]
+    assert seed2.metadata["platforms_unreliable"] == ["Liar"]
+    hit = entities[0]
+    assert hit.metadata["calibrated"] is True and hit.confidence == 0.8
+
+
+def test_platform_signatures_are_valid_and_detect_correctly():
+    from argus.modules.identity.platforms import Platform, builtin_platforms, detect, parse_platforms
+
+    platforms = builtin_platforms()
+    assert len(platforms) >= 100
+    assert {"GitHub", "GitLab", "Reddit", "Keybase", "HackerNews", "Mastodon.social", "Bluesky"} <= {
+        p.name for p in platforms
+    }
+    js = Platform(name="J", category="x", url="https://j.test/{}", detect="json_nonempty", key="users")
+    assert detect(js, 200, '{"users": [{"id": 1}]}') and not detect(js, 200, '{"users": []}')
+    assert not detect(js, 200, "<html>")
+    assert detect(Platform(name="N", category="x", url="https://n.test/{}", detect="not_null"), 200, '{"id":"pg"}')
+    assert not detect(Platform(name="N", category="x", url="https://n.test/{}", detect="not_null"), 200, "null")
+    assert not detect(Platform(name="S", category="x", url="https://s.test/{}"), 404, "")
+    with pytest.raises(ValueError, match="https://"):
+        parse_platforms({"platforms": [{"name": "Bad", "category": "x", "url": "http://bad/{}"}]})
+    with pytest.raises(ValueError, match="needs 'text'"):
+        parse_platforms({"platforms": [{"name": "Bad", "category": "x", "url": "https://b/{}", "detect": "absent"}]})
+
+
+def test_extra_platforms_file_extends_and_overrides(tmp_path):
+    from argus.modules.identity.platforms import load_platforms
+
+    extra = tmp_path / "extra.json"
+    extra.write_text(
+        json.dumps(
+            {
+                "platforms": [
+                    {"name": "GitHub", "category": "Dev", "url": "https://gh.test/{}"},
+                    {"name": "Intranet Wiki", "category": "Corporate", "url": "https://wiki.test/u/{}"},
+                ]
+            }
+        )
+    )
+    platforms = {p.name: p for p in load_platforms(extra)}
+    assert platforms["GitHub"].url == "https://gh.test/{}" and "Intranet Wiki" in platforms
 
 
 # ----------------------------------------------------------------------------- offline
@@ -336,3 +382,18 @@ async def test_phone_recon_country_attribution():
     phone = Entity.create(EntityType.PHONE, "+44 20 7946 0958")
     await collect(PhoneReconModule(), phone)
     assert phone.metadata["country_code"] == "GB"
+
+
+async def test_verify_platforms_classifies_signature_health():
+    from argus.modules.identity.platforms import Platform
+    from argus.modules.identity.username_hunter import verify_platforms
+
+    platforms = [
+        Platform(name="Good", category="x", url="https://good.test/{}", known="alice"),
+        Platform(name="Broken", category="x", url="https://broken.test/{}", known="alice"),
+        Platform(name="Liar", category="x", url="https://liar.test/{}", known="alice"),
+        Platform(name="NoKnown", category="x", url="https://none.test/{}"),
+    ]
+    session = FakeSession({r"good\.test/alice": FakeResponse(200, "ok"), r"liar\.test/": FakeResponse(200, "ok")})
+    rows = {r["name"]: r["status"] for r in await verify_platforms(platforms, session, CONFIG)}
+    assert rows == {"Good": "ok", "Broken": "false_negative", "Liar": "false_positive", "NoKnown": "untested"}

@@ -1,0 +1,46 @@
+name: Platform signatures
+
+# Websites change their pages and APIs; a username signature that worked last month can
+# silently stop finding accounts. Once a week, check every signature against a known
+# account and a random one, and publish the results. Informational: never blocks merges.
+on:
+  schedule:
+    - cron: "17 5 * * 1"  # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install .
+      - name: Check signatures
+        run: argus --check-platforms --platforms-report platforms-report.json
+      - name: Summary
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          data = json.load(open("platforms-report.json"))
+          print("## Username platform signatures\n")
+          print(" · ".join(f"**{k}**: {v}" for k, v in data["summary"].items()), "\n")
+          bad = [p for p in data["platforms"] if p["status"] not in ("ok", "untested")]
+          if bad:
+              print("| Platform | Status | Known account |\n|---|---|---|")
+              for p in bad:
+                  print(f"| {p['name']} | {p['status']} | {p.get('known') or '-'} |")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platforms-report
+          path: platforms-report.json

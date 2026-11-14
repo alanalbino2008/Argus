@@ -100,6 +100,8 @@ def _observable(entity: Entity, ip_ids: dict[str, str]) -> Any | None:
         return stix2.Software(name=v)
     if t == EntityType.SOCIAL_PROFILE and v.startswith(("http://", "https://")):
         return stix2.URL(value=v)
+    if t == EntityType.URL and v.startswith(("http://", "https://")):
+        return stix2.URL(value=v)
     if t == EntityType.USERNAME:
         return stix2.UserAccount(account_login=v)
     if t == EntityType.PORT and ":" in v:

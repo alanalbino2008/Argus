@@ -1,8 +1,16 @@
 """Module loader and registry for Argus OSINT framework."""
 
 from argus.modules.base import BaseModule
+from argus.modules.discovery.cloud_storage import CloudStorageModule
+from argus.modules.discovery.code_leaks import CodeLeaksModule
+from argus.modules.discovery.document_metadata import DocumentMetadataModule
+from argus.modules.discovery.passive_dns import PassiveDnsModule
+from argus.modules.discovery.wayback import WaybackModule
+from argus.modules.discovery.web_recon import WebReconModule
 from argus.modules.identity.email_recon import EmailReconModule
 from argus.modules.identity.github_hunter import GitHubHunterModule
+from argus.modules.identity.github_org import GitHubOrgModule
+from argus.modules.identity.pgp_keyserver import PgpKeyserverModule
 from argus.modules.identity.phone_recon import PhoneReconModule
 from argus.modules.identity.profile_enricher import ProfileEnricherModule
 from argus.modules.identity.username_hunter import UsernameHunterModule
@@ -24,19 +32,27 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     ProfileEnricherModule,
     EmailReconModule,
     GitHubHunterModule,
+    GitHubOrgModule,
+    PgpKeyserverModule,
     PhoneReconModule,
     DnsReconModule,
     SubdomainFinderModule,
+    PassiveDnsModule,
+    WaybackModule,
+    DocumentMetadataModule,
     IpIntelligenceModule,
     ShodanInternetDbModule,
     WhoisLookupModule,
     TlsAnalyzerModule,
     HttpFingerprintModule,
     SoftwareIntelModule,
+    WebReconModule,
+    CloudStorageModule,
     # Optional: enabled only when their API key is configured
     VirusTotalModule,
     HibpModule,
     ShodanHostModule,
+    CodeLeaksModule,
 ]
 
 

@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.10.0] — Phase 10: Deep recon
+
+### Added
+- **Username hunting across 127 platforms** (from 35), with signatures moved to data
+  (`argus/data/platforms.json`, Sherlock-style) and operator extensions via `ARGUS_EXTRA_PLATFORMS_FILE`.
+  **Self-calibration**: every hit is re-checked with a random unregistered handle; sites that claim
+  it exists are discarded for the scan and listed as unreliable. Invalid handles for a site are skipped.
+- `argus --check-platforms [--platforms-report FILE]` verifies every signature (known account found,
+  random one not), and a weekly GitHub Actions workflow publishes the results.
+- New collectors: `wayback` (Internet Archive), `document_metadata` (FOCA-style author/software/company
+  extraction from archived PDFs and Office files), `passive_dns` (five passive datasets with
+  provenance), `github_org` (organisation verified against the domain, public members), `code_leaks`
+  (GitHub code search with secret detection; needs `ARGUS_GITHUB_TOKEN`), `pgp_keyserver` (names and
+  linked addresses), `web_recon` (active: security.txt, robots.txt, content-verified exposed files,
+  published emails/phones) and `cloud_storage` (active: S3/GCS bucket discovery and public listing).
+- New `URL` entity type (STIX `url`, ATT&CK T1594) and technique T1595.003 *Wordlist Scanning*.
+- **Corroboration**: an entity confirmed by several modules records its `sources` and its confidence
+  rises (noisy-OR, capped at 0.99).
+- **Passive-only scans** (`passive_only`, UI checkbox, `--passive-only`): modules that contact the
+  target's own systems are skipped. Monitors remember the setting (migration `0003`).
+- Attack paths: `leaked_secret_in_code`, `exposed_sensitive_file` (live vs. archived),
+  `public_cloud_storage`, `staff_enumeration` (14 rules). Risk flags for each.
+- Identity resolution learns the organisation's **email format** and predicts likely work addresses
+  for staff found without one (marked *inferred*); switchboard numbers and team inboxes are listed as
+  public contact points, not people.
+- UI: detail panels for leaked secrets, exposed files, archived copies, document metadata, cloud
+  storage and a "Deep recon" summary; source provenance on every node; email-format card on People.
+- `docs/explained/10-deep-recon.md`.
+
+### Security
+- Untrusted XML in documents is parsed with `defusedxml` (no DTDs/entities); downloads and zip
+  members are size-capped. Secrets are never stored, only a 4-character preview and length;
+  credential values in archived URLs and `.env` files are redacted.
+
+### Fixed
+- An organisation's GitHub account no longer merges all its members into one person.
+- NPM and PyPI signatures: NPM now uses the registry API (the website is behind a bot challenge);
+  PyPI requires profile-only page text (its challenge page answered 200 for any username).
+
 ## [1.9.0] — Phase 9: People & software intelligence
 
 ### Added

@@ -50,6 +50,7 @@ export function openNewInvestigation({ target = "", type = "", watch = false } =
   $("#new-type").value = ["domain", "ip_address", "email", "username", "phone"].includes(type) ? type : "";
   try { $("#new-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch { /* ignore */ }
   $("#new-authorized").checked = false;
+  $("#new-passive").checked = false;
   $("#new-watch").checked = watch;
   $("#new-watch").dispatchEvent(new Event("change"));
   $("#new-error").textContent = "";
@@ -67,7 +68,7 @@ async function submitNew(e) {
   if (!$("#new-authorized").checked) { error.textContent = "Please confirm you're authorised to investigate this target."; return; }
   try { sessionStorage.setItem("argus_last_purpose", purpose); } catch { /* ignore */ }
 
-  const body = { target, target_type: $("#new-type").value || null, max_depth: Number($("#new-depth").value), purpose, authorized: true };
+  const body = { target, target_type: $("#new-type").value || null, max_depth: Number($("#new-depth").value), passive_only: $("#new-passive").checked, purpose, authorized: true };
   const submit = $("#new-submit");
   submit.disabled = true;
   try {

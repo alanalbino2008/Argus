@@ -131,6 +131,11 @@ TECHNIQUES: dict[str, Technique] = {
         ),
         _T("T1595", "Active Scanning", "Monitor perimeter logs for scanning; rate-limit and alert on probing."),
         _T(
+            "T1595.003",
+            "Wordlist Scanning",
+            "Never deploy .git, .env, backups or status pages to web roots; block them at the web server and WAF.",
+        ),
+        _T(
             "T1596",
             "Search Open Technical Databases",
             "Assume technical databases are public; audit your footprint in them regularly.",
@@ -185,6 +190,7 @@ ENTITY_TECHNIQUES: dict[EntityType, tuple[str, ...]] = {
     EntityType.PORT: ("T1596.005",),
     EntityType.VULNERABILITY: ("T1596.005",),
     EntityType.BREACH: ("T1589.001",),
+    EntityType.URL: ("T1594",),
 }
 
 MAX_EXAMPLES = 5

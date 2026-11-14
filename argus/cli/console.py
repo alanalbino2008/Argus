@@ -66,6 +66,7 @@ async def run_cli_scan(
     export_json: str | None = None,
     export_csv: str | None = None,
     allow_private: bool = False,
+    passive_only: bool = False,
 ):
     """Run an investigation directly from the terminal with real-time Rich UI."""
     console.print(BANNER)
@@ -102,6 +103,7 @@ async def run_cli_scan(
         concurrency_limit=15,
         timeout_seconds=10.0,
         allow_private_targets=allow_private,
+        passive_only=passive_only,
     )
 
     engine = ArgusEngine(config)
@@ -219,6 +221,34 @@ async def create_api_key_cli(name: str, role: str) -> None:
     )
 
 
+async def check_platforms_cli() -> dict:
+    """Verify every username-platform signature against live sites (needs internet access)."""
+    import aiohttp
+
+    from argus.core.http import HttpClient
+    from argus.modules.identity.username_hunter import get_platforms, verify_platforms
+    from argus.security.network import GuardedResolver, configured_proxy_hosts
+
+    config = ScanConfig(target="platform-check", target_type=EntityType.USERNAME, timeout_seconds=15.0)
+    connector = aiohttp.TCPConnector(limit=40, resolver=GuardedResolver(trusted_hosts=configured_proxy_hosts()))
+    async with aiohttp.ClientSession(connector=connector, trust_env=True) as raw:
+        rows = await verify_platforms(get_platforms(), HttpClient(raw, max_retries=1), config)
+    table = Table(title="Username platform signatures", show_lines=False)
+    for column in ("Platform", "Category", "Known account", "Status"):
+        table.add_column(column)
+    colours = {"ok": "green", "false_negative": "yellow", "false_positive": "red", "error": "magenta"}
+    for r in rows:
+        table.add_row(
+            r["name"], r["category"], r.get("known") or "-", f"[{colours.get(r['status'], 'white')}]{r['status']}"
+        )
+    console.print(table)
+    counts = {
+        s: sum(r["status"] == s for r in rows) for s in ("ok", "false_negative", "false_positive", "error", "untested")
+    }
+    console.print(" · ".join(f"{k}: {v}" for k, v in counts.items()))
+    return {"summary": counts, "platforms": rows}
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -248,6 +278,17 @@ def cli_entrypoint():
         help="Load the built-in fictional demo investigation into the database",
     )
     parser.add_argument(
+        "--passive-only",
+        action="store_true",
+        help="Skip modules that contact the target's own systems (bug bounty programmes that forbid active testing)",
+    )
+    parser.add_argument(
+        "--check-platforms",
+        action="store_true",
+        help="Verify every username-platform signature against live sites, then exit",
+    )
+    parser.add_argument("--platforms-report", metavar="FILE", help="With --check-platforms: write a JSON report")
+    parser.add_argument(
         "--role",
         choices=["viewer", "analyst", "admin"],
         default="analyst",
@@ -255,6 +296,15 @@ def cli_entrypoint():
     )
 
     args = parser.parse_args()
+
+    if args.check_platforms:
+        report = asyncio.run(check_platforms_cli())
+        if args.platforms_report:
+            import json
+            from pathlib import Path
+
+            Path(args.platforms_report).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        return
 
     if args.load_demo:
         asyncio.run(load_demo_cli())
@@ -288,6 +338,7 @@ def cli_entrypoint():
             export_json=args.export_json,
             export_csv=args.export_csv,
             allow_private=args.allow_private,
+            passive_only=args.passive_only,
         )
     )
 

@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, event
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, event, false
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -113,6 +113,7 @@ class MonitorRow(Base):
     target: Mapped[str] = mapped_column(String(512))
     target_type: Mapped[str] = mapped_column(String(32))
     max_depth: Mapped[int] = mapped_column(Integer, default=2)
+    passive_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     interval_hours: Mapped[int] = mapped_column(Integer)
     purpose: Mapped[str] = mapped_column(String(500))
     created_by: Mapped[str] = mapped_column(String(128))

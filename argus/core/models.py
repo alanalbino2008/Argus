@@ -34,6 +34,7 @@ class EntityType(str, Enum):
     PORT = "port"
     BREACH = "breach"
     LOCATION = "location"
+    URL = "url"
     GENERIC = "generic"
 
 
@@ -163,6 +164,10 @@ class ScanConfig(BaseModel):
     )
     max_entities: int = Field(
         default=2000, ge=1, le=100000, description="Safety cap on total graph nodes per investigation"
+    )
+    passive_only: bool = Field(
+        default=False,
+        description="Skip modules that contact the target's own systems (for programmes that forbid active testing)",
     )
     allow_private_targets: bool = Field(
         default=False, description="Permit connections to private/internal networks (authorised internal tests only)"

@@ -44,6 +44,10 @@ FOLLOW_ON: dict[str, tuple[str, str]] = {
     "T1557": ("Adversary-in-the-Middle", "Credential Access"),
     "T1584": ("Compromise Infrastructure", "Resource Development"),
     "T1584.001": ("Compromise Infrastructure: Domains", "Resource Development"),
+    "T1552.001": ("Unsecured Credentials: Credentials In Files", "Credential Access"),
+    "T1530": ("Data from Cloud Storage", "Collection"),
+    "T1110.003": ("Brute Force: Password Spraying", "Credential Access"),
+    "T1213": ("Data from Information Repositories", "Collection"),
 }
 
 RISKY_PORTS: dict[int, tuple[str, int, str]] = {
@@ -551,6 +555,155 @@ def _end_of_life_software(view: _GraphView, seed: Entity | None) -> Iterable[_Dr
         )
 
 
+def _url_hosts(view: _GraphView, url: Entity) -> list[Entity]:
+    return view.neighbors(url, EntityType.DOMAIN, EntityType.SUBDOMAIN)
+
+
+def _leaked_secrets(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    for url in view.of_type(EntityType.URL):
+        secrets = url.metadata.get("secrets") or []
+        if url.metadata.get("category") != "code" or not secrets:
+            continue
+        kinds = sorted({s["type"] for s in secrets})
+        repo = url.metadata.get("repository") or url.label
+        yield _Draft(
+            rule="leaked_secret_in_code",
+            anchor=url,
+            title=f"Credentials leaked in public code ({', '.join(kinds[:2])})",
+            likelihood=0.85,
+            impact=5,
+            narrative=(
+                f"The public repository {repo} mentions the organisation's domain and contains "
+                f"{len(secrets)} credential(s): {', '.join(kinds)}. Bots scan public code for secrets within "
+                "minutes of a push, so any of these that are still valid should be assumed compromised."
+            ),
+            steps=[*((h, "organisation") for h in _url_hosts(view, url)), (url, "public code")],
+            techniques=["T1593.003", "T1552.001", "T1078"],
+            evidence=[f"{s['type']}: {s['preview']}" for s in secrets[:5]] + [f"File: {url.value}"],
+            remediation=[
+                "Revoke and rotate every exposed credential now - deleting the file does not remove it from Git history.",
+                "Review the provider's logs for use of the credential since the commit date.",
+                "Enable secret scanning / push protection on the organisation's repositories.",
+            ],
+        )
+
+
+def _exposed_sensitive_file(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    for url in view.of_type(EntityType.URL):
+        category = url.metadata.get("category")
+        live = category == "exposed_file"
+        if category not in ("exposed_file", "sensitive_file", "credential_in_url"):
+            continue
+        what = url.metadata.get("file") or {
+            "credential_in_url": "a URL carrying credentials",
+            "sensitive_file": "a sensitive file",
+        }.get(category, "a sensitive file")
+        critical = live and any(k in url.value for k in ("/.git/", "/.env", "/actuator/env"))
+        yield _Draft(
+            rule="exposed_sensitive_file",
+            anchor=url,
+            title=(
+                f"Exposed {what}: {url.label}"
+                if live
+                else f"Credentials in an archived URL: {url.label}"
+                if category == "credential_in_url"
+                else f"Sensitive file in the web archive: {url.label}"
+            ),
+            likelihood=0.9 if live else 0.35,
+            impact=5 if critical else 4 if live else 3,
+            narrative=(
+                f"{url.value} serves {what} to anyone on the internet right now"
+                + (" - from it an attacker can recover source code or configuration secrets." if critical else ".")
+                if live
+                else f"The Internet Archive holds a public copy of {url.value} ({what}), captured "
+                f"{url.metadata.get('archived_on') or 'in the past'}. Even if it is gone from the site, the archived copy "
+                "is public: any credentials in it must be treated as leaked."
+            ),
+            steps=[
+                *((h, "website") for h in _url_hosts(view, url)),
+                (url, "exposed file" if live else "archived copy"),
+            ],
+            techniques=["T1595.003" if live else "T1593", "T1552.001"],
+            evidence=[
+                str(url.metadata.get("evidence") or url.metadata.get("archive_url") or url.value),
+                "Confirmed live by content check" if live else "Archived - not verified as currently live",
+            ],
+            remediation=[
+                "Remove the file from the web root and block such paths at the web server/WAF.",
+                "Rotate any credentials or keys the file contained.",
+                *([] if live else ["Ask the Internet Archive to exclude the URL if it contains secrets."]),
+            ],
+        )
+
+
+def _public_cloud_storage(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    for url in view.of_type(EntityType.URL):
+        md = url.metadata
+        if md.get("category") != "cloud_storage" or not md.get("public_listing"):
+            continue
+        keys = md.get("sample_keys") or []
+        yield _Draft(
+            rule="public_cloud_storage",
+            anchor=url,
+            title=f"Publicly listable cloud storage: {md.get('bucket')}",
+            likelihood=0.7,
+            impact=5,
+            narrative=(
+                f"The {md.get('provider')} bucket '{md.get('bucket')}' matches the organisation's name and anyone can "
+                "list its contents. Misconfigured buckets are a leading cause of large data leaks. Ownership is "
+                "inferred from the name, so confirm it - the file names below usually settle it."
+            ),
+            steps=[*((h, "organisation") for h in view.neighbors(url, EntityType.DOMAIN)), (url, "public bucket")],
+            techniques=["T1593", "T1530"],
+            evidence=[
+                f"Listed objects: {', '.join(keys[:5])}" if keys else "Bucket listing is public",
+                md.get("ownership", ""),
+            ],
+            remediation=[
+                "If the bucket is yours: block public access at the account level and review what was exposed.",
+                "Enable access logging and check who downloaded what.",
+                "If it is not yours: no action, but watch for look-alike buckets used in phishing.",
+            ],
+        )
+
+
+def _staff_enumeration(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    """Internal usernames and staff names collected from documents, GitHub and PGP enable password spraying."""
+    sources = ("document_metadata", "github_org", "pgp_keyserver")
+    staff = [
+        e for e in view.of_type(EntityType.USERNAME, EntityType.PERSON)
+        if any(s in (e.metadata.get("sources") or [e.source_module]) for s in sources)
+    ]  # fmt: skip
+    internal = [e for e in staff if e.type == EntityType.USERNAME and e.source_module == "document_metadata"]
+    if len(staff) < 3 or seed is None:
+        return
+    yield _Draft(
+        rule="staff_enumeration",
+        anchor=seed,
+        title=f"{len(staff)} staff identities harvested - enough to start password spraying",
+        likelihood=0.5 if internal else 0.4,
+        impact=3,
+        narrative=(
+            f"Public sources reveal {len(staff)} staff names and handles"
+            + (
+                f", including internal account names from document metadata ({', '.join(e.value for e in internal[:3])})"
+                if internal
+                else ""
+            )
+            + ". Attackers turn such lists into login names and try one common password against each account, "
+            "which slips under per-account lockout."
+        ),
+        steps=[(seed, "organisation"), *((e, "staff identity") for e in staff[:5])],
+        techniques=["T1589.003", "T1110.003", "T1078"],
+        evidence=[f"{e.value} (from {e.source_module.replace('_', ' ')})" for e in staff[:6]],
+        remediation=[
+            "Enforce MFA on every internet-facing login (VPN, email, SSO).",
+            "Detect password spraying: many accounts, few attempts each, from the same sources.",
+            "Strip author metadata from documents before publishing them.",
+        ],
+    )
+
+
 RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _credential_exposure,
     _spoofable_domain,
@@ -562,6 +715,10 @@ RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _bad_reputation,
     _web_information_leak,
     _end_of_life_software,
+    _leaked_secrets,
+    _exposed_sensitive_file,
+    _public_cloud_storage,
+    _staff_enumeration,
 ]
 
 

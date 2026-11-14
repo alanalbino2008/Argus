@@ -27,7 +27,9 @@ Every link is graded, because the same handle on two sites is a lead, not proof:
 from __future__ import annotations
 
 import hashlib
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
+from collections.abc import Callable
 from typing import Any
 
 from argus.core.graph import IntelligenceGraph
@@ -92,9 +94,53 @@ def is_role_mailbox(value: str) -> bool:
     return value.split("@", 1)[0].lower().strip() in ROLE_MAILBOXES
 
 
+# Organisation-centric collectors: a lone handle they found is a staff lead, not noise.
+STAFF_SOURCES = {"document_metadata", "github_org", "pgp_keyserver"}
+
+# Corporate address formats, keyed by the name analysts use for them.
+EMAIL_FORMATS: dict[str, Callable[[str, str], str]] = {
+    "first.last": lambda f, last: f"{f}.{last}",
+    "firstlast": lambda f, last: f"{f}{last}",
+    "flast": lambda f, last: f"{f[0]}{last}",
+    "f.last": lambda f, last: f"{f[0]}.{last}",
+    "first_last": lambda f, last: f"{f}_{last}",
+    "first-last": lambda f, last: f"{f}-{last}",
+    "last.first": lambda f, last: f"{last}.{f}",
+    "firstl": lambda f, last: f"{f}{last[0]}",
+    "first": lambda f, last: f,
+    "last": lambda f, last: last,
+}
+
+
+def name_parts(name: str) -> tuple[str, str] | None:
+    words = [re.sub(r"[^a-z]", "", w.lower()) for w in name.split()]
+    words = [w for w in words if w]
+    return (words[0], words[-1]) if len(words) >= 2 else None
+
+
+def infer_email_format(pairs: list[tuple[str, str]], domain: str) -> dict[str, Any] | None:
+    """Learn the organisation's address format from known (name, email) pairs on its domain."""
+    votes: Counter[str] = Counter()
+    for name, email in pairs:
+        parts = name_parts(name)
+        local, _, host = email.lower().partition("@")
+        if not parts or host != domain:
+            continue
+        for fmt, build in EMAIL_FORMATS.items():
+            if build(*parts) == local:
+                votes[fmt] += 1
+                break  # most specific format wins (dict order)
+    if not votes:
+        return None
+    fmt, count = votes.most_common(1)[0]
+    return {"pattern": fmt, "domain": domain, "example": f"{fmt}@{domain}", "evidence": count}
+
+
 def _is_bridge(entity: Entity) -> bool:
     if entity.type not in IDENTITY_TYPES:
         return False
+    if entity.metadata.get("account_type") == "organization":
+        return False  # an organisation's account links many people; it must never merge them
     return not (entity.type in (EntityType.EMAIL, EntityType.USERNAME) and is_role_mailbox(entity.value))
 
 
@@ -167,10 +213,31 @@ def resolve_people(graph: IntelligenceGraph, paths: list[dict[str, Any]] | None 
             groups[uf.find(entity.id)].append(entity)
 
     personas = [_dossier(members, entities, adjacency, paths or []) for members in groups.values()]
-    # A lone handle that led nowhere is noise; keep everything else.
+    # A lone handle that led nowhere is noise (unless an organisation-centric source found it).
     personas = [p for p in personas if p["summary"]["fragments"] > 1 or not p["lone_username"]]
+    # A phone number on its own (e.g. a switchboard on the website) is a contact point, not a person.
+    public_phones = sorted(p["phones"][0] for p in personas if p["summary"]["fragments"] == 1 and p["phones"])
+    personas = [p for p in personas if not (p["summary"]["fragments"] == 1 and p["phones"])]
     for p in personas:
         del p["lone_username"]
+
+    # Email format: learn it from staff whose name and work address are both known, then predict.
+    seed = next((e for e in entities.values() if e.depth == 0), None)
+    org_domain = seed.value.lower().removeprefix("www.") if seed and seed.type == EntityType.DOMAIN else None
+    email_format = None
+    if org_domain:
+        pairs = [(n, e) for p in personas for n in p["names"] for e in p["emails"]]
+        email_format = infer_email_format(pairs, org_domain)
+    for p in personas:
+        p["likely_email"] = None
+        if not email_format or any(e.endswith("@" + org_domain) for e in p["emails"] if org_domain):
+            continue
+        parts = next((name_parts(n) for n in p["names"] if name_parts(n)), None)
+        if parts and p["tied_to_target"]:
+            local = EMAIL_FORMATS[email_format["pattern"]](*parts)
+            p["likely_email"] = {"address": f"{local}@{org_domain}", "basis": email_format["pattern"], "inferred": True}
+    for p in personas:
+        del p["tied_to_target"]
     personas.sort(key=lambda p: (-p["risk"], -p["summary"]["fragments"], p["name"].lower()))
 
     role_mailboxes = sorted(
@@ -179,6 +246,8 @@ def resolve_people(graph: IntelligenceGraph, paths: list[dict[str, Any]] | None 
     return {
         "personas": personas,
         "role_mailboxes": role_mailboxes,
+        "email_format": email_format,
+        "public_phones": public_phones,
         "summary": {
             "personas": len(personas),
             "accounts": sum(len(p["accounts"]) for p in personas),
@@ -336,5 +405,15 @@ def _dossier(
         "attack_paths": related_paths,
         "entity_ids": sorted(member_ids | attribute_ids),
         "summary": {"fragments": len(members), "accounts": len(accounts), "breaches": len(breach_rows)},
-        "lone_username": len(members) == 1 and members[0].type == EntityType.USERNAME,
+        "lone_username": len(members) == 1
+        and members[0].type == EntityType.USERNAME
+        and not (set(members[0].metadata.get("sources") or [members[0].source_module]) & STAFF_SOURCES),
+        # Linked to the target's own assets (documents, GitHub org, the domain itself)?
+        "tied_to_target": any(
+            entities[n].depth == 0
+            or entities[n].type in (EntityType.URL, EntityType.ORGANIZATION)
+            or entities[n].metadata.get("account_type") == "organization"
+            for m in members
+            for n in adjacency.get(m.id, ())
+        ),
     }

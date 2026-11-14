@@ -196,7 +196,7 @@ def test_paths_are_ranked_deduplicated_and_summarised():
     scores = [p["score"] for p in result["paths"]]
     assert scores == sorted(scores, reverse=True)
     assert len({p["id"] for p in result["paths"]}) == len(result["paths"])
-    assert result["summary"]["total"] == 2 and result["summary"]["rules_evaluated"] == 10
+    assert result["summary"]["total"] == 2 and result["summary"]["rules_evaluated"] == 14
     assert find_attack_paths(g)["paths"] == result["paths"]  # deterministic
 
 
@@ -264,3 +264,85 @@ def test_end_of_life_software_needs_an_exposed_host():
         links=[("sub", "p")],
     )
     assert "end_of_life_software" not in rules(supported)
+
+
+# ------------------------------------------------------------- deep recon (Phase 10)
+def test_leaked_secret_in_code_is_critical_and_never_shows_the_secret():
+    secrets = [{"type": "AWS access key", "preview": "AKIA… (20 chars)"}]
+    g, _ = build(
+        entities=[
+            ("code", E.URL, "https://github.example/x/y/blob/main/a.sh", {"category": "code", "secrets": secrets})
+        ],
+        links=[("seed", "code")],
+    )
+    path = only(g, "leaked_secret_in_code")
+    assert path["severity"] == "critical" and [t["id"] for t in path["techniques"]] == [
+        "T1593.003",
+        "T1552.001",
+        "T1078",
+    ]
+    assert path["evidence"][0] == "AWS access key: AKIA… (20 chars)"
+    clean, _ = build(entities=[("code", E.URL, "https://github.example/x", {"category": "code", "secrets": []})])
+    assert "leaked_secret_in_code" not in rules(clean)
+
+
+def test_live_exposed_file_outranks_archived_copy():
+    g, _ = build(
+        entities=[
+            (
+                "git",
+                E.URL,
+                "https://acme.com/.git/HEAD",
+                {"category": "exposed_file", "file": "Git repository metadata"},
+            ),
+            ("old", E.URL, "https://acme.com/db.sql", {"category": "sensitive_file", "archived_on": "2020-01-01"}),
+        ],
+        links=[("seed", "git"), ("seed", "old")],
+    )
+    paths = [p for p in find_attack_paths(g)["paths"] if p["rule"] == "exposed_sensitive_file"]
+    live, archived = paths
+    assert live["title"].startswith("Exposed Git repository metadata") and live["score"] == 90
+    assert archived["title"].startswith("Sensitive file in the web archive") and archived["score"] < live["score"]
+    assert "2020-01-01" in archived["narrative"]
+
+
+def test_only_public_buckets_become_paths():
+    g, _ = build(
+        entities=[
+            (
+                "pub",
+                E.URL,
+                "https://acme-backups.s3.amazonaws.com/",
+                {
+                    "category": "cloud_storage",
+                    "bucket": "acme-backups",
+                    "provider": "Amazon S3",
+                    "public_listing": True,
+                    "sample_keys": ["db.sql.gz"],
+                },
+            ),
+            (
+                "priv",
+                E.URL,
+                "https://acme-prod.s3.amazonaws.com/",
+                {"category": "cloud_storage", "bucket": "acme-prod", "provider": "Amazon S3", "public_listing": False},
+            ),
+        ],
+        links=[("seed", "pub"), ("seed", "priv")],
+    )
+    paths = [p for p in find_attack_paths(g)["paths"] if p["rule"] == "public_cloud_storage"]
+    assert [p["title"] for p in paths] == ["Publicly listable cloud storage: acme-backups"]
+    assert "db.sql.gz" in paths[0]["evidence"][0]
+
+
+def test_staff_enumeration_needs_three_harvested_identities():
+    def staff(n):
+        g = IntelligenceGraph("t")
+        g.add_entity(Entity.create(E.DOMAIN, "acme.com", depth=0), is_seed=True)
+        for i in range(n):
+            g.add_entity(Entity.create(E.USERNAME, f"user{i}", depth=2, source_module="document_metadata"))
+        return g
+
+    assert "staff_enumeration" not in rules(staff(2))
+    path = only(staff(3), "staff_enumeration")
+    assert "internal account names" in path["narrative"] and path["techniques"][1]["id"] == "T1110.003"

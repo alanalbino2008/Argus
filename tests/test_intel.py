@@ -68,7 +68,8 @@ def test_every_module_declares_techniques_and_active_flag():
     modules = get_default_modules()
     assert all(m.attack_techniques for m in modules.values())
     active = {n for n, m in modules.items() if m.active}
-    assert active == {"tls_analyzer", "http_fingerprint"}  # only these touch the target's servers
+    # Only these touch the target's own systems (or guess its cloud storage); passive-only scans skip them.
+    assert active == {"tls_analyzer", "http_fingerprint", "web_recon", "cloud_storage"}
 
 
 def test_mapping_classifies_findings_but_not_the_seed():

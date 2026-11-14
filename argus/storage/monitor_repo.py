@@ -33,6 +33,7 @@ def _monitor(row: MonitorRow) -> dict[str, Any]:
         "target": row.target,
         "target_type": row.target_type,
         "max_depth": row.max_depth,
+        "passive_only": bool(row.passive_only),
         "interval_hours": row.interval_hours,
         "purpose": row.purpose,
         "created_by": row.created_by,
@@ -75,6 +76,7 @@ class MonitorRepository:
         purpose: str,
         created_by: str,
         run_now: bool = True,
+        passive_only: bool = False,
     ) -> dict[str, Any]:
         now = _now()
         row = MonitorRow(
@@ -82,6 +84,7 @@ class MonitorRepository:
             target=target,
             target_type=target_type,
             max_depth=max_depth,
+            passive_only=passive_only,
             interval_hours=interval_hours,
             purpose=purpose,
             created_by=created_by,

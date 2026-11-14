@@ -74,6 +74,7 @@ class MonitorScheduler:
             target=monitor["target"],
             target_type=target_type,
             max_depth=monitor["max_depth"],
+            passive_only=bool(monitor.get("passive_only")),
             allow_private_targets=self.settings.allow_private_targets,
         )
         try:
