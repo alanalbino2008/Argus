@@ -79,6 +79,34 @@ default (see *Security* below), so the database's range must be allowed explicit
 * **Rotate the bootstrap key**: create personal keys in *Settings → API keys*, then revoke the
   bootstrap key there.
 
+### Single sign-on
+
+Register Argus as a **confidential web application** (OpenID Connect, authorization code flow)
+at your identity provider, with redirect URI **`https://<your Argus host>/auth/oidc/callback`**,
+then:
+
+```bash
+kubectl -n argus create secret generic argus-secrets --from-literal=oidc-client-secret='<client secret>'
+helm upgrade argus deploy/helm/argus -n argus --reuse-values \
+  --set secrets.existingSecret=argus-secrets \
+  --set sso.enabled=true --set sso.issuer=<issuer> --set sso.clientId=<client id> \
+  --set sso.displayName=<label> --set 'sso.allowedDomains={acme.com}' --set 'sso.adminGroups={argus-admins}'
+```
+
+| Provider | Issuer | Notes |
+|---|---|---|
+| Google Workspace | `https://accounts.google.com` | No groups claim: use `adminEmails` and roles in *Settings*. `allowedDomains` matches the Workspace domain (`hd`). |
+| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0` | Set `requireVerifiedEmail: false` (Entra omits `email_verified`). Add a *groups* or *app roles* claim to the ID token; set `roleClaim: roles` for app roles. |
+| Okta | `https://<org>.okta.com` (or a custom authorization server) | Add a `groups` claim to the ID token. |
+| Keycloak | `https://<host>/realms/<realm>` | Add a *Group Membership* mapper (`full.path` off). A Keycloak inside your network also needs `networkPolicy.internalEgress`. |
+
+* Roles: highest of `adminGroups` / `analystGroups` / `viewerGroups` found in `roleClaim`; otherwise
+  `defaultRole` (`none` refuses the user). When group mapping is configured the provider is the source
+  of truth and roles are refreshed at every sign-in; otherwise administrators set roles in *Settings*.
+* `adminEmails` grants admin to named people — use it to bootstrap the first administrators.
+* Sessions last `sessionTtlHours` (8 h). Disabling a user in *Settings* signs them out everywhere at once.
+* API keys keep working for automation and break-glass access.
+
 ### Monitoring
 
 ```bash

@@ -59,10 +59,30 @@ export const api = {
   del: (path) => request(path, { method: "DELETE" }),
 };
 
-/** Check a key without storing it (sign-in). */
+/** Check a key without storing it (sign-in); with no key, the session cookie (SSO) is used. */
 export async function whoAmI(key = currentKey()) {
   const res = await fetch("/api/me", { headers: key ? { Authorization: `Bearer ${key}` } : {} });
   return res.ok ? res.json() : null;
+}
+
+/** Which sign-in methods the server offers (public). */
+export async function authConfig() {
+  try {
+    const res = await fetch("/api/auth/config");
+    return res.ok ? await res.json() : { sso: { enabled: false }, api_keys: true };
+  } catch {
+    return { sso: { enabled: false }, api_keys: true };
+  }
+}
+
+/** End an SSO session. Returns the provider's sign-out URL if it offers single logout. */
+export async function endSession() {
+  try {
+    const res = await fetch("/api/auth/logout", { method: "POST" });
+    return res.ok ? (await res.json()).end_session_url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Plain <a href> links cannot carry the Authorization header, so download via fetch. */

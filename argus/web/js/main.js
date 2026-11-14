@@ -1,6 +1,6 @@
 // Argus web app entry point: sign-in, routing, top bar, shortcuts and cross-view actions.
 
-import { api, clearKey, download, enc, storeKey, whoAmI } from "./api.js";
+import { api, authConfig, clearKey, download, enc, endSession, storeKey, whoAmI } from "./api.js";
 import { $, $$, closeTopModal, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
 import * as graph from "./graph.js";
 import { icon, installSprite } from "./icons.js";
@@ -154,10 +154,42 @@ function setupShortcuts() {
 }
 
 // ------------------------------------------------------------------ auth & boot
+const SSO_ERRORS = {
+  expired: "That sign-in link expired or was already used. Please try again.",
+  provider_denied: "Sign-in was cancelled or refused by your identity provider.",
+  unverified_email: "Your identity provider did not confirm your email address.",
+  domain_not_allowed: "Your account's email domain is not allowed to use this Argus.",
+  no_role: "Your account has no Argus role yet — ask an administrator to grant access.",
+  disabled: "Your Argus account has been disabled by an administrator.",
+  invalid_token: "The identity provider's response could not be verified. Please try again.",
+  token_exchange_failed: "Sign-in could not be completed with the identity provider.",
+  provider_unreachable: "The identity provider could not be reached. Try again shortly.",
+  provider_misconfigured: "Single sign-on is misconfigured. Contact your administrator.",
+};
+
+async function setupSignInOptions() {
+  const config = await authConfig();
+  if (!config.sso?.enabled) return;
+  $("#signin-sso").hidden = false;
+  $("#signin-sso-name").textContent = `Continue with ${config.sso.name || "single sign-on"}`;
+  $("#signin-key-hint").textContent = "For automation and break-glass access.";
+  const returnTo = location.pathname + location.search.replace(/[?&]sso_error=[^&]*/, "") + location.hash;
+  $("#signin-sso-link").href = `/auth/oidc/login?return_to=${encodeURIComponent(returnTo || "/")}`;
+}
+
+function takeSsoError() {
+  const url = new URL(location.href);
+  const code = url.searchParams.get("sso_error");
+  if (!code) return "";
+  url.searchParams.delete("sso_error");
+  history.replaceState(null, "", url);
+  return SSO_ERRORS[code] || "Single sign-on failed. Please try again.";
+}
+
 function showSignIn(message = "") {
   $("#signin").hidden = false;
   $("#signin-error").textContent = message;
-  setTimeout(() => $("#signin-key").focus(), 50);
+  setTimeout(() => ($("#signin-sso").hidden ? $("#signin-key") : $("#signin-sso-link")).focus(), 50);
 }
 
 async function enterApp(me) {
@@ -187,10 +219,18 @@ function setupAuth() {
     $("#signin-key").value = "";
     await enterApp(me);
   });
-  $("#btn-user").addEventListener("click", () => {
+  $("#btn-user").addEventListener("click", async () => {
+    const viaSession = state.me?.auth === "session";
     clearKey();
     clearInterval(pollTimer);
     closeInvestigation();
+    if (viaSession) {
+      const providerSignOut = await endSession();
+      if (providerSignOut) {
+        location.href = providerSignOut; // single logout at the identity provider
+        return;
+      }
+    }
     showSignIn("You've been signed out.");
   });
   window.addEventListener("argus:auth-required", () => {
@@ -227,9 +267,11 @@ async function boot() {
   renderThemeButton();
   renderContext();
 
+  const ssoError = takeSsoError();
+  await setupSignInOptions();
   const me = await whoAmI();
   if (me) await enterApp(me);
-  else showSignIn();
+  else showSignIn(ssoError);
 }
 
 boot();

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -21,6 +22,30 @@ _auth_failure_audit = SlidingWindowLimiter(limit=10, window=60)
 def client_ip(request: Request) -> str | None:
     # Behind a reverse proxy, run uvicorn with --proxy-headers so this is the real client.
     return request.client.host if request.client else None
+
+
+SESSION_COOKIE = "argus_session"
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def public_base_url(request: Request) -> str:
+    """The URL users reach Argus at (ARGUS_PUBLIC_URL, else derived from the request)."""
+    configured = request.app.state.settings.public_url
+    return (configured or str(request.base_url)).rstrip("/")
+
+
+def _same_origin(request: Request) -> bool:
+    """CSRF defence for cookie-authenticated writes: the request must come from our own pages.
+
+    Browsers always send Origin on cross-origin POSTs (and on same-origin ones in modern
+    browsers); a missing Origin falls back to Referer. API-key callers are not affected.
+    """
+    source = request.headers.get("origin") or request.headers.get("referer")
+    if not source:
+        return False
+    expected = urlsplit(public_base_url(request))
+    got = urlsplit(source)
+    return (got.scheme, got.netloc) == (expected.scheme, expected.netloc)
 
 
 def _extract_key(request: Request) -> str | None:
@@ -50,6 +75,9 @@ async def get_principal(request: Request) -> Principal:
     if not request.app.state.settings.auth_enabled:
         return ANONYMOUS_ADMIN
     key = _extract_key(request)
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if not key and cookie:
+        return await _session_principal(request, cookie)
     keys: ApiKeyRepository = request.app.state.keys
     principal = await keys.authenticate(key) if key else None
     if principal is None:
@@ -72,7 +100,27 @@ async def get_principal(request: Request) -> Principal:
             detail="Valid API key required (Authorization: Bearer <key> or X-API-Key header)",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    request.state.auth_method = "api_key"
     return principal
+
+
+async def _session_principal(request: Request, token: str) -> Principal:
+    user = await request.app.state.users.resolve_session(token)
+    if user is None:
+        metrics.AUTH_FAILURES.labels("invalid_session").inc()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your session has ended - please sign in again",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if request.method in UNSAFE_METHODS and not _same_origin(request):
+        metrics.AUTH_FAILURES.labels("csrf").inc()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request refused")
+    request.state.auth_method = "session"
+    request.state.user = user
+    return Principal(
+        key_id=f"user:{user['id']}", name=user["email"] or user["name"] or user["id"], role=Role(user["role"])
+    )
 
 
 def require(role: Role):

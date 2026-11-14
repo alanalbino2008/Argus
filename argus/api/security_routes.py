@@ -17,9 +17,14 @@ class CreateKeyRequest(BaseModel):
 
 
 @router.get("/me")
-async def whoami(principal: Principal = Depends(get_principal)):
-    """Identity and role of the current API key."""
-    return {"key_id": principal.key_id, "name": principal.name, "role": principal.role.value}
+async def whoami(request: Request, principal: Principal = Depends(get_principal)):
+    """Identity and role of the caller, and how they signed in (api_key or session)."""
+    return {
+        "key_id": principal.key_id,
+        "name": principal.name,
+        "role": principal.role.value,
+        "auth": getattr(request.state, "auth_method", "api_key"),
+    }
 
 
 @router.post("/ws-ticket")

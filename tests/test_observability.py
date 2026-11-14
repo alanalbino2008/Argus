@@ -159,3 +159,14 @@ def test_alert_rules_only_use_real_metrics_and_are_documented():
         assert alert["annotations"]["summary"] and alert["annotations"]["description"]
         missing = _referenced_metrics(alert["expr"]) - metrics.metric_names()
         assert not missing, (alert["alert"], missing)
+
+
+def test_uvicorn_access_log_never_contains_query_strings():
+    logs.configure("text", "INFO")
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', ("1.2.3.4:5", "GET",
+        "/auth/oidc/callback?code=SECRET&state=abc", "1.1", 303), None,
+    )  # fmt: skip
+    for f in logging.getLogger("uvicorn.access").filters:
+        f.filter(record)
+    assert "SECRET" not in record.getMessage() and "/auth/oidc/callback HTTP/1.1" in record.getMessage()

@@ -32,6 +32,10 @@ spec:
               app.kubernetes.io/component: database
       ports: [{port: 5432, protocol: TCP}]
     {{- end }}
+    {{- range .Values.networkPolicy.internalEgress }}
+    - to: [{ipBlock: {cidr: {{ .cidr | quote }}}}]
+      ports: [{port: {{ .port | default 443 }}, protocol: TCP}]
+    {{- end }}
     {{- range .Values.networkPolicy.databaseCIDRs }}
     - to: [{ipBlock: {cidr: {{ . | quote }}}}]
       ports: [{port: 5432, protocol: TCP}]

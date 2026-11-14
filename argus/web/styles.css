@@ -436,6 +436,13 @@ details.more .more-body { margin-top: 10px; display: grid; grid-template-columns
 details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-height: 1.6; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* ---------------------------------------------------------------- sign-in */
+.sso-btn { width: 100%; justify-content: center; text-decoration: none; margin-top: 4px; }
+.sso-btn:hover { text-decoration: none; }
+.divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 6px; color: var(--text-3); font-size: 12.5px; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.select.sm { height: 30px; padding: 0 8px; font-size: 12.5px; width: auto; }
+
 /* ---------------------------------------------------------------- people */
 .persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
 .persona-card {

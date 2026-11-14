@@ -45,6 +45,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
+from argus.api.auth_routes import router as auth_router
 from argus.api.deps import audit, require
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
@@ -67,12 +68,14 @@ from argus.observability.middleware import ObservabilityMiddleware
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.headers import SecurityHeadersMiddleware
 from argus.security.network import validate_scan_target
+from argus.security.oidc import OidcProvider
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
+from argus.storage.user_repo import UserRepository
 
 logger = logging.getLogger("argus.api")
 
@@ -143,6 +146,8 @@ async def lifespan(app: FastAPI):
 
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
     app.state.keys = ApiKeyRepository(db)
+    app.state.users = UserRepository(db)
+    app.state.oidc = OidcProvider(settings) if settings.oidc_issuer and settings.oidc_client_id else None
     app.state.audit = AuditLog(db)
     app.state.ws_tickets = TicketStore(db, settings.ws_ticket_ttl_seconds)
     app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
@@ -255,6 +260,7 @@ if _cors_origins:
         allow_headers=["Authorization", "X-API-Key", "Content-Type"],
     )
 app.include_router(security_router)
+app.include_router(auth_router)
 app.include_router(monitor_router)
 
 VIEWER = Depends(require(Role.VIEWER))

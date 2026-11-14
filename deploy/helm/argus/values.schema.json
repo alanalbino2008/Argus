@@ -209,6 +209,25 @@
           "items": {
             "type": "string"
           }
+        },
+        "internalEgress": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "cidr"
+            ],
+            "properties": {
+              "cidr": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
+            }
+          }
         }
       }
     },
@@ -264,6 +283,82 @@
               "type": "string"
             }
           }
+        }
+      }
+    },
+    "publicUrl": {
+      "type": "string",
+      "pattern": "^(|https?://[^/]+.*)$"
+    },
+    "sso": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "issuer": {
+          "type": "string",
+          "pattern": "^(|https://.+|http://(localhost|127\\.0\\.0\\.1)(:\\d+)?(/.*)?)$"
+        },
+        "clientId": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "scopes": {
+          "type": "string",
+          "pattern": "(^|\\s)openid(\\s|$)"
+        },
+        "allowedDomains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requireVerifiedEmail": {
+          "type": "boolean"
+        },
+        "roleClaim": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adminGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "analystGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "viewerGroups": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "defaultRole": {
+          "enum": [
+            "viewer",
+            "analyst",
+            "none"
+          ]
+        },
+        "adminEmails": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sessionTtlHours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 720
         }
       }
     }

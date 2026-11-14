@@ -217,6 +217,11 @@ metadata endpoint. Replicas coordinate through PostgreSQL — scan ownership wit
 cancellation from any replica, live streaming of scans running elsewhere, shared WebSocket
 tickets, exactly-once scheduling and a concurrency-safe audit chain — so no sticky sessions or
 message broker are needed. Every push installs the chart on a real Kubernetes cluster in CI.
+**Single sign-on**: people sign in with the organisation's identity provider — Google Workspace,
+Microsoft Entra ID, Okta, Keycloak or any OpenID Connect provider — with roles mapped from its groups,
+an email-domain allow-list, secure server-side sessions and user management; API keys remain for
+automation ([`docs/explained/13-single-sign-on.md`](docs/explained/13-single-sign-on.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 12 unit-tested alert rules with runbooks and a Grafana dashboard —

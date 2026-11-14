@@ -61,6 +61,39 @@ class Settings(BaseSettings):
     monitor_poll_seconds: float = Field(
         default=60.0, ge=1, description="How often the scheduler checks for due monitors"
     )
+    # --- Single sign-on (OpenID Connect) ---------------------------------------------------
+    public_url: str | None = Field(
+        default=None,
+        description="External URL users open, e.g. https://argus.example.com (builds the OIDC redirect URI)",
+    )
+    oidc_issuer: str | None = Field(
+        default=None,
+        description="OIDC issuer, e.g. https://accounts.google.com or https://login.microsoftonline.com/<tenant>/v2.0",
+    )
+    oidc_client_id: str | None = Field(default=None, description="Client (application) id registered at the provider")
+    oidc_client_secret: SecretStr | None = Field(default=None, description="Client secret (confidential client)")
+    oidc_display_name: str = Field(default="Single sign-on", description="Button label, e.g. 'Microsoft' or 'Okta'")
+    oidc_scopes: str = Field(default="openid email profile", description="Requested scopes")
+    oidc_allowed_domains: list[str] = Field(
+        default_factory=list, description='Only these email domains may sign in, e.g. ["acme.com"] (empty = any)'
+    )
+    oidc_require_verified_email: bool = Field(
+        default=True, description="Reject identities whose provider does not assert email_verified=true"
+    )
+    oidc_role_claim: str = Field(default="groups", description="ID-token claim holding group/role names")
+    oidc_admin_groups: list[str] = Field(default_factory=list, description="Claim values that grant admin")
+    oidc_analyst_groups: list[str] = Field(default_factory=list, description="Claim values that grant analyst")
+    oidc_viewer_groups: list[str] = Field(default_factory=list, description="Claim values that grant viewer")
+    oidc_default_role: Literal["viewer", "analyst", "none"] = Field(
+        default="viewer",
+        description="Role for users matching no group ('none' = refuse them). Ignored for existing users "
+        "unless group mapping is configured.",
+    )
+    oidc_admin_emails: list[str] = Field(
+        default_factory=list, description="Emails always granted admin (bootstrap the first administrators)"
+    )
+    session_ttl_hours: float = Field(default=8.0, gt=0, le=24 * 30, description="Lifetime of a browser session")
+
     # --- Observability ---------------------------------------------------------------------
     log_format: Literal["text", "json"] = Field(
         default="text", description="'json' for one JSON object per line (log platforms); 'text' for humans"

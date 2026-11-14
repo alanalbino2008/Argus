@@ -13,6 +13,24 @@ data:
   ARGUS_LOG_FORMAT: {{ .Values.config.logFormat | quote }}
   ARGUS_LOG_LEVEL: {{ .Values.config.logLevel | upper | quote }}
   ARGUS_METRICS_ENABLED: {{ .Values.metrics.enabled | quote }}
+  {{- with (include "argus.publicUrl" .) }}
+  ARGUS_PUBLIC_URL: {{ . | quote }}
+  {{- end }}
+  {{- if .Values.sso.enabled }}
+  ARGUS_OIDC_ISSUER: {{ required "sso.issuer is required when sso.enabled" .Values.sso.issuer | quote }}
+  ARGUS_OIDC_CLIENT_ID: {{ required "sso.clientId is required when sso.enabled" .Values.sso.clientId | quote }}
+  ARGUS_OIDC_DISPLAY_NAME: {{ .Values.sso.displayName | quote }}
+  ARGUS_OIDC_SCOPES: {{ .Values.sso.scopes | quote }}
+  ARGUS_OIDC_ALLOWED_DOMAINS: {{ .Values.sso.allowedDomains | toJson | quote }}
+  ARGUS_OIDC_REQUIRE_VERIFIED_EMAIL: {{ .Values.sso.requireVerifiedEmail | quote }}
+  ARGUS_OIDC_ROLE_CLAIM: {{ .Values.sso.roleClaim | quote }}
+  ARGUS_OIDC_ADMIN_GROUPS: {{ .Values.sso.adminGroups | toJson | quote }}
+  ARGUS_OIDC_ANALYST_GROUPS: {{ .Values.sso.analystGroups | toJson | quote }}
+  ARGUS_OIDC_VIEWER_GROUPS: {{ .Values.sso.viewerGroups | toJson | quote }}
+  ARGUS_OIDC_DEFAULT_ROLE: {{ .Values.sso.defaultRole | quote }}
+  ARGUS_OIDC_ADMIN_EMAILS: {{ .Values.sso.adminEmails | toJson | quote }}
+  ARGUS_SESSION_TTL_HOURS: {{ .Values.sso.sessionTtlHours | quote }}
+  {{- end }}
   ARGUS_CORS_ORIGINS: {{ .Values.config.corsOrigins | toJson | quote }}
   {{- range $k, $v := .Values.config.extraEnv }}
   {{ $k }}: {{ $v | quote }}

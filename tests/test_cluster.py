@@ -249,3 +249,23 @@ async def test_cluster_lock_serialises_check_then_act_across_pods(pods):
 
     await asyncio.gather(*(bootstrap(db) for db in pods * 3))
     assert await ApiKeyRepository(pods[0]).count_active(R.ADMIN) == 1
+
+
+async def test_sso_login_and_session_work_across_pods(pods):
+    """The browser may hit pod A for /auth/oidc/login and pod B for the callback and later requests."""
+    from datetime import timedelta
+
+    from argus.storage.user_repo import UserRepository
+
+    a, b = pods
+    await UserRepository(a).start_login("state-1", "nonce-1", "verifier-1", "/#/people", timedelta(minutes=10))
+    assert (await UserRepository(b).finish_login("state-1"))["nonce"] == "nonce-1"
+    assert await UserRepository(a).finish_login("state-1") is None  # single use, cluster-wide
+    user = await UserRepository(b).upsert_from_login(
+        issuer="https://idp.example", subject="42", email="dana@acme.example", name="Dana", role="analyst",
+        role_from_idp=False,
+    )  # fmt: skip
+    token = await UserRepository(b).create_session(user["id"], timedelta(hours=1), None, None)
+    assert (await UserRepository(a).resolve_session(token))["email"] == "dana@acme.example"
+    await UserRepository(a).update(user["id"], disabled=True)  # an admin on pod A disables her...
+    assert await UserRepository(b).resolve_session(token) is None  # ...and pod B refuses her at once

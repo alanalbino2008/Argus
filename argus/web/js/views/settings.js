@@ -6,7 +6,7 @@ import { $, confirmDialog, copyText, formatDate, html, on, openModal, setHTML, t
 import { state } from "../state.js";
 
 let root;
-let data = { keys: null, audit: null, plugins: null, health: null, verify: null };
+let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null };
 
 export function initSettings(el) {
   root = el;
@@ -14,7 +14,12 @@ export function initSettings(el) {
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     try {
-      if (act === "revoke") {
+      if (act === "user-toggle") {
+        const disabling = btn.dataset.disabled !== "true";
+        if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
+        await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
+        toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "revoke") {
         const ok = await confirmDialog({ title: "Revoke this API key?", message: "Anything using it will lose access immediately.", confirm: "Revoke", danger: true });
         if (!ok) return;
         await api.del(`/api/keys/${enc(id)}`);
@@ -28,6 +33,17 @@ export function initSettings(el) {
       await refresh();
     } catch (err) {
       toast(err.message, "error");
+    }
+  });
+  root.addEventListener("change", async (e) => {
+    if (!e.target.matches("[data-user-role]")) return;
+    try {
+      await api.patch(`/api/users/${enc(e.target.dataset.userRole)}`, { role: e.target.value });
+      toast("Role updated", "success");
+      await refresh();
+    } catch (err) {
+      toast(err.message, "error");
+      await refresh();
     }
   });
   root.addEventListener("submit", async (e) => {
@@ -51,9 +67,9 @@ export function initSettings(el) {
 export async function refresh() {
   const admin = state.me?.role === "admin";
   const tasks = [api.get("/api/health").catch(() => null)];
-  if (admin) tasks.push(api.get("/api/keys"), api.get("/api/audit?limit=50"), api.get("/api/plugins"));
-  const [health, keys = null, audit = null, plugins = null] = await Promise.all(tasks).catch(() => [null]);
-  data = { ...data, health, keys, audit, plugins };
+  if (admin) tasks.push(api.get("/api/keys"), api.get("/api/audit?limit=50"), api.get("/api/plugins"), api.get("/api/users"));
+  const [health, keys = null, audit = null, plugins = null, users = null] = await Promise.all(tasks).catch(() => [null]);
+  data = { ...data, health, keys, audit, plugins, users };
   render();
 }
 
@@ -79,6 +95,28 @@ function keysCard() {
         <td>${formatDate(k.created_at)}</td>
         <td class="actions">${k.revoked ? html`<span class="pill">revoked</span>` : html`<button class="btn sm ghost danger" data-act="revoke" data-id="${k.id}">Revoke</button>`}</td>
       </tr>`)}</tbody></table>` : html`<p class="muted">Loading…</p>`}
+  </div>`;
+}
+
+function usersCard() {
+  const users = data.users;
+  if (!users?.length) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>People with access</h2><p class="muted small">Accounts created by single sign-on. Disabling someone signs them out everywhere at once. If roles come from your identity provider's groups, changes here last until their next sign-in.</p></div></div>
+    <table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+      ${users.map((u) => {
+        const self = state.me?.key_id === `user:${u.id}`;
+        return html`<tr style="${u.disabled ? "opacity:.55" : ""}">
+          <td><b>${u.name || "—"}</b>${self ? html` <span class="pill accent">you</span>` : ""}</td>
+          <td>${u.email || u.subject}</td>
+          <td><select class="select sm" data-user-role="${u.id}" ${self ? "disabled" : ""} aria-label="Role for ${u.email || u.id}">
+            ${["viewer", "analyst", "admin"].map((r) => html`<option value="${r}" ${u.role === r ? "selected" : ""}>${r[0].toUpperCase() + r.slice(1)}</option>`)}
+          </select></td>
+          <td>${u.last_login_at ? timeAgo(u.last_login_at) : "never"}</td>
+          <td class="actions">${self ? "" : html`<button class="btn sm ghost ${u.disabled ? "" : "danger"}" data-act="user-toggle" data-id="${u.id}" data-disabled="${u.disabled}">${u.disabled ? "Enable" : "Disable"}</button>`}</td>
+        </tr>`;
+      })}
+    </tbody></table>
   </div>`;
 }
 
@@ -128,10 +166,11 @@ function render() {
       </div>
       <div class="card card-pad"><div class="card-head"><h2>Your access</h2></div>
         <dl class="kv"><dt>Signed in as</dt><dd>${state.me?.name || "—"}</dd><dt>Role</dt><dd>${state.me?.role || "—"}</dd>
+          <dt>Method</dt><dd>${state.me?.auth === "session" ? "Single sign-on" : "API key"}</dd>
           <dt>Version</dt><dd>${h ? `Argus ${h.version}` : "—"}</dd><dt>Database</dt><dd>${h ? `${h.database.backend} · ${h.database.reachable ? "reachable" : "unreachable"}` : "—"}</dd></dl>
       </div>
     </div>
-    ${admin ? html`${keysCard()}${auditCard()}${pluginsCard()}`
+    ${admin ? html`${usersCard()}${keysCard()}${auditCard()}${pluginsCard()}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys, the audit log and plugins are available to administrators.")}</div>`}
   </div>`);
 }

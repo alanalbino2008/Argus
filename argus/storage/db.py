@@ -104,6 +104,49 @@ class WsTicketRow(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class UserRow(Base):
+    """A person who signs in through the organisation's identity provider (OIDC)."""
+
+    __tablename__ = "users"
+    __table_args__ = (Index("ux_users_issuer_subject", "issuer", "subject", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    issuer: Mapped[str] = mapped_column(String(512))
+    subject: Mapped[str] = mapped_column(String(255))  # the provider's stable user id ("sub")
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str] = mapped_column(String(16))
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SessionRow(Base):
+    """A signed-in browser. Only a SHA-256 hash of the cookie value is stored."""
+
+    __tablename__ = "sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(32), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+
+class OidcLoginRow(Base):
+    """An OIDC login in progress (state, nonce, PKCE verifier) - single use, minutes long, cluster-wide."""
+
+    __tablename__ = "oidc_logins"
+
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(128))
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    return_to: Mapped[str] = mapped_column(String(512))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class AuditEventRow(Base):
     """Append-only, hash-chained security audit trail."""
 

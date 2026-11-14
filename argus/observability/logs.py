@@ -69,6 +69,20 @@ class TextFormatter(logging.Formatter):
         return f"{line} [{' '.join(tags)}]" if tags else line
 
 
+class StripQueryStrings(logging.Filter):
+    """Remove query strings from uvicorn's access log, however Argus is launched.
+
+    Query strings can carry OAuth authorization codes and state (SSO callback) or
+    single-use WebSocket tickets: short-lived, but secrets never belong in logs.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str) and "?" in args[2]:
+            record.args = (*args[:2], args[2].split("?", 1)[0], *args[3:])
+        return True
+
+
 def configure(fmt: str = "text", level: str = "INFO", instance: str = "") -> None:
     """Install one handler on the ``argus`` logger tree (idempotent; leaves uvicorn's own loggers alone)."""
     root = logging.getLogger("argus")
@@ -84,3 +98,6 @@ def configure(fmt: str = "text", level: str = "INFO", instance: str = "") -> Non
     root.addHandler(handler)
     root.setLevel(level.upper())
     root.propagate = False
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, StripQueryStrings) for f in access.filters):
+        access.addFilter(StripQueryStrings())

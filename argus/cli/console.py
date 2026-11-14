@@ -358,7 +358,8 @@ def cli_entrypoint():
         console.print(
             f"[bold cyan]Starting Argus Web Interface & Graph Server on http://{args.host}:{args.port}[/bold cyan]"
         )
-        uvicorn.run("argus.api.server:app", host=args.host, port=args.port, reload=False)
+        # Argus writes its own access log (route templates, request ids, no query strings).
+        uvicorn.run("argus.api.server:app", host=args.host, port=args.port, reload=False, access_log=False)
         return
 
     if not args.target:

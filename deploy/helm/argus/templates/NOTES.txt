@@ -12,6 +12,11 @@ Argus {{ .Chart.AppVersion }} is deployed as {{ include "argus.fullname" . }} ({
      kubectl -n {{ .Release.Namespace }} get secret {{ include "argus.secretName" . }} -o jsonpath='{.data.bootstrap-admin-key}' | base64 -d; echo
    Create personal keys in Settings, then rotate or remove the bootstrap key.
 
+{{- if .Values.sso.enabled }}
+   Single sign-on: register this redirect URI with your identity provider:
+     {{ include "argus.publicUrl" . | default "<publicUrl>" }}/auth/oidc/callback
+{{- end }}
+
 3. Check the deployment:
      helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
 {{- if include "argus.bundledPostgres" . }}

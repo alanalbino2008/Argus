@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.13.0] — Phase 13: Single sign-on
+
+### Added
+- **OpenID Connect sign-in** (`argus/security/oidc.py`, `argus/api/auth_routes.py`): authorization
+  code flow with PKCE (S256); single-use `state` and `nonce` stored hashed in the database for 10
+  minutes (any replica can finish a login); ID tokens verified against the provider's JWKS
+  (asymmetric algorithms only), exact issuer, audience/`azp`, expiry and nonce; key-rotation refresh
+  rate-limited; HTTPS-only provider endpoints (HTTP only for loopback development).
+- Identity policy: verified email (configurable), email-domain allow-list (incl. Google `hd`), roles
+  from a groups/roles claim, a default role or refusal, bootstrap admin emails.
+- **Users and sessions** (migration `0005`): users keyed by issuer + subject; server-side sessions in
+  an HttpOnly, SameSite=Lax, Secure-over-HTTPS cookie storing only a hash server-side; cookie-
+  authenticated writes require a same-origin `Origin`/`Referer` (CSRF); sign-out with the provider's
+  single logout; `GET /api/users`, `PATCH /api/users/{id}` (role, disable = sign out everywhere;
+  admins cannot lock themselves out); `GET /api/auth/config`.
+- Web app: "Continue with <provider>" sign-in, plain-English refusal messages, sign-out through the
+  provider, *People with access* administration in Settings.
+- Audit events `auth.login`, `auth.sso_failed` (with reason), `user.update`; metric
+  `argus_sso_logins_total`.
+- Helm: `sso.*` values, `publicUrl` (defaults to the ingress host), `secrets.oidcClientSecret`,
+  `networkPolicy.internalEgress` for self-hosted identity providers; schema refuses plain-HTTP issuers.
+- `docs/explained/13-single-sign-on.md`; provider recipes in `docs/DEPLOYMENT.md`.
+
+### Security
+- Query strings are stripped from uvicorn's access log however Argus is launched (they can carry
+  OAuth codes/state or WebSocket tickets), and `argus --serve` no longer writes uvicorn's access log.
+
 ## [1.12.0] — Phase 12: Observability
 
 ### Added

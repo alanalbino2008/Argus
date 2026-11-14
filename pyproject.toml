@@ -37,6 +37,7 @@ dependencies = [
     "stix2>=3.0.1",
     "defusedxml>=0.7.1",
     "prometheus-client>=0.20.0",
+    "PyJWT[crypto]>=2.8.0",
 ]
 
 [project.optional-dependencies]

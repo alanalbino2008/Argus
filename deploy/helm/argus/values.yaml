@@ -44,6 +44,29 @@ postgresql:
 migrations:
   enabled: true
 
+# ---------------------------------------------------------------------------- single sign-on
+# Users sign in with your identity provider (OpenID Connect). Register a confidential
+# client with redirect URI  <publicUrl>/auth/oidc/callback  and put its secret in
+# secrets.oidcClientSecret (or the existing secret, key "oidc-client-secret").
+sso:
+  enabled: false
+  issuer: ""                 # https://accounts.google.com · https://login.microsoftonline.com/<tenant>/v2.0 · Okta/Keycloak URL
+  clientId: ""
+  displayName: Single sign-on   # button label, e.g. "Microsoft"
+  scopes: openid email profile
+  allowedDomains: []         # e.g. [acme.com]
+  requireVerifiedEmail: true # Microsoft Entra omits email_verified: set false there
+  roleClaim: groups
+  adminGroups: []
+  analystGroups: []
+  viewerGroups: []
+  defaultRole: viewer        # viewer | analyst | none (refuse users in no mapped group)
+  adminEmails: []            # bootstrap administrators
+  sessionTtlHours: 8
+
+# External URL users open (builds the OIDC redirect URI). Defaults to the ingress host.
+publicUrl: ""
+
 # ---------------------------------------------------------------------------- secrets
 secrets:
   # Use an existing Secret for the keys below instead of letting the chart create one.
@@ -56,6 +79,7 @@ secrets:
   virustotalApiKey: ""
   hibpApiKey: ""
   shodanApiKey: ""
+  oidcClientSecret: ""
   # If set, /metrics requires "Authorization: Bearer <token>" (the ServiceMonitor sends it).
   metricsToken: ""
 
@@ -121,6 +145,9 @@ networkPolicy:
   ingressNamespaceSelector: {}
   # CIDRs of an external database (managed PostgreSQL usually lives in a private range).
   databaseCIDRs: []
+  # Internal HTTPS services Argus must reach despite the private-range block, e.g. a
+  # self-hosted identity provider (Keycloak) for single sign-on: [{cidr: 10.30.0.0/24, port: 443}]
+  internalEgress: []
   blockedEgressCIDRs:
     - 10.0.0.0/8
     - 172.16.0.0/12

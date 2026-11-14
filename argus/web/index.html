@@ -250,7 +250,11 @@
     <form id="signin-form" class="card signin" autocomplete="off">
       <div class="brand"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logo"/></svg></div>
       <h1>Sign in to Argus</h1>
-      <p>Paste your API key. On first start, an admin key is printed once in the server log.</p>
+      <div id="signin-sso" hidden>
+        <a id="signin-sso-link" class="btn primary sso-btn" href="/auth/oidc/login"><span id="signin-sso-name">Continue with single sign-on</span></a>
+        <div class="divider"><span>or use an API key</span></div>
+      </div>
+      <p id="signin-key-hint">Paste your API key. On first start, an admin key is printed once in the server log.</p>
       <div class="field">
         <label class="label" for="signin-key">API key</label>
         <input id="signin-key" class="input mono" type="password" placeholder="argus_…" autocomplete="off">

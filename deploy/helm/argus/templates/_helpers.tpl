@@ -83,6 +83,14 @@ Secret if it exists, otherwise create a random one. (`lookup` is empty under `he
 {{- end }}
 {{- end -}}
 
+{{- define "argus.publicUrl" -}}
+{{- if .Values.publicUrl -}}
+{{- .Values.publicUrl | trimSuffix "/" -}}
+{{- else if .Values.ingress.enabled -}}
+{{- printf "%s://%s" (ternary "https" "http" .Values.ingress.tls.enabled) .Values.ingress.host -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "argus.podSecurityContext" -}}
 runAsNonRoot: true
 runAsUser: 10001

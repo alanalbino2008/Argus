@@ -56,6 +56,10 @@ AUTH_FAILURES = Counter(
     "argus_auth_failures_total", "Rejected API calls (missing/invalid key, insufficient role, bad ticket)",
     ["reason"], registry=REGISTRY,
 )  # fmt: skip
+SSO_LOGINS = Counter(
+    "argus_sso_logins_total", "Single sign-on attempts by result (success or the refusal reason)", ["result"],
+    registry=REGISTRY,
+)  # fmt: skip
 RATE_LIMITED = Counter("argus_rate_limited_total", "Requests refused by a limit", ["limit"], registry=REGISTRY)
 
 # ------------------------------------------------------------------ scans
