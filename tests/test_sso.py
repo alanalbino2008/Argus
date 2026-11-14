@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from argus.core.settings import Settings
 from argus.security.oidc import (
+    JWKS_REFRESH_MIN_INTERVAL,
     OidcError,
     OidcProvider,
     check_identity,
@@ -205,7 +206,7 @@ async def test_key_rotation_refreshes_jwks_but_not_on_every_request():
     claims = {"iss": ISSUER, "aud": CLIENT_ID, "sub": "u", "iat": now, "exp": now + 300, "nonce": "n"}
     await provider.verify_id_token(idp.sign(claims), "n")
     idp.key, idp.kid = rsa.generate_private_key(public_exponent=65537, key_size=2048), "key-2"  # provider rotates
-    provider._keys_at = 0  # pretend the minimum refresh interval has passed
+    provider._keys_at -= JWKS_REFRESH_MIN_INTERVAL + 1  # pretend the minimum refresh interval has passed
     assert (await provider.verify_id_token(idp.sign(claims), "n"))["sub"] == "u"
     with pytest.raises(OidcError):  # unknown kid again right away: no refetch storm
         await provider.verify_id_token(idp.sign(claims, kid="key-3"), "n")
