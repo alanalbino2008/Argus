@@ -28,8 +28,12 @@ def test_demo_drift_is_detected_precisely():
     _, new = build_demo()
     d = compare(old, new)
     s = d["summary"]
-    assert (s["added"], s["removed"], s["changed"]) == (7, 1, 2)
+    assert (s["added"], s["removed"], s["changed"]) == (8, 1, 2)
     new_titles = {p["title"] for p in d["new_paths"]}
+    # A phishing domain registered since last month is exactly the drift monitoring exists for.
+    assert (
+        "Lookalike domain acme-corp-login.example could impersonate acme-corp.example (it can send email)" in new_titles
+    )
     assert "Redis exposed to the internet on 203.0.113.30" in new_titles
     assert "Publicly listable cloud storage: acme-corp-backups" in new_titles
     assert any(t.startswith("Credentials leaked in public code") for t in new_titles)

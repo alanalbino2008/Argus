@@ -16,6 +16,7 @@ Load it with ``argus --load-demo`` (or ``POST /api/demo`` as an admin).
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import (
@@ -62,6 +63,8 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
             "public_code": {"files": 6, "files_with_secrets": 1},
             "security_txt": {"present": True, "contacts": [f"mailto:security@{DEMO_TARGET}"], "expires": None},
             "cloud_storage": {"names_checked": 48, "found": 1},
+            "lookalikes_checked": 291,
+            "lookalikes_registered": 4,
         },
     ),
     "www": (E.SUBDOMAIN, f"www.{DEMO_TARGET}", f"www.{DEMO_TARGET}", 1, "subdomain_finder", {}),
@@ -508,8 +511,40 @@ _RELATIONS: list[tuple[str, str, RelationType, str]] = [
 ]
 
 
+def _lookalike(
+    technique: str, detail: str, verdict: str, risk: int, mx: list[str], ns: list[str], **extra: Any
+) -> dict:
+    facts = {"of": DEMO_TARGET, "technique": technique, "detail": detail, "verdict": verdict, "risk": risk,
+             "mx": mx, "ns": ns, "ips": ["192.0.2.66"] if verdict != "yours" else ["203.0.113.10"],
+             "sensitive_keyword": extra.pop("sensitive", False), **extra}  # fmt: skip
+    return {"lookalike": facts, "out_of_scope": True}
+
+
+# Registered lookalike domains (Phase 19): a phishing-ready impostor, a parked homoglyph, a combosquat
+# without mail yet, and Acme's own defensive registration (which must never be reported).
+_ENTITIES.update(
+    {
+        "lk_login": (E.DOMAIN, "acme-corp-login.example", "acme-corp-login.example", 1, "lookalike_domains",
+                     _lookalike("combosquat", "brand + 'login'", "suspicious", 87, ["mail.acme-corp-login.example"],
+                                ["ns1.cheap-host.example"], display="acme-corp-login.example", sensitive=True)),
+        "lk_homoglyph": (E.DOMAIN, "acrne-corp.example", "acrne-corp.example", 1, "lookalike_domains",
+                         _lookalike("homoglyph", "'m' looks like 'rn'", "parked", 30, [],
+                                    ["ns1.sedoparking.com"], display="acrne-corp.example")),
+        "lk_support": (E.DOMAIN, "acme-corp-support.example", "acme-corp-support.example", 1, "lookalike_domains",
+                       _lookalike("combosquat", "brand + 'support'", "suspicious", 37, [],
+                                  ["ns1.cheap-host.example"], display="acme-corp-support.example")),
+        "lk_own": (E.DOMAIN, "acmecorp.example", "acmecorp.example", 1, "lookalike_domains",
+                   _lookalike("typo", "hyphen removed", "yours", 5, ["mx.acme-corp.example"],
+                              ["ns1.acme-corp.example"], display="acmecorp.example")),
+    }
+)  # fmt: skip
+_RELATIONS.extend(
+    (key, "seed", R.ASSOCIATED_WITH, f"Lookalike ({_ENTITIES[key][5]['lookalike']['technique']})")
+    for key in ("lk_login", "lk_homoglyph", "lk_support", "lk_own")
+)
+
 # A month earlier the surface looked different - used to demonstrate drift detection.
-_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket"}
+_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket", "lk_login"}
 _ONLY_PREVIOUSLY: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
     "p21": (E.PORT, "203.0.113.30:21", "Port 21 (FTP)", 3, "shodan_internetdb", {"port_number": 21}),
 }

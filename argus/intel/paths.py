@@ -48,6 +48,7 @@ FOLLOW_ON: dict[str, tuple[str, str]] = {
     "T1530": ("Data from Cloud Storage", "Collection"),
     "T1110.003": ("Brute Force: Password Spraying", "Credential Access"),
     "T1213": ("Data from Information Repositories", "Collection"),
+    "T1583.001": ("Acquire Infrastructure: Domains", "Resource Development"),
 }
 
 RISKY_PORTS: dict[int, tuple[str, int, str]] = {
@@ -706,6 +707,80 @@ def _staff_enumeration(view: _GraphView, seed: Entity | None) -> Iterable[_Draft
     )
 
 
+LOOKALIKE_REMEDIATION = [
+    "Check who owns it (RDAP/WHOIS). If it is not yours, report it to the registrar's and host's abuse "
+    "contacts; for clear trademark abuse use UDRP (or Nominet's DRS for .uk).",
+    "Block it now at the email gateway and web proxy, and warn staff (and customers, if they are the target).",
+    "Watch DMARC reports and mail logs for messages using it, and add it to your phishing-reporting playbook.",
+    "Register the highest-risk variants yourself so attackers cannot (defensive registration).",
+]
+MAX_LOOKALIKE_PATHS = 6
+
+
+def _lookalike_domains(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    """Registered impostor domains: ready-made phishing and fraud infrastructure."""
+    found = [d for d in view.of_type(EntityType.DOMAIN) if (d.metadata.get("lookalike") or {}).get("verdict") not in
+             (None, "yours")]  # fmt: skip
+    found.sort(key=lambda d: (-d.metadata["lookalike"]["risk"], d.value))
+    serious = [d for d in found if d.metadata["lookalike"]["mx"] or d.metadata["lookalike"]["risk"] >= 50]
+    for domain in serious[:MAX_LOOKALIKE_PATHS]:
+        facts = domain.metadata["lookalike"]
+        mx, parked = bool(facts["mx"]), facts["verdict"] == "parked"
+        brand = seed
+        likelihood = (0.75 if mx else 0.45) + (0.1 if facts.get("sensitive_keyword") else 0.0)
+        if parked:
+            likelihood *= 0.6
+        status = "is parked (often for sale)" if parked else "is registered to someone else"
+        yield _Draft(
+            rule="lookalike_domain",
+            anchor=domain,
+            title=f"Lookalike domain {facts['display']} could impersonate {facts['of']}"
+            + (" (it can send email)" if mx else ""),
+            likelihood=min(likelihood, 0.9),
+            impact=4 if mx else 3,
+            narrative=(
+                f"{facts['display']} imitates {facts['of']} ({facts['detail']}) and {status}. "
+                + (
+                    "It has mail servers, so it can send and receive email: phishing that appears to come from "
+                    "your organisation, invoice fraud, or capturing replies meant for you. "
+                    if mx
+                    else "It resolves on the internet, so it can host a fake login page or be given mail servers "
+                    "at any moment. "
+                )
+                + "People skim domain names; a near-miss like this passes a quick look in an inbox or address bar."
+            ),
+            steps=[(domain, "impostor domain"), *(((brand, "impersonated brand"),) if brand else ())],
+            techniques=["T1583.001", "T1566"],
+            evidence=[
+                f"Technique: {facts['technique']} ({facts['detail']})",
+                f"Mail servers: {', '.join(facts['mx'][:3]) if mx else 'none'}",
+                f"Name servers: {', '.join(facts['ns'][:3]) or 'unknown'}",
+                f"Verdict: {facts['verdict']} · lookalike risk {facts['risk']}/100",
+            ],
+            remediation=LOOKALIKE_REMEDIATION,
+        )
+    rest = found[MAX_LOOKALIKE_PATHS:] if len(serious) > MAX_LOOKALIKE_PATHS else [d for d in found if d not in serious]
+    if rest and seed is not None:
+        names = ", ".join(d.metadata["lookalike"]["display"] for d in rest[:5])
+        yield _Draft(
+            rule="lookalike_domain_watchlist",
+            anchor=seed,
+            title=f"{len(rest)} more registered lookalike(s) of {rest[0].metadata['lookalike']['of']} to watch",
+            likelihood=0.3,
+            impact=2,
+            narrative=(
+                f"Registered domains resembling yours with no mail servers yet, or parked: {names}"
+                + (" and others" if len(rest) > 5 else "")
+                + ". Any of them could be turned into phishing infrastructure later; keep this target monitored to be "
+                "alerted when one changes."
+            ),
+            steps=[(rest[0], "registered lookalike"), (seed, "impersonated brand")],
+            techniques=["T1583.001"],
+            evidence=[f"{d.metadata['lookalike']['display']}: {d.metadata['lookalike']['verdict']}" for d in rest[:10]],
+            remediation=LOOKALIKE_REMEDIATION[1:],
+        )
+
+
 RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _credential_exposure,
     _spoofable_domain,
@@ -721,6 +796,7 @@ RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _exposed_sensitive_file,
     _public_cloud_storage,
     _staff_enumeration,
+    _lookalike_domains,
 ]
 
 

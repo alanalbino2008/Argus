@@ -123,7 +123,8 @@ function kpis(inv) {
 
 function assetBreakdown() {
   const counts = {};
-  state.entities.forEach((e) => { if (e.depth > 0) counts[e.type] = (counts[e.type] || 0) + 1; });
+  // Lookalike domains belong to third parties: they are not the target's assets.
+  state.entities.forEach((e) => { if (e.depth > 0 && !e.metadata?.out_of_scope) counts[e.type] = (counts[e.type] || 0) + 1; });
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
   const max = rows.length ? rows[0][1] : 1;
   if (!rows.length) return html`<p class="muted small">Nothing discovered yet.</p>`;
@@ -131,6 +132,38 @@ function assetBreakdown() {
     <div class="bar-row"><span>${typeInfo(type).label}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${Math.round((n / max) * 100)}%;background:${typeInfo(type).color}"></div></div>
       <b style="text-align:right">${n}</b></div>`)}</div>`;
+}
+
+const VERDICT = {
+  suspicious: ["critical", "Impostor"],
+  parked: ["warn", "Parked"],
+  yours: ["ok", "Yours"],
+};
+
+function lookalikePanel() {
+  const seed = [...state.entities.values()].find((e) => e.depth === 0);
+  const found = [...state.entities.values()].filter((e) => e.metadata?.lookalike)
+    .sort((a, b) => b.metadata.lookalike.risk - a.metadata.lookalike.risk);
+  if (!seed?.metadata?.lookalikes_checked && !found.length) return "";
+  const threats = found.filter((e) => e.metadata.lookalike.verdict !== "yours");
+  const mail = threats.filter((e) => e.metadata.lookalike.mx.length).length;
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Brand impersonation</h2>
+      <p class="muted small">${seed?.metadata?.lookalikes_checked || "Many"} lookalike domains checked (typos, look-alike letters, other endings, brand + keyword) · ${found.length} registered · <b>${threats.length}</b> not yours${mail ? html` · <b style="color:var(--sev-critical)">${mail} can send email</b>` : ""}</p></div></div>
+    ${found.length ? html`<table class="table"><thead><tr><th>Domain</th><th>How it imitates you</th><th>Status</th><th>Email</th><th>Risk</th></tr></thead><tbody>
+      ${found.slice(0, 12).map((e) => {
+        const l = e.metadata.lookalike;
+        const [cls, label] = VERDICT[l.verdict] || ["", l.verdict];
+        return html`<tr>
+          <td><b>${l.display}</b>${l.display !== e.value ? html`<div class="muted small mono" title="What the browser really visits">${e.value}</div>` : ""}</td>
+          <td>${l.detail}<div class="muted small">${l.technique}</div></td>
+          <td><span class="pill ${cls}">${label}</span></td>
+          <td>${!l.mx.length ? html`<span class="muted small">No</span>` : l.verdict === "yours" ? html`<span title="${l.mx.join(", ")}">Yes</span>` : html`<span class="pill critical" title="${l.mx.join(", ")}">Yes</span>`}</td>
+          <td><b>${l.risk}</b></td></tr>`;
+      })}</tbody></table>
+      <p class="muted small" style="margin-top:8px">Impostor domains are recorded but never investigated: they belong to third parties. “Yours” means it shares your name servers or hosting, so it is probably a defensive registration.</p>`
+      : html`<p class="muted small">No registered lookalikes found — good. Keep watching the target to be alerted if one appears.</p>`}
+  </div>`;
 }
 
 function dashboard(inv) {
@@ -175,6 +208,7 @@ function dashboard(inv) {
         </div>
       </div>
     </div>
+    ${lookalikePanel()}
   </div>`;
 }
 

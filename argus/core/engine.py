@@ -244,6 +244,8 @@ class ArgusEngine:
             return
         self._processed_ids.add(entity.id)
 
+        if entity.metadata.get("out_of_scope"):
+            return  # a third party's asset (e.g. a lookalike domain): recorded, never investigated
         # The seed is always fully processed; the limit applies to what is discovered from it.
         at_limit = entity.depth > 0 and entity.depth >= self.config.max_depth
         eligible = [

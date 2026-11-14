@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.19.0] — Phase 19: Brand impersonation (lookalike domains)
+
+### Added
+- **Lookalike candidate generation** (`argus/intel/lookalikes.py`), deterministic, bounded and
+  most dangerous first:
+  - combosquatting (brand + 30 credibility words);
+  - homoglyphs (`rn`/`m`, `vv`/`w`, `cl`/`d`, `0`/`o`, `1`/`l`) and IDN homographs (Cyrillic
+    look-alikes, punycode);
+  - TLD swaps, typos (omission, repetition, transposition, adjacent keys, vowels, hyphens),
+    doppelgangers and bitsquats;
+  - multi-part suffixes (`co.uk`…).
+- **`lookalike_domains` module**, passive DNS only, seed domain only:
+  - finds registered lookalikes, with per-TLD wildcard calibration;
+  - judges each as impostor, parked or yours (shared name servers or IPs), with MX capability
+    and a 0–100 risk score;
+  - `ARGUS_LOOKALIKE_MAX_CANDIDATES` (default 1500).
+- **Attack paths**: `lookalike_domain` for email-capable or high-risk impostors (T1583.001 →
+  T1566, with abuse/UDRP/DRS, blocking and defensive-registration guidance) and a
+  `lookalike_domain_watchlist` summary for the rest. Monitoring alerts on newly registered
+  impostors through the existing drift detection.
+- **Brand impersonation** panel on the investigation overview, and a section in the PDF
+  report.
+- Demo: four lookalikes (an impostor with mail that appeared since the previous scan, a parked
+  homoglyph, a combosquat, Acme's own registration).
+- `docs/explained/19-brand-impersonation.md`.
+
+### Security
+- **Out-of-scope entities**: the engine never runs modules against entities marked
+  `out_of_scope` (third parties' assets such as lookalike domains). A test proves it with a full
+  scan and a spy module. Out-of-scope entities are also excluded from asset counts and the
+  report inventory.
+
 ## [1.18.0] — Phase 18: Guided first scan
 
 ### Added

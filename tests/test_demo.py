@@ -53,8 +53,11 @@ def test_demo_triggers_every_attack_path_rule():
         "exposed_sensitive_file",
         "public_cloud_storage",
         "staff_enumeration",
+        "lookalike_domain",
+        "lookalike_domain_watchlist",
     }
-    assert fired == names and len(expected) == len(names)
+    # One rule function can emit two kinds of path (lookalikes: individual findings + a watchlist).
+    assert fired == names and len(expected) == len(names) - 1
 
 
 def test_demo_exports_as_valid_stix():

@@ -24,6 +24,7 @@ from argus.modules.infrastructure.tls_analyzer import TlsAnalyzerModule
 from argus.modules.infrastructure.whois_lookup import WhoisLookupModule
 from argus.modules.plugins import PluginReport, discover_plugins
 from argus.modules.threat_intel.hibp import HibpModule
+from argus.modules.threat_intel.lookalike_domains import LookalikeDomainsModule
 from argus.modules.threat_intel.shodan_host import ShodanHostModule
 from argus.modules.threat_intel.virustotal import VirusTotalModule
 
@@ -36,6 +37,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     PgpKeyserverModule,
     PhoneReconModule,
     DnsReconModule,
+    LookalikeDomainsModule,
     SubdomainFinderModule,
     PassiveDnsModule,
     WaybackModule,

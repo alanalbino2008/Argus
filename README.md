@@ -258,6 +258,15 @@ scanned:
 A getting-started checklist tracks the whole workflow
 ([`docs/explained/18-guided-first-scan.md`](docs/explained/18-guided-first-scan.md)).
 
+**Brand impersonation (digital risk protection)**: Argus generates the domains an attacker
+would register to impersonate the target (combosquats like `acme-login.com`, homoglyphs, IDN
+homographs such as a Cyrillic `аcme.com`, other endings, typos, bitsquats) and finds which
+exist using passive DNS only. It calibrates against wildcard TLDs, recognises your own defensive
+registrations, and flags email-capable impostors as attack paths (T1583.001 → T1566). A newly
+registered impostor triggers a monitoring alert. Lookalikes are out of scope by construction:
+the engine never investigates a third party's domain
+([`docs/explained/19-brand-impersonation.md`](docs/explained/19-brand-impersonation.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

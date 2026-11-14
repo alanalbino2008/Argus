@@ -534,6 +534,19 @@ def _exposure(d: ReportData, s: dict[str, ParagraphStyle]) -> list[Flowable]:
     if p.get("role_mailboxes"):
         facts.append("Published role mailboxes: " + ", ".join(p["role_mailboxes"]) + ".")
     out.append(_bullets(facts, s))
+    if d.lookalikes:
+        out += [Spacer(1, 4 * mm), Paragraph("Brand impersonation (lookalike domains)", s["H2"])]
+        out.append(Paragraph(
+            "Registered domains that imitate yours. Impostors with mail servers can send phishing that appears to come "
+            "from you. Domains marked yours share your name servers or hosting (defensive registrations).", s["muted"]))  # fmt: skip
+        label = {"suspicious": "Impostor", "parked": "Parked", "yours": "Yours"}
+        rows: list[list[Any]] = [["Domain", "How it imitates you", "Status", "Email", "Risk"]]
+        rows += [[Paragraph(esc(x["display"]) + (f'<br/><font color="#6b7280" size="7">{esc(x["domain"])}</font>'
+                                                 if x["display"] != x["domain"] else ""), s["cell"]),
+                  Paragraph(esc(x["detail"]), s["cell"]), Paragraph(esc(label.get(x["verdict"], x["verdict"])), s["cell"]),
+                  Paragraph("Yes" if x["mx"] else "No", s["cell"]), Paragraph(str(x["risk"]), s["cellb"])]
+                 for x in d.lookalikes]  # fmt: skip
+        out.append(_table(rows, [52 * mm, 52 * mm, 22 * mm, 16 * mm, 16 * mm]))
     return out
 
 

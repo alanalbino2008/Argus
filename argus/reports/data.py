@@ -108,6 +108,7 @@ class ReportData:
     trend: dict[str, Any] | None
     sources: list[dict[str, Any]]
     generator: str = ""
+    lookalikes: list[dict[str, Any]] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -206,6 +207,8 @@ def build_report_data(
 
     by_type: dict[str, list[Any]] = {}
     for entity in entities:
+        if entity.metadata.get("out_of_scope"):
+            continue  # third parties' assets (e.g. lookalike domains) are not the target's attack surface
         by_type.setdefault(entity.type.value, []).append(entity)
     listed = sorted((t for t in by_type if t not in PERSONAL_TYPES), key=lambda t: (-len(by_type[t]), t))
     categories: list[dict[str, Any]] = [
@@ -316,4 +319,17 @@ def build_report_data(
         trend=trend,
         sources=sources,
         generator=generator,
+        lookalikes=[
+            {
+                "display": redact(str(e.metadata["lookalike"].get("display") or e.value)),
+                "domain": e.value,
+                "detail": e.metadata["lookalike"].get("detail", ""),
+                "verdict": e.metadata["lookalike"].get("verdict", ""),
+                "mx": bool(e.metadata["lookalike"].get("mx")),
+                "risk": int(e.metadata["lookalike"].get("risk", 0)),
+            }
+            for e in sorted(
+                (e for e in entities if e.metadata.get("lookalike")), key=lambda e: -e.metadata["lookalike"]["risk"]
+            )
+        ][:15],
     )

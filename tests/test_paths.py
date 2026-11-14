@@ -203,7 +203,7 @@ def test_paths_are_ranked_deduplicated_and_summarised():
     scores = [p["score"] for p in result["paths"]]
     assert scores == sorted(scores, reverse=True)
     assert len({p["id"] for p in result["paths"]}) == len(result["paths"])
-    assert result["summary"]["total"] == 2 and result["summary"]["rules_evaluated"] == 14
+    assert result["summary"]["total"] == 2 and result["summary"]["rules_evaluated"] == 15
     assert find_attack_paths(g)["paths"] == result["paths"]  # deterministic
 
 

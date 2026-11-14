@@ -57,6 +57,9 @@ class Settings(BaseSettings):
         default_factory=list,
         description='Entry-point names of third-party plugin modules to load, e.g. ["crtsh_plus"]. Empty = none.',
     )
+    lookalike_max_candidates: int = Field(
+        default=1500, ge=0, le=20000, description="Lookalike domains checked per scan (0 disables the check)"
+    )
     monitors_enabled: bool = Field(default=True, description="Run the scheduler that re-scans monitored targets")
     monitor_poll_seconds: float = Field(
         default=60.0, ge=1, description="How often the scheduler checks for due monitors"
