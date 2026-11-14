@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # never drop below the current capacity during a rollout
+      maxSurge: 1
+  selector:
+    matchLabels: {{- include "argus.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels: {{- include "argus.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+        {{- with .Values.podLabels }}{{ toYaml . | nindent 8 }}{{ end }}
+      annotations:
+        # Roll the pods when configuration or secrets change.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
+    spec:
+      serviceAccountName: {{ include "argus.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      securityContext: {{- include "argus.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.migrations.enabled }}
+      initContainers:
+        # Runs before each new pod starts. Concurrent pods are safe: the migration holds a
+        # PostgreSQL advisory lock, so it runs once and the others find nothing to do.
+        - name: migrate
+          image: {{ include "argus.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["argus", "--migrate"]
+          env: {{- include "argus.databaseEnv" . | nindent 12 }}
+          securityContext: {{- include "argus.containerSecurityContext" . | nindent 12 }}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      {{- end }}
+      containers:
+        - name: argus
+          image: {{ include "argus.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000",
+                    "--proxy-headers", "--forwarded-allow-ips", "*",
+                    "--log-level", {{ .Values.config.logLevel | quote }},
+                    "--timeout-graceful-shutdown", "30"]
+          ports:
+            - {name: http, containerPort: 8000, protocol: TCP}
+          envFrom:
+            - configMapRef:
+                name: {{ include "argus.fullname" . }}
+          env:
+            # Each pod is a named replica: it owns (and heart-beats) the scans it runs.
+            - name: ARGUS_INSTANCE_ID
+              valueFrom:
+                fieldRef: {fieldPath: metadata.name}
+            {{- include "argus.databaseEnv" . | nindent 12 }}
+            - name: ARGUS_BOOTSTRAP_ADMIN_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "argus.secretName" . }}, key: bootstrap-admin-key, optional: true}
+            {{- range $env, $key := dict "ARGUS_GITHUB_TOKEN" "github-token" "ARGUS_VIRUSTOTAL_API_KEY" "virustotal-api-key" "ARGUS_HIBP_API_KEY" "hibp-api-key" "ARGUS_SHODAN_API_KEY" "shodan-api-key" }}
+            - name: {{ $env }}
+              valueFrom:
+                secretKeyRef: {name: {{ include "argus.secretName" $ }}, key: {{ $key }}, optional: true}
+            {{- end }}
+          # startup: allow slow first boots; readiness: database reachable (else taken out of the
+          # Service, not restarted); liveness: the process itself, so a database outage never
+          # causes a restart storm.
+          startupProbe:
+            httpGet: {path: /api/live, port: http}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /api/live, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          lifecycle:
+            # Give the Service time to stop routing to this pod before shutdown begins.
+            preStop:
+              exec:
+                command: ["python", "-c", "import time; time.sleep(5)"]
+          securityContext: {{- include "argus.containerSecurityContext" . | nindent 12 }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
+        - name: data
+          emptyDir: {sizeLimit: 64Mi}
+      {{- if .Values.topologySpread }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "argus.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "argus.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

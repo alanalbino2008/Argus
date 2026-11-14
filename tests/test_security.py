@@ -169,8 +169,9 @@ def test_websocket_requires_single_use_ticket(client):
     assert exc.value.code == 4401
 
     ticket = client.post("/api/ws-ticket").json()["ticket"]
-    assert client.app.state.ws_tickets.redeem(ticket) is not None
-    assert client.app.state.ws_tickets.redeem(ticket) is None  # replay fails
+    tickets = client.app.state.ws_tickets
+    assert client.portal.call(tickets.redeem, ticket) is not None
+    assert client.portal.call(tickets.redeem, ticket) is None  # replay fails
 
 
 # ---------------------------------------------------------------- headers & CORS

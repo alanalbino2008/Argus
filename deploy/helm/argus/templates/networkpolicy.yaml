@@ -1,0 +1,68 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "argus.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports: [{port: http, protocol: TCP}]
+      {{- with .Values.networkPolicy.ingressNamespaceSelector }}
+      from:
+        - namespaceSelector: {{- toYaml . | nindent 12 }}
+      {{- end }}
+  egress:
+    # DNS (cluster resolver).
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    {{- if include "argus.bundledPostgres" . }}
+    # The bundled database.
+    - to:
+        - podSelector:
+            matchLabels: {{- include "argus.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: database
+      ports: [{port: 5432, protocol: TCP}]
+    {{- end }}
+    {{- range .Values.networkPolicy.databaseCIDRs }}
+    - to: [{ipBlock: {cidr: {{ . | quote }}}}]
+      ports: [{port: 5432, protocol: TCP}]
+    {{- end }}
+    # The public internet - OSINT sources - but never private, link-local (cloud metadata)
+    # or carrier-grade NAT ranges.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{- toYaml .Values.networkPolicy.blockedEgressCIDRs | nindent 14 }}
+        - ipBlock:
+            cidr: ::/0
+            except: ["fc00::/7", "fe80::/10"]
+{{- if include "argus.bundledPostgres" . }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "argus.fullname" . }}-postgresql
+  labels: {{- include "argus.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "argus.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: database
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {{- include "argus.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports: [{port: 5432, protocol: TCP}]
+  egress: []   # the database never needs to call out
+{{- end }}
+{{- end }}

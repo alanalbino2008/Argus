@@ -26,7 +26,7 @@ async def whoami(principal: Principal = Depends(get_principal)):
 async def issue_ws_ticket(request: Request, principal: Principal = Depends(require(Role.VIEWER))):
     """Exchange the API key for a single-use, short-lived WebSocket ticket."""
     tickets = request.app.state.ws_tickets
-    return {"ticket": tickets.issue(principal), "expires_in": tickets.ttl}
+    return {"ticket": await tickets.issue(principal), "expires_in": tickets.ttl}
 
 
 @router.get("/keys")

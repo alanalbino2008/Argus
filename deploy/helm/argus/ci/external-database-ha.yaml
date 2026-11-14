@@ -1,0 +1,15 @@
+# CI render check: production-style values (managed database, ingress + TLS, autoscaling).
+externalDatabase:
+  existingSecret: argus-db
+networkPolicy:
+  databaseCIDRs: ["10.20.0.0/16"]
+ingress:
+  enabled: true
+  className: nginx
+  host: argus.example.com
+  tls:
+    enabled: true
+autoscaling:
+  enabled: true
+secrets:
+  existingSecret: argus-secrets

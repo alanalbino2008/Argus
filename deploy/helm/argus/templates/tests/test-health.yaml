@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "argus.fullname" . }}-test-health
+  labels: {{- include "argus.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext: {{- include "argus.podSecurityContext" . | nindent 4 }}
+  containers:
+    - name: health
+      image: {{ include "argus.image" . }}
+      # Healthy, database reachable, and requests are spread over more than one replica.
+      command:
+        - python
+        - -c
+        - |
+          import json, urllib.request as u
+          opener = u.build_opener(u.ProxyHandler({}))
+          seen = set()
+          for _ in range(20):
+              body = json.load(opener.open("http://{{ include "argus.fullname" . }}:{{ .Values.service.port }}/api/health"))
+              assert body["status"] == "ok" and body["database"]["reachable"], body
+              seen.add(body["instance"])
+          print("healthy replicas answering:", sorted(seen))
+      securityContext: {{- include "argus.containerSecurityContext" . | nindent 8 }}

@@ -131,6 +131,30 @@ class MonitorRepository:
         # Compare in Python: SQLite drops tzinfo, so normalise before comparing.
         return [_monitor(r) for r in rows if (_utc(r.next_run_at) or moment) <= moment]
 
+    async def claim(self, monitor_id: str, now: datetime | None = None) -> bool:
+        """Atomically take a due monitor: only one replica's UPDATE can still see it due.
+
+        Moves ``next_run_at`` forward in the same statement that checks it, so two
+        schedulers ticking at the same moment can never both start the same scan.
+        """
+        moment = now or _now()
+        async with self.db.session() as s, s.begin():
+            row = await s.get(MonitorRow, monitor_id)
+            if row is None:
+                return False
+            result = await s.execute(
+                update(MonitorRow)
+                .where(MonitorRow.id == monitor_id, MonitorRow.next_run_at <= moment, MonitorRow.enabled.is_(True))
+                .values(next_run_at=moment + timedelta(hours=row.interval_hours), last_run_at=moment)
+                .execution_options(synchronize_session=False)
+            )
+        return (cast("CursorResult[Any]", result).rowcount or 0) == 1
+
+    async def release(self, monitor_id: str) -> None:
+        """Undo a claim whose scan could not start, so the next tick retries it."""
+        async with self.db.session() as s, s.begin():
+            await s.execute(update(MonitorRow).where(MonitorRow.id == monitor_id).values(next_run_at=_now()))
+
     async def mark_started(self, monitor_id: str, investigation_id: str) -> None:
         """Record a run and schedule the next one (before the scan finishes, so it is never double-started)."""
         async with self.db.session() as s, s.begin():

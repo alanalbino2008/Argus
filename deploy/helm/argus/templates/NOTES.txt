@@ -1,0 +1,21 @@
+Argus {{ .Chart.AppVersion }} is deployed as {{ include "argus.fullname" . }} ({{ if .Values.autoscaling.enabled }}autoscaling {{ .Values.autoscaling.minReplicas }}-{{ .Values.autoscaling.maxReplicas }}{{ else }}{{ .Values.replicaCount }}{{ end }} replicas).
+
+1. Open it:
+{{- if .Values.ingress.enabled }}
+     http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "argus.fullname" . }} 8000:{{ .Values.service.port }}
+     then browse to http://localhost:8000
+{{- end }}
+
+2. Sign in with the bootstrap admin key:
+     kubectl -n {{ .Release.Namespace }} get secret {{ include "argus.secretName" . }} -o jsonpath='{.data.bootstrap-admin-key}' | base64 -d; echo
+   Create personal keys in Settings, then rotate or remove the bootstrap key.
+
+3. Check the deployment:
+     helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if include "argus.bundledPostgres" . }}
+
+WARNING: using the bundled single-pod PostgreSQL. Fine for evaluation; for production set
+externalDatabase.existingSecret to a managed, backed-up PostgreSQL.
+{{- end }}

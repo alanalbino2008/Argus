@@ -9,12 +9,13 @@ from argus.core.engine import ArgusEngine
 from argus.core.events import EventBus
 from argus.core.models import EntityType, InvestigationStatus, ScanConfig
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from tests.conftest import database_url
 from tests.test_engine import FanOutModule
 
 
 @pytest.fixture
 async def repo(tmp_path):
-    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
+    db = Database(database_url(tmp_path, "test.db"))
     await db.create_all()
     yield InvestigationRepository(db)
     await db.dispose()

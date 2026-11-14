@@ -62,3 +62,15 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ env.VERSION }}
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+      - name: Publish the Helm chart (OCI registry) and attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          helm package deploy/helm/argus --app-version "$VERSION" --destination chart-dist
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
+          helm push chart-dist/*.tgz "oci://ghcr.io/${{ github.repository_owner }}/charts"
+          gh release upload "$GITHUB_REF_NAME" chart-dist/*.tgz

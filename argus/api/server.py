@@ -10,6 +10,19 @@ State model
   far behind is disconnected rather than allowed to exhaust memory.
 * On connect, a client receives a **snapshot** of everything found so far, then live
   events - so opening the page mid-scan (or after a restart) loses nothing.
+
+Running as several replicas (Kubernetes) behind a load balancer
+----------------------------------------------------------------
+Replicas coordinate through the shared database - no sticky sessions, no extra broker:
+
+* each scan records its **owner** replica, which refreshes a **heartbeat**; a replica that
+  crashes is detected by the others (its scans are marked failed), instead of every
+  restart failing every running scan;
+* **cancel** works from any replica: it sets a flag the owner sees on its next heartbeat;
+* a WebSocket opened on a replica that is *not* running the scan **tails the database**,
+  streaming new findings as the owner checkpoints them (about once a second);
+* WebSocket **tickets**, the scheduler's monitor **claims** and the **audit chain** are all
+  database-backed and safe under concurrency; migrations take an advisory lock.
 """
 
 from __future__ import annotations
@@ -31,7 +44,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
-from argus.api.deps import WebSocketTickets, audit, require
+from argus.api.deps import audit, require
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
@@ -39,7 +52,7 @@ from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
-from argus.core.settings import get_settings
+from argus.core.settings import Settings, get_settings
 from argus.demo import load_demo
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
@@ -55,7 +68,8 @@ from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
-from argus.storage.security_repo import ApiKeyRepository, AuditLog
+from argus.storage.repository import ACTIVE_STATUSES
+from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 
 logger = logging.getLogger("argus.api")
 
@@ -111,16 +125,20 @@ async def ws_dispatcher(event: Event) -> None:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     db = Database(settings.database_url, echo=settings.db_echo)
-    await upgrade_database(db)
+    if settings.auto_migrate:
+        await upgrade_database(db)
     repo = InvestigationRepository(db)
-    interrupted = await repo.mark_interrupted()
+    # Scans this instance was running before it restarted, legacy rows without an owner, and
+    # scans whose owner stopped sending heartbeats can never finish. Other replicas' live
+    # scans are left alone.
+    interrupted = await repo.mark_interrupted(owned_by=settings.instance_id, stale_seconds=settings.scan_stale_seconds)
     if interrupted:
         logger.warning("Marked %d interrupted investigation(s) as failed", interrupted)
 
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
     app.state.keys = ApiKeyRepository(db)
     app.state.audit = AuditLog(db)
-    app.state.ws_tickets = WebSocketTickets(settings.ws_ticket_ttl_seconds)
+    app.state.ws_tickets = TicketStore(db, settings.ws_ticket_ttl_seconds)
     app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
     await _bootstrap_admin_key(app)
     await _audit_plugins(app)
@@ -130,8 +148,9 @@ async def lifespan(app: FastAPI):
         app.state.audit,
         settings,
         launch=lambda config, by, purpose, monitor_id: _launch_for_scheduler(app, config, by, purpose, monitor_id),
-        running_scans=_running_scans,
+        running_scans=lambda: cluster_running_scans(app),
     )
+    janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
     scheduler_task = (
         asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
         if settings.monitors_enabled
@@ -141,9 +160,10 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        if scheduler_task:
-            scheduler_task.cancel()
-            await asyncio.gather(scheduler_task, return_exceptions=True)
+        background = [t for t in (scheduler_task, janitor_task) if t]
+        for task in background:
+            task.cancel()
+        await asyncio.gather(*background, return_exceptions=True)
         event_bus.unsubscribe_all(ws_dispatcher)
         for engine in INVESTIGATIONS.values():
             engine.cancel()
@@ -328,7 +348,37 @@ def _spawn(coro: Any, name: str) -> None:
 
 
 def _running_scans() -> int:
+    """Scans running in this process."""
     return sum(1 for e in INVESTIGATIONS.values() if e.is_running or e.investigation.status.value == "initializing")
+
+
+async def cluster_running_scans(app: FastAPI) -> int:
+    """Scans running on any replica (live heartbeat), so the concurrency cap is cluster-wide."""
+    try:
+        remote = len(await app.state.repo.active_scans(app.state.settings.scan_stale_seconds))
+    except Exception:
+        logger.warning("Could not count cluster-wide scans; using this replica's count", exc_info=True)
+        remote = 0
+    return max(_running_scans(), remote)
+
+
+async def _janitor(app: FastAPI) -> None:
+    """Periodically fail scans whose owning replica died (no heartbeat), so they don't stay 'running'."""
+    settings: Settings = app.state.settings
+    while True:
+        await asyncio.sleep(max(15.0, settings.scan_stale_seconds / 4))
+        try:
+            count = await app.state.repo.mark_interrupted(
+                stale_seconds=settings.scan_stale_seconds,
+                exclude=list(INVESTIGATIONS),
+                reason="Interrupted: the replica running this scan stopped responding.",
+            )
+            if count:
+                logger.warning("Marked %d scan(s) of unresponsive replicas as failed", count)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Janitor pass failed")
 
 
 async def launch_scan(
@@ -342,7 +392,9 @@ async def launch_scan(
     engine.investigation.monitor_id = monitor_id
     await repo.save_investigation(engine.investigation)  # fail before running if it cannot be recorded
 
-    recorder = InvestigationRecorder(repo, engine, flush_interval=app.state.settings.persist_flush_interval)
+    recorder = InvestigationRecorder(
+        repo, engine, flush_interval=app.state.settings.persist_flush_interval, owner=app.state.settings.instance_id
+    )
     INVESTIGATIONS[engine.investigation_id] = engine
     # Keep a strong reference to the task (asyncio only holds weak refs) and log failures.
     task = asyncio.create_task(_run_scan(engine, recorder), name=f"scan-{engine.investigation_id}")
@@ -402,6 +454,13 @@ def _on_scan_done(task: asyncio.Task[None]) -> None:
 
 
 # --------------------------------------------------------------------------- REST
+@app.get("/api/live")
+async def live():
+    """Liveness probe: the process is up and serving. Deliberately ignores the database, so a
+    database outage makes pods *unready* (taken out of the load balancer) rather than restarted."""
+    return {"status": "alive"}
+
+
 @app.get("/api/health")
 async def health(request: Request):
     """Liveness/readiness probe for Docker, Kubernetes and load balancers."""
@@ -417,6 +476,7 @@ async def health(request: Request):
         "status": "ok" if db_ok else "degraded",
         "database": {"backend": db.dialect, "reachable": db_ok},
         "active_scans": len(INVESTIGATIONS),
+        "instance": request.app.state.settings.instance_id,
         "version": app.version,
     }
     if not db_ok:
@@ -507,7 +567,7 @@ async def start_scan(req: StartScanRequest, request: Request, principal: Princip
             await audit(request, principal, "scan.start", target, "denied", {"reason": str(exc)})
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if _running_scans() >= settings.max_concurrent_scans:
+    if await cluster_running_scans(request.app) >= settings.max_concurrent_scans:
         raise HTTPException(
             status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
         )
@@ -570,18 +630,23 @@ async def get_investigation(inv_id: str, request: Request, _: Principal = VIEWER
 async def cancel_investigation(inv_id: str, request: Request, principal: Principal = ANALYST):
     """Request cooperative cancellation of a running investigation."""
     engine = INVESTIGATIONS.get(inv_id)
-    if engine is None or not engine.is_running:
-        inv = await _resolve(inv_id, get_repo(request))  # 404 if unknown
-        raise HTTPException(status_code=409, detail=f"Investigation is {inv.status.value}")
-    engine.cancel()
-    await audit(request, principal, "scan.cancel", inv_id)
-    return {"status": "cancelling", "investigation_id": inv_id}
+    if engine is not None and engine.is_running:
+        engine.cancel()
+        await audit(request, principal, "scan.cancel", inv_id)
+        return {"status": "cancelling", "investigation_id": inv_id}
+    if engine is None and await get_repo(request).request_cancel(inv_id):
+        # Running on another replica: it sees the request on its next heartbeat (~1 s).
+        await audit(request, principal, "scan.cancel", inv_id, details={"via": "cluster"})
+        return {"status": "cancelling", "investigation_id": inv_id}
+    inv = await _resolve(inv_id, get_repo(request))  # 404 if unknown
+    raise HTTPException(status_code=409, detail=f"Investigation is {inv.status.value}")
 
 
 @app.delete("/api/investigation/{inv_id}", status_code=204)
 async def delete_investigation(inv_id: str, request: Request, principal: Principal = ADMIN):
     """Permanently delete an investigation and all of its findings."""
-    if inv_id in INVESTIGATIONS:
+    stored = await get_repo(request).get_investigation(inv_id)
+    if inv_id in INVESTIGATIONS or (stored is not None and stored.status.value in ACTIVE_STATUSES):
         raise HTTPException(status_code=409, detail="Investigation is running; cancel it first")
     if not await get_repo(request).delete_investigation(inv_id):
         raise HTTPException(status_code=404, detail="Investigation not found")
@@ -717,7 +782,7 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
     Authenticate with ``?ticket=`` from ``POST /api/ws-ticket`` (single use, short-lived).
     """
     ticket = websocket.query_params.get("ticket")
-    if websocket.app.state.settings.auth_enabled and websocket.app.state.ws_tickets.redeem(ticket) is None:
+    if websocket.app.state.settings.auth_enabled and await websocket.app.state.ws_tickets.redeem(ticket) is None:
         await websocket.close(code=4401)
         return
     repo: InvestigationRepository = websocket.app.state.repo
@@ -728,6 +793,7 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
     await websocket.accept()
 
     conn = ClientConnection(websocket, websocket.app.state.settings.ws_queue_size)
+    tail_graph: IntelligenceGraph | None = None
     engine = INVESTIGATIONS.get(inv_id)  # re-check: the scan may have finished meanwhile
     if engine is not None:
         # No await between snapshot and registration: no event can slip between them.
@@ -740,8 +806,45 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
             await websocket.close(code=4404)
             return
         conn.offer(_snapshot_message(inv, graph))
+        if inv.status.value in ACTIVE_STATUSES:
+            tail_graph = graph  # running on another replica: follow it through the database
 
     client_gone = False
+
+    async def tail_database(start: IntelligenceGraph) -> None:
+        """Stream a scan owned by another replica by following its database checkpoints."""
+        sent_entities = {e.id for e in start.get_all_entities()}
+        sent_relations = {r.id for r in start.get_all_relations()}
+        counts = (start.node_count, start.edge_count)
+        interval = max(0.5, websocket.app.state.settings.persist_flush_interval)
+        while True:
+            await anyio.sleep(interval)
+            progress = await repo.progress(inv_id)
+            if progress is None:
+                return  # deleted
+            status, nodes, edges = progress
+            finished = status not in ACTIVE_STATUSES
+            if (nodes, edges) != counts or finished:
+                counts = (nodes, edges)
+                graph = await repo.load_graph(inv_id)
+                if graph is None:
+                    return
+                for e in graph.get_all_entities():
+                    if e.id not in sent_entities:
+                        sent_entities.add(e.id)
+                        conn.offer(_event_json("entity_discovered", inv_id, {"entity": e.model_dump(mode="json")}))
+                for r in graph.get_all_relations():
+                    if r.id not in sent_relations:
+                        sent_relations.add(r.id)
+                        conn.offer(_event_json("relation_discovered", inv_id, {"relation": r.model_dump(mode="json")}))
+                if finished:
+                    final = await repo.get_investigation(inv_id)
+                    data: dict[str, Any] = {"analytics": GraphIntelligenceAnalyzer.analyze(graph)}
+                    if final is not None and final.errors:
+                        data["error"] = final.errors[-1]
+                    kind = {"completed": "scan_completed", "cancelled": "scan_cancelled"}.get(status, "scan_failed")
+                    conn.offer(_event_json(kind, inv_id, data))
+                    await anyio.sleep_forever()  # keep the socket open, as for local scans
 
     async def drain_client() -> None:
         nonlocal client_gone
@@ -768,6 +871,9 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
             tg.start_soon(first_to_finish_wins, conn.pump)
             tg.start_soon(first_to_finish_wins, drain_client)
             tg.start_soon(first_to_finish_wins, conn.dead.wait)
+            if tail_graph is not None:
+                start_graph = tail_graph
+                tg.start_soon(first_to_finish_wins, lambda: tail_database(start_graph))
     finally:
         conns = CONNECTIONS.get(inv_id)
         if conns is not None:
@@ -780,6 +886,15 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
             await websocket.close(code=1013)
         except Exception as exc:  # noqa: BLE001 - best-effort notice to a client that may already be gone
             logger.debug("Could not close WebSocket cleanly: %r", exc)
+
+
+def _event_json(kind: str, inv_id: str, data: dict[str, Any]) -> str:
+    """Same wire format as engine events relayed by :func:`ws_dispatcher`."""
+    from datetime import datetime, timezone
+
+    return json.dumps(
+        {"type": kind, "investigation_id": inv_id, "data": data, "timestamp": datetime.now(timezone.utc).isoformat()}
+    )
 
 
 def _snapshot_message(inv: Investigation, graph: IntelligenceGraph) -> str:

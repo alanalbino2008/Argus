@@ -37,6 +37,10 @@ class InvestigationRow(Base):
     node_count: Mapped[int] = mapped_column(Integer, default=0)
     edge_count: Mapped[int] = mapped_column(Integer, default=0)
     data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    # Cluster coordination (several API replicas share one database):
+    owner: Mapped[str | None] = mapped_column(String(128), nullable=True)  # instance running the scan
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
 
 class EntityRow(Base):
@@ -84,6 +88,18 @@ class ApiKeyRow(Base):
     created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WsTicketRow(Base):
+    """Single-use WebSocket tickets, shared by every replica (only a SHA-256 hash is stored)."""
+
+    __tablename__ = "ws_tickets"
+
+    ticket_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key_id: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(128))
+    role: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class AuditEventRow(Base):

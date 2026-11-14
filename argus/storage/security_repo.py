@@ -10,11 +10,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.engine import CursorResult
 
 from argus.security.auth import Principal, Role, generate_api_key, hash_api_key, key_display_prefix
-from argus.storage.db import ApiKeyRow, AuditEventRow, Database
+from argus.storage.db import ApiKeyRow, AuditEventRow, Database, WsTicketRow
+
+# PostgreSQL advisory-lock key serialising audit-chain appends across every replica.
+AUDIT_CHAIN_LOCK = 0x4152_4755_5341_5544  # "ARGUSAUD"
 
 GENESIS_HASH = "0" * 64
 LAST_USED_RESOLUTION = timedelta(seconds=60)
@@ -116,8 +119,10 @@ class AuditLog:
 
     Editing or deleting any past row breaks every hash after it, so tampering is
     detectable with :meth:`verify` (the same idea as a blockchain or git history).
-    Note: the chain is serialised with an in-process lock - run a single API process
-    per database, or move the chain head into the database for multi-process deployments.
+    Appends are serialised in-process (asyncio lock) and, on PostgreSQL, across every
+    replica with a transaction-scoped advisory lock - so concurrent writers on different
+    pods can never read the same previous hash and fork the chain. (SQLite allows a single
+    writer anyway and is a single-node backend.)
     """
 
     def __init__(self, db: Database):
@@ -162,6 +167,8 @@ class AuditLog:
             "details": json.loads(json.dumps(details or {}, default=str)),
         }
         async with self._lock, self.db.session() as s, s.begin():
+            if self.db.dialect == "postgresql":
+                await s.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": AUDIT_CHAIN_LOCK})
             prev = (
                 await s.execute(select(AuditEventRow.hash).order_by(AuditEventRow.id.desc()).limit(1))
             ).scalar_one_or_none() or GENESIS_HASH
@@ -191,3 +198,53 @@ class AuditLog:
                 prev = row.hash
                 checked += 1
         return {"valid": True, "checked": checked, "first_invalid_id": None}
+
+
+class TicketStore:
+    """Single-use, short-lived WebSocket tickets stored in the database.
+
+    Browsers cannot attach an Authorization header to a WebSocket handshake, and putting
+    the long-lived API key in the URL would leak it into proxy logs, so the page trades its
+    key for a ticket valid for seconds. Keeping tickets in the database (hashed) means a
+    ticket issued by one replica can be redeemed on another behind a load balancer.
+    Redemption is an atomic DELETE ... RETURNING, so a ticket can never be used twice.
+    """
+
+    def __init__(self, db: Database, ttl: float):
+        self.db = db
+        self.ttl = ttl
+
+    async def issue(self, principal: Principal) -> str:
+        ticket = secrets.token_urlsafe(24)
+        now = _now()
+        async with self.db.session() as s, s.begin():
+            await s.execute(delete(WsTicketRow).where(WsTicketRow.expires_at < now))
+            s.add(
+                WsTicketRow(
+                    ticket_hash=hashlib.sha256(ticket.encode()).hexdigest(),
+                    key_id=principal.key_id,
+                    name=principal.name,
+                    role=principal.role.value,
+                    expires_at=now + timedelta(seconds=self.ttl),
+                )
+            )
+        return ticket
+
+    async def redeem(self, ticket: str | None) -> Principal | None:
+        if not ticket:
+            return None
+        digest = hashlib.sha256(ticket.encode()).hexdigest()
+        async with self.db.session() as s, s.begin():
+            row = (
+                await s.execute(
+                    delete(WsTicketRow)
+                    .where(WsTicketRow.ticket_hash == digest)
+                    .returning(WsTicketRow.key_id, WsTicketRow.name, WsTicketRow.role, WsTicketRow.expires_at)
+                )
+            ).first()
+        if row is None:
+            return None
+        expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+        if expires < _now():
+            return None
+        return Principal(key_id=row.key_id, name=row.name, role=Role(row.role))

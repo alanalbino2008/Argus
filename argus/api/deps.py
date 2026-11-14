@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
-import time
 from typing import Any
 
 from fastapi import Depends, HTTPException, Request, status
@@ -92,35 +90,3 @@ def require(role: Role):
         return principal
 
     return checker
-
-
-class WebSocketTickets:
-    """One-time, short-lived tickets for WebSocket authentication.
-
-    Browsers cannot attach an Authorization header to a WebSocket handshake, and
-    putting the long-lived API key in the URL would leak it into proxy and server
-    logs. So the page trades its key for a single-use ticket valid for seconds.
-    """
-
-    def __init__(self, ttl: float):
-        self.ttl = ttl
-        self._tickets: dict[str, tuple[Principal, float]] = {}
-
-    def issue(self, principal: Principal) -> str:
-        self._purge()
-        ticket = secrets.token_urlsafe(24)
-        self._tickets[ticket] = (principal, time.monotonic() + self.ttl)
-        return ticket
-
-    def redeem(self, ticket: str | None) -> Principal | None:
-        if not ticket:
-            return None
-        entry = self._tickets.pop(ticket, None)  # single use
-        if entry is None or entry[1] < time.monotonic():
-            return None
-        return entry[0]
-
-    def _purge(self) -> None:
-        now = time.monotonic()
-        for t in [t for t, (_, exp) in self._tickets.items() if exp < now]:
-            self._tickets.pop(t, None)

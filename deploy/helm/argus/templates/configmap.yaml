@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+data:
+  ARGUS_AUTO_MIGRATE: "false"
+  ARGUS_MAX_CONCURRENT_SCANS: {{ .Values.config.maxConcurrentScans | quote }}
+  ARGUS_SCANS_PER_MINUTE: {{ .Values.config.scansPerMinute | quote }}
+  ARGUS_MONITORS_ENABLED: {{ .Values.config.monitorsEnabled | quote }}
+  ARGUS_SCAN_STALE_SECONDS: {{ .Values.config.scanStaleSeconds | quote }}
+  ARGUS_ALLOW_PRIVATE_TARGETS: {{ .Values.config.allowPrivateTargets | quote }}
+  ARGUS_CORS_ORIGINS: {{ .Values.config.corsOrigins | toJson | quote }}
+  {{- range $k, $v := .Values.config.extraEnv }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

@@ -8,6 +8,7 @@ import pytest
 from argus.cli import console
 from argus.core import engine as engine_module
 from argus.core.settings import get_settings
+from tests.conftest import database_url
 from tests.test_engine import FanOutModule
 
 
@@ -35,7 +36,7 @@ async def test_cli_allows_internal_targets_when_explicitly_authorised(fake_modul
 
 
 def test_cli_create_api_key(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'cli.db'}")
+    monkeypatch.setenv("ARGUS_DATABASE_URL", database_url(tmp_path, "cli.db"))
     get_settings.cache_clear()
     monkeypatch.setattr(sys, "argv", ["argus", "--create-api-key", "ci-bot", "--role", "viewer"])
     try:

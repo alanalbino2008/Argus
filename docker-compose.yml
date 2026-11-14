@@ -1,26 +1,26 @@
-version: '3.8'
+# Single node, SQLite on a volume:   docker compose up
+# Clustered on PostgreSQL:           see deploy/compose/cluster.yml
+#
+# On first start an admin API key is generated and printed once (`docker compose logs argus`),
+# or supply your own in an untracked .env file: ARGUS_BOOTSTRAP_ADMIN_KEY=argus_<long-random>
 
 services:
   argus:
     build:
       context: .
       dockerfile: Dockerfile
+    image: argus-osint:local
     container_name: argus-osint
     ports:
       - "8000:8000"
     restart: unless-stopped
     environment:
-      - PYTHONUNBUFFERED=1
-      # Default: SQLite on a named volume. For PostgreSQL install the `postgres` extra and use e.g.
-      # ARGUS_DATABASE_URL=postgresql+asyncpg://argus:<password>@db:5432/argus
-      - ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
-      # On first start an admin API key is generated and printed once: `docker compose logs argus`.
-      # Or supply your own via an untracked .env file: ARGUS_BOOTSTRAP_ADMIN_KEY=argus_<long-random>
-      - ARGUS_BOOTSTRAP_ADMIN_KEY=${ARGUS_BOOTSTRAP_ADMIN_KEY:-}
+      ARGUS_DATABASE_URL: sqlite+aiosqlite:////app/data/argus.db
+      ARGUS_BOOTSTRAP_ADMIN_KEY: ${ARGUS_BOOTSTRAP_ADMIN_KEY:-}
     volumes:
       - argus-data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.build_opener(u.ProxyHandler({})).open('http://127.0.0.1:8000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.11.0] — Phase 11: Kubernetes & PostgreSQL
+
+### Added
+- **Helm chart** (`deploy/helm/argus`): multi-replica API with rolling updates (`maxUnavailable: 0`),
+  zone/node spreading, PodDisruptionBudget, optional HPA, Ingress with WebSocket timeouts,
+  startup/readiness/liveness probes, preStop drain, checksum-triggered rollouts, migrations in an
+  init container, non-root read-only pods with all capabilities dropped and no service-account token,
+  NetworkPolicies (egress to the internet but not to private, link-local or CGNAT ranges), optional
+  bundled PostgreSQL for evaluation, external database via an existing Secret, generated secrets kept
+  across upgrades, `values.schema.json`, NOTES and a `helm test`.
+- **Cluster coordination through PostgreSQL** (migration `0004`): scans record their owner replica
+  and a heartbeat; a janitor fails scans whose replica stopped responding (and fences it if it
+  recovers); cancel works from any replica; WebSockets opened on a non-owner replica stream the scan
+  from database checkpoints; WebSocket tickets are stored (hashed) in the database; the scheduler
+  claims due monitors atomically; the audit chain takes an advisory lock; migrations take an
+  advisory lock; the concurrent-scan cap is cluster-wide.
+- `argus --migrate`, `GET /api/live` (liveness without the database), `instance` in `/api/health`,
+  settings `ARGUS_INSTANCE_ID`, `ARGUS_AUTO_MIGRATE`, `ARGUS_SCAN_STALE_SECONDS`.
+- `deploy/compose/cluster.yml`: PostgreSQL + migration job + two replicas behind nginx.
+- CI: the whole test suite also runs on PostgreSQL 16; the chart is linted, schema-validated in
+  several configurations, installed on a kind cluster, checked with `helm test` and rolled while
+  under traffic. Releases publish the chart to `oci://ghcr.io/alanalbino2008/charts`.
+- `docs/DEPLOYMENT.md`, `docs/explained/11-kubernetes-and-postgresql.md`.
+
+### Changed
+- The image includes the PostgreSQL driver, runs as fixed UID 10001, starts uvicorn directly with
+  proxy headers and graceful shutdown, and its health check ignores `HTTP(S)_PROXY`.
+
+### Fixed
+- A restarting replica marked *every* running scan as failed, including scans on other replicas.
+- Checkpoints overwrote columns they did not set (an upsert updated every column), which would
+  have erased a scan's owner and heartbeat on every flush.
+- Replicas that were not running a scan saw it as "initializing" until it found something: status
+  changes are now persisted even without new findings.
+- Concurrent audit-log writes from several processes could fork the hash chain.
+- Container health checks failed behind a corporate proxy (`urllib` sent localhost to the proxy).
+
 ## [1.10.0] — Phase 10: Deep recon
 
 ### Added

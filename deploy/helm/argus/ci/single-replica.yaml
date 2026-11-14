@@ -1,0 +1,4 @@
+# CI render check: smallest footprint (one replica, no network policy, no PDB rendered).
+replicaCount: 1
+networkPolicy:
+  enabled: false

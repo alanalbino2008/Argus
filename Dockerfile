@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Multi-stage build: the runtime image contains only an installed wheel in a virtualenv -
-# no source tree, tests, git history or build tools.
+# no source tree, tests, git history or build tools. Includes the PostgreSQL driver, so the
+# same image runs single-node (SQLite) or clustered (PostgreSQL, Kubernetes).
 
 # ---------------------------------------------------------------------------- build stage
 FROM python:3.12-slim AS builder
@@ -14,7 +15,7 @@ ENV PATH=/opt/venv/bin:$PATH
 COPY pyproject.toml README.md ./
 COPY argus ./argus
 RUN pip install build && python -m build --wheel --outdir /dist . \
-    && pip install /dist/*.whl
+    && pip install "$(ls /dist/*.whl)[postgres]"
 
 # -------------------------------------------------------------------------- runtime stage
 FROM python:3.12-slim
@@ -26,8 +27,9 @@ LABEL org.opencontainers.image.title="Argus OSINT" \
       org.opencontainers.image.licenses="LicenseRef-Proprietary" \
       org.opencontainers.image.version="${VERSION}"
 
-# Non-root user; the only writable location is the data volume.
-RUN groupadd --system argus && useradd --system --gid argus --home-dir /app argus \
+# Fixed numeric UID/GID so Kubernetes can enforce runAsNonRoot (it cannot verify user *names*).
+RUN groupadd --system --gid 10001 argus \
+    && useradd --system --uid 10001 --gid argus --home-dir /app argus \
     && mkdir -p /app/data && chown argus:argus /app/data
 
 COPY --from=builder /opt/venv /opt/venv
@@ -38,12 +40,14 @@ ENV PATH=/opt/venv/bin:$PATH \
     ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
 
 WORKDIR /app
-USER argus
+USER 10001:10001
 VOLUME ["/app/data"]
 EXPOSE 8000
 
+# Health check bypasses HTTP(S)_PROXY: on corporate networks a proxy must never see localhost.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(urllib.request.urlopen('http://localhost:8000/api/health').status != 200)"
+    CMD python -c "import urllib.request as u,sys; sys.exit(u.build_opener(u.ProxyHandler({})).open('http://127.0.0.1:8000/api/health').status != 200)"
 
 # 0.0.0.0 inside the container is required for port publishing; access is still API-key protected.
-CMD ["argus", "--serve", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers: trust X-Forwarded-* from the ingress so audit logs record real client IPs.
+CMD ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*", "--timeout-graceful-shutdown", "20"]

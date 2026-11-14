@@ -26,7 +26,15 @@ logger = logging.getLogger("argus.storage.recorder")
 
 
 class InvestigationRecorder:
-    def __init__(self, repo: InvestigationRepository, engine: ArgusEngine, flush_interval: float = 1.0):
+    def __init__(
+        self,
+        repo: InvestigationRepository,
+        engine: ArgusEngine,
+        flush_interval: float = 1.0,
+        owner: str | None = None,
+    ):
+        self.owner = owner
+        self._last_saved: tuple[Any, int, int] | None = None
         self.repo = repo
         self.engine = engine
         self.flush_interval = flush_interval
@@ -38,6 +46,8 @@ class InvestigationRecorder:
 
     async def start(self) -> None:
         await self.repo.save_investigation(self.engine.investigation)
+        if self.owner:
+            await self.repo.claim(self.engine.investigation_id, self.owner)
         self.engine.bus.subscribe_all(self._on_event)
         self._task = asyncio.create_task(self._flush_loop(), name=f"recorder-{self.engine.investigation_id}")
 
@@ -69,6 +79,12 @@ class InvestigationRecorder:
             await asyncio.sleep(self.flush_interval)
             try:
                 await self.flush()
+                # Heartbeat: proves to other replicas this scan is alive, and carries
+                # cancellation requests made through any replica.
+                cancel = bool(self.owner) and await self.repo.heartbeat(self.engine.investigation_id)
+                if cancel and self.engine.is_running:
+                    logger.info("Cancellation of %s requested via another replica", self.engine.investigation_id)
+                    self.engine.cancel()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -76,7 +92,14 @@ class InvestigationRecorder:
 
     async def flush(self) -> None:
         async with self._lock:
+            inv = self.engine.investigation
+            state = (inv.status, self.engine.graph.node_count, self.engine.graph.edge_count)
             if not self._entities and not self._relations:
+                # Nothing new found, but other replicas still need status changes (e.g. running).
+                if state != self._last_saved:
+                    inv.node_count, inv.edge_count = state[1], state[2]
+                    await self.repo.save_investigation(inv)
+                    self._last_saved = state
                 return
             entities, self._entities = self._entities, {}
             relations, self._relations = self._relations, {}
@@ -87,6 +110,7 @@ class InvestigationRecorder:
                 inv = self.engine.investigation
                 inv.node_count, inv.edge_count = self.engine.graph.node_count, self.engine.graph.edge_count
                 await self.repo.save_investigation(inv)
+                self._last_saved = (inv.status, inv.node_count, inv.edge_count)
                 self.flushes += 1
             except Exception:
                 # Put the batch back so nothing is lost; newer copies win.

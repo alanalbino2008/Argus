@@ -188,14 +188,37 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Option 2: Docker / Container Deployment
+### Option 2: Docker (single node)
 
 ```bash
-# Run one-command containerized stack
-docker compose up -d
-
-# Open http://localhost:8000 in your browser
+docker compose up -d        # SQLite on a volume; open http://localhost:8000
 ```
+
+### Option 3: Clustered on PostgreSQL
+
+```bash
+cp deploy/compose/.env.example deploy/compose/.env    # set real secrets
+docker compose -f deploy/compose/cluster.yml up -d --build
+```
+
+PostgreSQL, a one-off migration job, two Argus replicas and an nginx load balancer.
+
+### Option 4: Kubernetes (Helm)
+
+```bash
+helm install argus deploy/helm/argus --namespace argus --create-namespace \
+  --set externalDatabase.existingSecret=argus-db     # omit to try it with a bundled PostgreSQL
+```
+
+Highly available out of the box: several replicas spread across nodes and zones, rolling
+updates with no downtime, a disruption budget, optional autoscaling, non-root read-only pods,
+and network policies that let Argus reach the internet but never private ranges or the cloud
+metadata endpoint. Replicas coordinate through PostgreSQL — scan ownership with heartbeats,
+cancellation from any replica, live streaming of scans running elsewhere, shared WebSocket
+tickets, exactly-once scheduling and a concurrency-safe audit chain — so no sticky sessions or
+message broker are needed. Every push installs the chart on a real Kubernetes cluster in CI.
+Operator guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · How it works:
+[`docs/explained/11-kubernetes-and-postgresql.md`](docs/explained/11-kubernetes-and-postgresql.md).
 
 ---
 

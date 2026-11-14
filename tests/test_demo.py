@@ -12,6 +12,7 @@ from argus.core.settings import get_settings
 from argus.demo import DEMO_ID, build_demo
 from argus.intel.paths import RULES, find_attack_paths
 from argus.intel.stix import build_bundle
+from tests.conftest import database_url
 
 
 def test_demo_uses_only_reserved_identifiers():
@@ -78,7 +79,7 @@ def test_demo_load_requires_admin(client):
 
 
 def test_cli_load_demo(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'demo.db'}")
+    monkeypatch.setenv("ARGUS_DATABASE_URL", database_url(tmp_path, "demo.db"))
     get_settings.cache_clear()
     monkeypatch.setattr(sys, "argv", ["argus", "--load-demo"])
     try:

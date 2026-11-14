@@ -1,0 +1,136 @@
+# Argus Helm chart. Every value is documented; see values.schema.json for validation.
+
+image:
+  repository: ghcr.io/alanalbino2008/argus
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# API replicas. They coordinate through PostgreSQL (scan ownership + heartbeats, cross-replica
+# cancel, shared WebSocket tickets, scheduler claims, audit chain), so any number can run
+# behind a plain round-robin Service - no sticky sessions needed.
+replicaCount: 2
+
+# ---------------------------------------------------------------------------- database
+# Production: point at a managed PostgreSQL (RDS, Cloud SQL, Azure Database...) through a
+# Secret you create yourself:
+#   kubectl create secret generic argus-db --from-literal=database-url='postgresql+asyncpg://USER:PASS@HOST:5432/argus?ssl=require'
+externalDatabase:
+  existingSecret: ""
+  existingSecretKey: database-url
+
+# Evaluation / development only: a single PostgreSQL pod with a persistent volume.
+# Disabled automatically when externalDatabase.existingSecret is set.
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+  database: argus
+  username: argus
+  # Leave empty to generate one (kept across upgrades).
+  password: ""
+  persistence:
+    size: 8Gi
+    storageClass: ""
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+# How schema migrations run:
+#   initContainer - every new pod runs `argus --migrate` before starting. Safe with many
+#                   replicas: migrations take a PostgreSQL advisory lock, so they run once.
+migrations:
+  enabled: true
+
+# ---------------------------------------------------------------------------- secrets
+secrets:
+  # Use an existing Secret for the keys below instead of letting the chart create one.
+  existingSecret: ""
+  # Admin API key installed on first start (>= 32 characters). Empty = generated and stored in
+  # the chart's Secret; read it with the command printed after `helm install`.
+  bootstrapAdminKey: ""
+  # Optional intelligence sources (modules stay off until their key is set).
+  githubToken: ""
+  virustotalApiKey: ""
+  hibpApiKey: ""
+  shodanApiKey: ""
+
+# ---------------------------------------------------------------------------- application
+config:
+  maxConcurrentScans: 5          # cluster-wide cap
+  scansPerMinute: 10             # per API key, per replica
+  monitorsEnabled: true          # every replica runs a scheduler; due monitors are claimed atomically
+  scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
+  allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone
+  corsOrigins: []
+  logLevel: info
+  # Any other ARGUS_* setting, e.g. {ARGUS_PERSIST_FLUSH_INTERVAL: "1.0"}
+  extraEnv: {}
+
+# ---------------------------------------------------------------------------- networking
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  host: argus.example.com
+  annotations: {}
+  # WebSockets stream live scans for minutes: raise proxy timeouts (ingress-nginx shown).
+  websocketAnnotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+  tls:
+    enabled: false
+    secretName: argus-tls
+
+# Restrict who can reach Argus and what Argus can reach. Egress is open to the internet (OSINT
+# needs it) but private/link-local ranges are blocked except DNS and the database - defence in
+# depth behind Argus's own SSRF guard: a malicious redirect cannot reach cluster services or the
+# cloud metadata endpoint.
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to call the API (empty = any pod in the cluster, e.g. via the ingress).
+  ingressNamespaceSelector: {}
+  # CIDRs of an external database (managed PostgreSQL usually lives in a private range).
+  databaseCIDRs: []
+  blockedEgressCIDRs:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 169.254.0.0/16
+    - 100.64.0.0/10
+
+# ---------------------------------------------------------------------------- scheduling
+resources:
+  requests: {cpu: 250m, memory: 384Mi}
+  limits: {memory: 1Gi}
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Spread replicas across nodes and zones so one failure never takes the API down.
+topologySpread: true
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}
+
+# Long enough for running scans to be cancelled and persisted on shutdown.
+terminationGracePeriodSeconds: 45
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

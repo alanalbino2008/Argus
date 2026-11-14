@@ -8,11 +8,12 @@ from sqlalchemy import inspect, text
 
 from argus.storage.db import Base, Database
 from argus.storage.migrate import alembic_config, head_revision, upgrade_database
+from tests.conftest import database_url
 
 
 @pytest.fixture
 async def db(tmp_path):
-    database = Database(f"sqlite+aiosqlite:///{tmp_path / 'm.db'}")
+    database = Database(database_url(tmp_path, "m.db"))
     yield database
     await database.dispose()
 
@@ -39,11 +40,15 @@ async def test_upgrade_is_idempotent(db):
 
 async def test_pre_migration_database_is_adopted_without_data_loss(db):
     """Argus 1.2-1.3 created its (baseline) tables with create_all() and no alembic_version table."""
-    baseline = [
-        Base.metadata.tables[t] for t in ("investigations", "entities", "relations", "api_keys", "audit_events")
-    ]
+    from alembic import command
+
+    def baseline_schema(c):
+        # The real 1.2/1.3 schema is migration 0001's; then forget it was ever migrated.
+        command.upgrade(alembic_config(c), "0001")
+        c.execute(text("DROP TABLE alembic_version"))
+
     async with db.engine.begin() as conn:
-        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=baseline))
+        await conn.run_sync(baseline_schema)
     async with db.engine.begin() as conn:
         await conn.execute(
             text(

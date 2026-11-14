@@ -11,12 +11,15 @@ Safety properties:
   policy (e.g. disabling private targets) takes effect immediately;
 * schedules the next run *before* the scan finishes, so a slow scan is never
   started twice;
-* every automated scan is attributed to the scheduler in the audit log.
+* every automated scan is attributed to the scheduler in the audit log;
+* cluster-safe: every replica runs a scheduler, but each due monitor is *claimed*
+  with an atomic conditional UPDATE, so exactly one replica starts it.
 """
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -42,7 +45,7 @@ class MonitorScheduler:
         audit: AuditLog,
         settings: Settings,
         launch: Launcher,
-        running_scans: Callable[[], int],
+        running_scans: Callable[[], int | Awaitable[int]],
     ):
         self.monitors = monitors
         self.audit = audit
@@ -54,8 +57,13 @@ class MonitorScheduler:
         """Start every due monitor that fits under the concurrency cap; returns investigation ids."""
         launched: list[str] = []
         for monitor in await self.monitors.due():
-            if self.running_scans() >= self.settings.max_concurrent_scans:
+            running = self.running_scans()
+            if inspect.isawaitable(running):
+                running = await running
+            if running >= self.settings.max_concurrent_scans:
                 break  # try again next tick
+            if not await self.monitors.claim(monitor["id"]):
+                continue  # another replica took it
             await self._run(monitor, launched)
         return launched
 
@@ -81,6 +89,7 @@ class MonitorScheduler:
             inv_id = await self.launch(config, f"monitor:{monitor['created_by']}", monitor["purpose"], monitor["id"])
         except Exception:
             logger.exception("Monitor %s failed to launch", monitor["id"])
+            await self.monitors.release(monitor["id"])  # retry on the next tick
             return
         await self.monitors.mark_started(monitor["id"], inv_id)
         await self.audit.record(

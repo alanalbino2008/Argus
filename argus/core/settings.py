@@ -8,6 +8,8 @@ variable or a local ``.env`` file, e.g.::
 
 from __future__ import annotations
 
+import os
+import socket
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -57,6 +59,20 @@ class Settings(BaseSettings):
     monitors_enabled: bool = Field(default=True, description="Run the scheduler that re-scans monitored targets")
     monitor_poll_seconds: float = Field(
         default=60.0, ge=1, description="How often the scheduler checks for due monitors"
+    )
+    # --- Clustering (several replicas sharing one PostgreSQL database) ---------------------
+    instance_id: str = Field(
+        default_factory=lambda: os.environ.get("HOSTNAME") or socket.gethostname(),
+        description="Name of this replica (Kubernetes: the pod name). Recorded as the owner of the scans it runs.",
+    )
+    auto_migrate: bool = Field(
+        default=True,
+        description="Apply database migrations at startup. Kubernetes runs them once in a Job instead (false).",
+    )
+    scan_stale_seconds: float = Field(
+        default=120.0,
+        ge=10,
+        description="A running scan whose owner sent no heartbeat for this long is treated as crashed",
     )
     ws_ticket_ttl_seconds: int = Field(default=30, ge=5, description="Lifetime of one-time WebSocket tickets")
 

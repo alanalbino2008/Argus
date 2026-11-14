@@ -18,7 +18,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Connection
 
 from argus.storage.db import Database
@@ -55,9 +55,19 @@ def _upgrade(connection: Connection) -> str | None:
     return MigrationContext.configure(connection).get_current_revision()
 
 
+# PostgreSQL advisory-lock key: replicas starting together migrate one at a time.
+MIGRATION_LOCK = 0x4152_4755_534D_4947  # "ARGUSMIG"
+
+
 async def upgrade_database(db: Database) -> str | None:
-    """Bring the database schema up to the latest revision; returns that revision."""
+    """Bring the database schema up to the latest revision; returns that revision.
+
+    Safe to call from several replicas at once: on PostgreSQL the migration runs under a
+    transaction-scoped advisory lock, so the others wait and then find nothing to do.
+    """
     async with db.engine.begin() as conn:
+        if db.dialect == "postgresql":
+            await conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": MIGRATION_LOCK})
         revision = await conn.run_sync(_upgrade)
     logger.info("Database schema at revision %s", revision)
     return revision

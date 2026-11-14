@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "argus.fullname" . }}
+  labels: {{- include "argus.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  # Plain round-robin: replicas share state through PostgreSQL, so no session affinity.
+  ports:
+    - {name: http, port: {{ .Values.service.port }}, targetPort: http, protocol: TCP}
+  selector: {{- include "argus.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api

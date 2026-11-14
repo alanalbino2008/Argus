@@ -221,6 +221,19 @@ async def create_api_key_cli(name: str, role: str) -> None:
     )
 
 
+async def migrate_cli() -> str | None:
+    """Apply database migrations and exit (Kubernetes runs this once per release, in a Job)."""
+    from argus.core.settings import get_settings
+    from argus.storage import Database
+    from argus.storage.migrate import upgrade_database
+
+    db = Database(get_settings().database_url)
+    try:
+        return await upgrade_database(db)
+    finally:
+        await db.dispose()
+
+
 async def check_platforms_cli() -> dict:
     """Verify every username-platform signature against live sites (needs internet access)."""
     import aiohttp
@@ -283,6 +296,11 @@ def cli_entrypoint():
         help="Skip modules that contact the target's own systems (bug bounty programmes that forbid active testing)",
     )
     parser.add_argument(
+        "--migrate",
+        action="store_true",
+        help="Apply database migrations to ARGUS_DATABASE_URL, then exit (for deployment jobs)",
+    )
+    parser.add_argument(
         "--check-platforms",
         action="store_true",
         help="Verify every username-platform signature against live sites, then exit",
@@ -296,6 +314,11 @@ def cli_entrypoint():
     )
 
     args = parser.parse_args()
+
+    if args.migrate:
+        revision = asyncio.run(migrate_cli())
+        console.print(f"[green]Database schema at revision {revision}[/green]")
+        return
 
     if args.check_platforms:
         report = asyncio.run(check_platforms_cli())
