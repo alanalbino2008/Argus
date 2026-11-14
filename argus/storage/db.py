@@ -9,11 +9,13 @@ Works unchanged on SQLite (default) and PostgreSQL.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, event, false
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, event, false, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -183,6 +185,22 @@ class Database:
 
     def session(self) -> AsyncSession:
         return self.sessionmaker()
+
+    @asynccontextmanager
+    async def cluster_lock(self, key: int) -> AsyncIterator[None]:
+        """Run a check-then-act step on one replica at a time (PostgreSQL advisory lock).
+
+        A no-op on SQLite, which is a single-node backend.
+        """
+        if self.dialect != "postgresql":
+            yield
+            return
+        async with self.engine.connect() as conn:
+            await conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+            try:
+                yield
+            finally:
+                await conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
 
     async def dispose(self) -> None:
         await self.engine.dispose()

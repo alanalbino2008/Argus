@@ -118,6 +118,11 @@ jobs:
             --set image.repository=argus --set image.tag=ci --set image.pullPolicy=Never \
             --wait --timeout 6m
           kubectl get pods -o wide
+          # A clean install has no crash-restarts (startup races between replicas would show here).
+          restarts=$(kubectl get pods -l app.kubernetes.io/name=argus \
+            -o jsonpath='{range .items[*]}{range .status.containerStatuses[*]}{.restartCount}{"\n"}{end}{range .status.initContainerStatuses[*]}{.restartCount}{"\n"}{end}{end}' \
+            | awk '{s+=$1} END {print s+0}')
+          echo "container restarts: $restarts"; test "$restarts" -eq 0
       - name: helm test (healthy, database reachable, traffic reaches several replicas)
         run: helm test argus --logs
       - name: Rolling restart under traffic (probed from inside the cluster, through the Service)

@@ -36,6 +36,9 @@
   changes are now persisted even without new findings.
 - Concurrent audit-log writes from several processes could fork the hash chain.
 - Container health checks failed behind a corporate proxy (`urllib` sent localhost to the proxy).
+- Replicas starting together raced to install the bootstrap admin key (one crashed on the unique
+  constraint; with a generated key two admin keys would have been created): now serialised with a
+  cluster-wide lock. `argus --migrate` waits for the database instead of crash-looping.
 
 ## [1.10.0] — Phase 10: Deep recon
 

@@ -232,3 +232,20 @@ async def test_status_changes_reach_other_pods_even_without_new_findings(pods):
     seen = await InvestigationRepository(b).get_investigation(engine.investigation_id)
     assert seen.status == InvestigationStatus.RUNNING
     await recorder.finish()
+
+
+@pytest.mark.skipif(not PG_URL, reason="advisory locks are PostgreSQL-only; SQLite is single-node")
+async def test_cluster_lock_serialises_check_then_act_across_pods(pods):
+    """Two pods bootstrapping at once must create exactly one admin key."""
+    from argus.security.auth import Role as R
+    from argus.storage.security_repo import ApiKeyRepository
+
+    async def bootstrap(db):
+        async with db.cluster_lock(0x1234):
+            repo = ApiKeyRepository(db)
+            if await repo.count_active(R.ADMIN) == 0:
+                await asyncio.sleep(0.05)  # widen the race window
+                await repo.create("bootstrap-admin", R.ADMIN, created_by="system")
+
+    await asyncio.gather(*(bootstrap(db) for db in pods * 3))
+    assert await ApiKeyRepository(pods[0]).count_active(R.ADMIN) == 1

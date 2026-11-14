@@ -188,12 +188,21 @@ async def _audit_plugins(app: FastAPI) -> None:
         await app.state.audit.record(SYSTEM, "plugin.rejected", name, outcome="failure", details={"reason": reason})
 
 
+BOOTSTRAP_LOCK = 0x4152_4755_5342_4F4F  # "ARGUSBOO": replicas starting together bootstrap once
+
+
 async def _bootstrap_admin_key(app: FastAPI) -> None:
     """Guarantee an administrator can always get in - without shipping a default password."""
     settings = app.state.settings
     if not settings.auth_enabled:
         logger.warning("AUTHENTICATION IS DISABLED (ARGUS_AUTH_ENABLED=false). Never expose this instance.")
         return
+    # Several replicas start at once: without the lock each sees "no admin yet" and creates one.
+    async with app.state.db.cluster_lock(BOOTSTRAP_LOCK):
+        await _install_bootstrap_key(app, settings)
+
+
+async def _install_bootstrap_key(app: FastAPI, settings: Settings) -> None:
     keys: ApiKeyRepository = app.state.keys
     if await keys.count_active(Role.ADMIN) > 0:
         return
