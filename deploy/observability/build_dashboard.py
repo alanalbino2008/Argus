@@ -163,6 +163,20 @@ series([
      "queries": [('sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) or vector(0)', "blocked")]},
 ])  # fmt: skip
 
+# ------------------------------------------------------------------------------ notifications
+row("Notifications")
+series([
+    {"title": "Deliveries by outcome (per hour)", "stack": True,
+     "description": "delivered, retry (will be tried again), failed (gave up), cancelled (channel paused)",
+     "queries": [("sum by (outcome) (increase(argus_notifications_total[1h]))", "{{outcome}}")]},
+    {"title": "Waiting to be sent", "description": "Cluster-wide outbox backlog; grows while a destination is down",
+     "queries": [("max(argus_notifications_pending)", "pending")]},
+    {"title": "Time to deliver (p95)", "unit": "s", "fill": 0,
+     "description": "From the event to a successful delivery, retries included",
+     "queries": [("histogram_quantile(0.95, sum by (le, channel_type) (rate(argus_notification_delivery_seconds_bucket[1h])))",
+                  "{{channel_type}}")]},
+])  # fmt: skip
+
 # ------------------------------------------------------------------------------ platform & security
 row("Platform & security")
 series([

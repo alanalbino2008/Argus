@@ -80,7 +80,7 @@ spec:
             - name: ARGUS_BOOTSTRAP_ADMIN_KEY
               valueFrom:
                 secretKeyRef: {name: {{ include "argus.secretName" . }}, key: bootstrap-admin-key, optional: true}
-            {{- range $env, $key := dict "ARGUS_GITHUB_TOKEN" "github-token" "ARGUS_VIRUSTOTAL_API_KEY" "virustotal-api-key" "ARGUS_HIBP_API_KEY" "hibp-api-key" "ARGUS_SHODAN_API_KEY" "shodan-api-key" "ARGUS_METRICS_TOKEN" "metrics-token" "ARGUS_OIDC_CLIENT_SECRET" "oidc-client-secret" }}
+            {{- range $env, $key := dict "ARGUS_GITHUB_TOKEN" "github-token" "ARGUS_VIRUSTOTAL_API_KEY" "virustotal-api-key" "ARGUS_HIBP_API_KEY" "hibp-api-key" "ARGUS_SHODAN_API_KEY" "shodan-api-key" "ARGUS_METRICS_TOKEN" "metrics-token" "ARGUS_OIDC_CLIENT_SECRET" "oidc-client-secret" "ARGUS_ENCRYPTION_KEY" "encryption-key" "ARGUS_SMTP_PASSWORD" "smtp-password" }}
             - name: {{ $env }}
               valueFrom:
                 secretKeyRef: {name: {{ include "argus.secretName" $ }}, key: {{ $key }}, optional: true}

@@ -48,6 +48,7 @@ from argus import __version__
 from argus.api.auth_routes import router as auth_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, require_platform_admin
 from argus.api.monitor_routes import router as monitor_router
+from argus.api.notification_routes import router as notification_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.workspace_routes import router as workspace_router
@@ -64,9 +65,11 @@ from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
 from argus.modules import get_default_modules, get_module_catalog, plugin_report
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
+from argus.notify.dispatcher import NotificationDispatcher
 from argus.observability import logs, metrics
 from argus.observability.middleware import ObservabilityMiddleware
 from argus.security.auth import SYSTEM, Principal, Role
+from argus.security.crypto import secret_box_from_settings
 from argus.security.headers import SecurityHeadersMiddleware
 from argus.security.network import validate_scan_target
 from argus.security.oidc import OidcProvider
@@ -74,6 +77,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
+from argus.storage.notification_repo import NotificationRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 from argus.storage.user_repo import UserRepository
@@ -157,6 +161,14 @@ async def lifespan(app: FastAPI):
     await _bootstrap_admin_key(app)
     await _audit_plugins(app)
     app.state.monitors = MonitorRepository(db)
+    app.state.secret_box = secret_box_from_settings(settings)
+    app.state.notifications = NotificationRepository(db, app.state.secret_box)
+    app.state.notifier = NotificationDispatcher(app.state.notifications, settings)
+    notifier_task = (
+        asyncio.create_task(app.state.notifier.run_forever(), name="notification-dispatcher")
+        if settings.notifications_enabled
+        else None
+    )
     app.state.scheduler = MonitorScheduler(
         app.state.monitors,
         app.state.audit,
@@ -176,7 +188,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        background = [t for t in (scheduler_task, janitor_task) if t]
+        background = [t for t in (scheduler_task, janitor_task, notifier_task) if t]
         for task in background:
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
@@ -268,6 +280,7 @@ app.include_router(security_router)
 app.include_router(auth_router)
 app.include_router(workspace_router)
 app.include_router(monitor_router)
+app.include_router(notification_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -497,13 +510,14 @@ async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:
         headline=headline(diff, inv.config.target),
         summary={k: diff[k] for k in ("summary", "new_paths", "escalated_paths", "resolved_paths")},
         workspace_id=inv.workspace_id,
+        public_url=app.state.settings.public_url,
     )
     metrics.ALERTS_RAISED.labels(worst).inc()
     await app.state.audit.record(
         SCHEDULER,
         "alert.raised",
         alert["id"],
-        details={"severity": worst, "target": inv.config.target},
+        details={"severity": worst, "target": inv.config.target, "notifications": alert.get("notifications_queued", 0)},
         workspace_id=inv.workspace_id,
     )
 

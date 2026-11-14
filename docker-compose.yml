@@ -17,6 +17,14 @@ services:
     environment:
       ARGUS_DATABASE_URL: sqlite+aiosqlite:////app/data/argus.db
       ARGUS_BOOTSTRAP_ADMIN_KEY: ${ARGUS_BOOTSTRAP_ADMIN_KEY:-}
+      # Encrypts notification webhook URLs; created on first start. Back it up with the volume.
+      ARGUS_ENCRYPTION_KEY: ${ARGUS_ENCRYPTION_KEY:-}
+      ARGUS_ENCRYPTION_KEY_FILE: /app/data/encryption.key
+      ARGUS_PUBLIC_URL: ${ARGUS_PUBLIC_URL:-http://localhost:8000}
+      ARGUS_SMTP_HOST: ${ARGUS_SMTP_HOST:-}
+      ARGUS_SMTP_USERNAME: ${ARGUS_SMTP_USERNAME:-}
+      ARGUS_SMTP_PASSWORD: ${ARGUS_SMTP_PASSWORD:-}
+      ARGUS_SMTP_FROM: ${ARGUS_SMTP_FROM:-argus@localhost}
     volumes:
       - argus-data:/app/data
     healthcheck:

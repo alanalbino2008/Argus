@@ -91,3 +91,38 @@ tests:
               summary: Collector passive_dns keeps tripping its circuit breaker
               description: The module was disabled mid-scan 3+ times in an hour - its upstream API is probably down, rate-limiting or has changed.
               runbook: Check the module's errors in recent investigations; verify API keys and quotas.
+
+  - name: a notification that exhausted its retries is flagged per channel type
+    interval: 1m
+    input_series:
+      - series: 'argus_notifications_total{channel_type="slack",outcome="failed",instance="a"}'
+        values: '0 0 1 1'
+      - series: 'argus_notifications_total{channel_type="webhook",outcome="delivered",instance="a"}'
+        values: '0 5 10 15'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ArgusNotificationsFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, channel_type: slack}
+            exp_annotations:
+              summary: Argus gave up delivering slack notifications
+              description: Alerts were not delivered after every retry - people relying on this destination are not being told about attack-surface changes.
+              runbook: Open Monitoring > Notifications in the affected workspace; the delivery log shows the error (revoked webhook, wrong URL, SMTP credentials). Fix it, then Retry.
+
+  - name: a growing outbox pages after 15 minutes, not before
+    interval: 1m
+    input_series:
+      - series: 'argus_notifications_pending{instance="a"}'
+        values: '0 80x25'
+      - series: 'argus_notifications_pending{instance="b"}'
+        values: '0 80x25'
+    alert_rule_test:
+      - {eval_time: 10m, alertname: ArgusNotificationBacklog, exp_alerts: []}
+      - eval_time: 20m
+        alertname: ArgusNotificationBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Notifications are piling up
+              description: "80 deliveries are waiting - a destination is down or the dispatcher is not running."
+              runbook: Check the delivery log for the failing destination and that ARGUS_NOTIFICATIONS_ENABLED is true on at least one replica.

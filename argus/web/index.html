@@ -212,6 +212,65 @@
     </div>
   </div>
 
+  <!-- ================================================================ notification channel -->
+  <div id="channel-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="channel-title" id="channel-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="channel-title">Send alerts to…</h2><p>Argus posts here whenever a watched target changes in a way that matters.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <span class="label" id="channel-types-label">Destination</span>
+          <div class="channel-types" id="channel-types" role="radiogroup" aria-labelledby="channel-types-label"></div>
+        </div>
+        <div class="field">
+          <label class="label" for="channel-name">Name</label>
+          <input id="channel-name" class="input" maxlength="128" placeholder="e.g. #soc-alerts" autocomplete="off">
+        </div>
+        <div class="field" id="channel-url-field">
+          <label class="label" for="channel-url" id="channel-url-label">Webhook URL</label>
+          <input id="channel-url" class="input mono" type="url" autocomplete="off" spellcheck="false">
+          <div class="hint" id="channel-url-hint"></div>
+        </div>
+        <div class="field" id="channel-recipients-field" hidden>
+          <label class="label" for="channel-recipients">Recipients</label>
+          <input id="channel-recipients" class="input" placeholder="soc@company.com, oncall@company.com" autocomplete="off">
+          <div class="hint">Up to 20 addresses, separated by commas.</div>
+        </div>
+        <div class="field">
+          <label class="label" for="channel-severity">Send alerts of at least</label>
+          <select id="channel-severity" class="select">
+            <option value="low">Low severity — every change</option>
+            <option value="medium">Medium severity</option>
+            <option value="high" selected>High severity (recommended)</option>
+            <option value="critical">Critical only</option>
+          </select>
+        </div>
+        <div class="error-text" id="channel-error" role="alert"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close>Cancel</button>
+        <button class="btn primary" type="submit" id="channel-submit">Add destination</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ================================================================ signing secret -->
+  <div id="secret-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="secret-title">
+      <div class="modal-head"><div><h2 id="secret-title">Webhook signing secret</h2><p>Your receiver uses this to prove a request really came from Argus. Copy it now — it can't be shown again.</p></div></div>
+      <div class="modal-body">
+        <div class="key-reveal"><span id="secret-value"></span></div>
+        <p class="muted small" style="margin-top:12px">Requests carry <code>webhook-id</code>, <code>webhook-timestamp</code> and <code>webhook-signature</code> headers in the <a href="https://www.standardwebhooks.com/" target="_blank" rel="noopener noreferrer">Standard Webhooks</a> format, so the official libraries can verify them. Reject requests whose timestamp is more than 5 minutes old.</p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" id="secret-copy">Copy</button>
+        <button class="btn primary" data-close>Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ================================================================ shortcuts -->
   <div id="shortcuts-modal" class="modal-root" aria-hidden="true">
     <div class="modal" role="dialog" aria-labelledby="shortcuts-title">

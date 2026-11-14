@@ -95,6 +95,20 @@
             }
           ],
           "description": "Empty (generated) or at least 32 characters"
+        },
+        "encryptionKey": {
+          "type": "string",
+          "anyOf": [
+            {
+              "maxLength": 0
+            },
+            {
+              "minLength": 32
+            }
+          ]
+        },
+        "smtpPassword": {
+          "type": "string"
         }
       }
     },
@@ -369,6 +383,46 @@
           "additionalProperties": {
             "type": "string",
             "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          }
+        }
+      }
+    },
+    "notifications": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "smtp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": {
+              "type": "string"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "security": {
+              "enum": [
+                "starttls",
+                "tls",
+                "none"
+              ]
+            },
+            "username": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            }
           }
         }
       }

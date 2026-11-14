@@ -8,6 +8,19 @@ data:
   ARGUS_MAX_CONCURRENT_SCANS: {{ .Values.config.maxConcurrentScans | quote }}
   ARGUS_SCANS_PER_MINUTE: {{ .Values.config.scansPerMinute | quote }}
   ARGUS_MONITORS_ENABLED: {{ .Values.config.monitorsEnabled | quote }}
+  ARGUS_NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
+  ARGUS_NOTIFY_MAX_ATTEMPTS: {{ .Values.notifications.maxAttempts | quote }}
+  {{- with .Values.notifications.smtp }}
+  {{- if .host }}
+  ARGUS_SMTP_HOST: {{ .host | quote }}
+  ARGUS_SMTP_PORT: {{ .port | quote }}
+  ARGUS_SMTP_SECURITY: {{ .security | quote }}
+  {{- with .username }}
+  ARGUS_SMTP_USERNAME: {{ . | quote }}
+  {{- end }}
+  ARGUS_SMTP_FROM: {{ required "notifications.smtp.from is required when notifications.smtp.host is set" .from | quote }}
+  {{- end }}
+  {{- end }}
   ARGUS_SCAN_STALE_SECONDS: {{ .Values.config.scanStaleSeconds | quote }}
   ARGUS_ALLOW_PRIVATE_TARGETS: {{ .Values.config.allowPrivateTargets | quote }}
   ARGUS_LOG_FORMAT: {{ .Values.config.logFormat | quote }}

@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.15.0] — Phase 15: Outbound alerts
+
+### Added
+- **Notification destinations per workspace** (migration `0007`): Slack (incoming webhooks),
+  Microsoft Teams (Workflows webhooks, Adaptive Cards), email (SMTP) and generic **signed
+  webhooks**. Each has a severity threshold, a test button and a health status.
+- **Transactional outbox**: an alert's deliveries are written in the alert's own transaction.
+  Dispatchers on every replica claim due deliveries with a lease and fencing, retry transient
+  failures with exponential backoff and jitter (30 s up to 4 h, 8 attempts, about 7 h, honouring
+  `Retry-After`) and give up on permanent errors. Delivery is at-least-once with a stable
+  `webhook-id`. Records are purged after 30 days.
+- **Standard Webhooks signatures** (`webhook-id`, `webhook-timestamp`, `webhook-signature`),
+  pinned to the specification's test vector. Rotating the secret signs with both secrets for 24 h.
+- **Encryption at rest** for destination URLs and signing secrets (`argus/security/crypto.py`):
+  AES-256-GCM, HKDF-derived key, associated data binding each value to its row and workspace,
+  and versioned keys with `ARGUS_ENCRYPTION_PREVIOUS_KEYS` for rotation. The key comes from
+  `ARGUS_ENCRYPTION_KEY`, or `ARGUS_ENCRYPTION_KEY_FILE` (created on first start) for single-node
+  installs.
+- API under `/api/notifications` (capabilities, channels, test, rotate-secret, deliveries, retry),
+  all audit-logged and workspace-admin only. Alert audit entries record how many notifications
+  were queued.
+- Web app: a *Notifications* section in Monitoring, with the destination picker and setup hints,
+  a shown-once signing secret, the delivery log and Retry. Links in messages open the right
+  workspace (`/?ws=…&inv=…`).
+- Metrics `argus_notifications_total`, `argus_notification_delivery_seconds`,
+  `argus_notifications_pending`; alerts **ArgusNotificationsFailing** and
+  **ArgusNotificationBacklog** (promtool-tested); a *Notifications* dashboard row.
+- Helm: `notifications.*` (SMTP), `secrets.encryptionKey` (generated once and kept across
+  upgrades), `secrets.smtpPassword`. Compose: encryption key and SMTP variables.
+- `docs/explained/15-outbound-alerts.md`, including a receiver example that is tested.
+
+### Security
+- Destinations are SSRF-guarded. Slack and Teams types are restricted to their own hosts, and
+  webhooks must be public HTTPS without credentials in the URL. The resolved address is checked
+  again at connect time, redirects are not followed, and response bodies are never stored.
+- Untrusted alert text is escaped for Slack (no `<!channel>` or disguised links), Teams Markdown
+  and email HTML, and line breaks are stripped from email subjects (header injection).
+
 ## [1.14.0] — Phase 14: Team workspaces
 
 ### Added

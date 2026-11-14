@@ -10,6 +10,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 
 from argus.storage.db import AlertRow, Database, MonitorRow
+from argus.storage.notification_repo import enqueue_alert
 
 
 def _now() -> datetime:
@@ -191,7 +192,10 @@ class MonitorRepository:
         headline: str,
         summary: dict[str, Any],
         workspace_id: str,
+        notify: bool = True,
+        public_url: str | None = None,
     ) -> dict[str, Any]:
+        """Save the alert and, in the same transaction, queue its notifications (outbox)."""
         row = AlertRow(
             id=f"alert_{secrets.token_hex(6)}",
             workspace_id=workspace_id,
@@ -206,7 +210,10 @@ class MonitorRepository:
         )
         async with self.db.session() as s, s.begin():
             s.add(row)
-        return _alert(row)
+            alert = _alert(row)
+            if notify:
+                alert["notifications_queued"] = await enqueue_alert(s, alert, public_url)
+        return alert
 
     async def alerts(
         self, *, workspace_id: str, limit: int = 50, unacknowledged_only: bool = False

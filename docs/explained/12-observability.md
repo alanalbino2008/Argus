@@ -9,7 +9,7 @@
 |---|---|---|
 | *Is it working, and how well?* | **Metrics** (numbers over time) | Prometheus, `/metrics` on every replica |
 | *What exactly happened to this request or scan?* | **Logs** (events with context) | JSON logs with `request_id` and `investigation_id` |
-| *Who needs to know, right now?* | **Alerts** (rules on metrics) | 12 Prometheus alert rules with runbooks |
+| *Who needs to know, right now?* | **Alerts** (rules on metrics) | 14 Prometheus alert rules with runbooks (2 added with outbound alerts in Phase 15) |
 
 A **dashboard** (Grafana) puts the metrics on one screen.
 

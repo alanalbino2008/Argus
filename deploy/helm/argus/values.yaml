@@ -82,6 +82,10 @@ secrets:
   hibpApiKey: ""
   shodanApiKey: ""
   oidcClientSecret: ""
+  # Encrypts notification webhook URLs and signing secrets in the database. Empty = generated
+  # once and kept across upgrades. Back it up: without it, saved destinations must be re-entered.
+  encryptionKey: ""
+  smtpPassword: ""
   # If set, /metrics requires "Authorization: Bearer <token>" (the ServiceMonitor sends it).
   metricsToken: ""
 
@@ -98,6 +102,17 @@ config:
   logFormat: json
   # Any other ARGUS_* setting, e.g. {ARGUS_PERSIST_FLUSH_INTERVAL: "1.0"}
   extraEnv: {}
+
+# ---------------------------------------------------------------------------- notifications
+notifications:
+  enabled: true                  # every replica runs a dispatcher; deliveries are claimed atomically
+  maxAttempts: 8                 # ~7 hours of retries with exponential backoff
+  smtp:                          # email destinations (Slack, Teams and webhooks need no setup)
+    host: ""                     # e.g. smtp.office365.com, smtp.gmail.com, email-smtp.eu-west-1.amazonaws.com
+    port: 587
+    security: starttls           # starttls (587) | tls (465) | none (trusted relay only)
+    username: ""                 # password: secrets.smtpPassword
+    from: ""                     # e.g. argus@company.com
 
 # ---------------------------------------------------------------------------- observability
 metrics:

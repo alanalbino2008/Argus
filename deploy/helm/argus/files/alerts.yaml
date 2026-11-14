@@ -99,6 +99,25 @@ groups:
           summary: OSINT sources are rate-limiting Argus
           description: Scans slow down while Argus backs off; add API keys or lower concurrency.
 
+  - name: argus.notifications
+    rules:
+      - alert: ArgusNotificationsFailing
+        expr: sum by (channel_type) (increase(argus_notifications_total{outcome="failed"}[30m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Argus gave up delivering {{ $labels.channel_type }} notifications"
+          description: Alerts were not delivered after every retry - people relying on this destination are not being told about attack-surface changes.
+          runbook: Open Monitoring > Notifications in the affected workspace; the delivery log shows the error (revoked webhook, wrong URL, SMTP credentials). Fix it, then Retry.
+
+      - alert: ArgusNotificationBacklog
+        expr: max(argus_notifications_pending) > 50
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: Notifications are piling up
+          description: "{{ $value }} deliveries are waiting - a destination is down or the dispatcher is not running."
+          runbook: Check the delivery log for the failing destination and that ARGUS_NOTIFICATIONS_ENABLED is true on at least one replica.
+
   - name: argus.security
     rules:
       - alert: ArgusAuthFailureSpike

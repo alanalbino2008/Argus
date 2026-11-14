@@ -130,6 +130,24 @@ ALERTS_RAISED = Counter(
 )
 AUDIT_EVENTS = Counter("argus_audit_events_total", "Audit-log entries written", ["outcome"], registry=REGISTRY)
 
+# ------------------------------------------------------------------ outbound notifications
+NOTIFICATIONS = Counter(
+    "argus_notifications_total",
+    "Notification delivery attempts by channel type and outcome (delivered, retry, failed, cancelled)",
+    ["channel_type", "outcome"],
+    registry=REGISTRY,
+)
+NOTIFICATION_LATENCY = Histogram(
+    "argus_notification_delivery_seconds",
+    "Time from the event to its successful delivery (includes retries)",
+    ["channel_type"],
+    buckets=(1, 5, 15, 60, 300, 900, 3600, 14400),
+    registry=REGISTRY,
+)
+NOTIFICATIONS_PENDING = Gauge(
+    "argus_notifications_pending", "Deliveries waiting to be sent, cluster-wide", registry=REGISTRY
+)
+
 
 def init(instance: str, scan_capacity: int = 0) -> None:
     BUILD_INFO.labels(version=__version__, replica=instance).set(1)

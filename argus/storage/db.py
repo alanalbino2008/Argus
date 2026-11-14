@@ -236,6 +236,55 @@ class AlertRow(Base):
     acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
+class NotificationChannelRow(Base):
+    """Where a workspace's alerts are sent: Slack, Microsoft Teams, email or a signed webhook."""
+
+    __tablename__ = "notification_channels"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    type: Mapped[str] = mapped_column(String(16))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    min_severity: Mapped[str] = mapped_column(String(16))
+    # Non-secret settings and display hints (destination host, recipients).
+    config: Mapped[dict[str, Any]] = mapped_column(JSON)
+    # URL and signing secrets, AES-256-GCM encrypted and bound to this row (argus/security/crypto.py).
+    sealed: Mapped[str | None] = mapped_column(String(4096), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class NotificationDeliveryRow(Base):
+    """Transactional outbox: one event for one channel, retried until delivered or given up."""
+
+    __tablename__ = "notification_deliveries"
+    __table_args__ = (Index("ix_notification_deliveries_due", "status", "next_attempt_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    channel_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("notification_channels.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(64))
+    event_id: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16))  # pending | sending | delivered | failed | cancelled
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Database:
     """Owns the async engine and session factory for one database URL."""
 

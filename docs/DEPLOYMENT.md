@@ -125,6 +125,29 @@ helm upgrade argus deploy/helm/argus -n argus --reuse-values \
 * Automation: API keys belong to the workspace they were created in. Scripts may send
   `X-Argus-Workspace: <slug or id>`, but a bound key only ever sees its own workspace.
 
+### Alert notifications (Slack, Teams, email, webhooks)
+
+Workspace admins add destinations in *Monitoring → Notifications*. The operator only needs to:
+
+* **Keep the encryption key safe.** The chart generates `encryption-key` in its Secret on first
+  install and keeps it across upgrades. It encrypts destination URLs and signing secrets in the
+  database, so back it up together with the database. With `secrets.existingSecret`, add an
+  `encryption-key` entry (32+ random characters) yourself. To rotate it, put the old value in
+  `ARGUS_ENCRYPTION_PREVIOUS_KEYS` (`config.extraEnv`) and set a new key.
+* **Set `publicUrl`** (or an ingress host) so messages link back to Argus.
+* **Email (optional)**:
+
+  ```bash
+  helm upgrade argus deploy/helm/argus -n argus --reuse-values \
+    --set notifications.smtp.host=smtp.office365.com --set notifications.smtp.username=argus@acme.com \
+    --set notifications.smtp.from=argus@acme.com --set secrets.smtpPassword='<password>'
+  ```
+
+  A relay inside your network also needs `networkPolicy.internalEgress` (port 587, 465 or 25).
+
+Slack, Teams and public webhooks need nothing else: they use the normal internet egress, and
+private addresses stay blocked. Watch `ArgusNotificationsFailing` and `ArgusNotificationBacklog`.
+
 ### Monitoring
 
 ```bash

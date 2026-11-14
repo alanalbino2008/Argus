@@ -11,9 +11,9 @@ from __future__ import annotations
 import os
 import socket
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -102,6 +102,45 @@ class Settings(BaseSettings):
         "workspaces follow the provider at every sign-in.",
     )
     session_ttl_hours: float = Field(default=8.0, gt=0, le=24 * 30, description="Lifetime of a browser session")
+
+    # --- Outbound notifications ------------------------------------------------------------
+    encryption_key: SecretStr | None = Field(
+        default=None,
+        description="Encrypts webhook URLs and signing secrets at rest (random string, >= 32 characters)",
+    )
+    encryption_key_file: str | None = Field(
+        default=None,
+        description="File holding the encryption key, created on first start if missing (single-node installs)",
+    )
+    encryption_previous_keys: list[SecretStr] = Field(
+        default_factory=list, description="Former encryption keys, still accepted for decryption during rotation"
+    )
+    notifications_enabled: bool = Field(default=True, description="Run the notification dispatcher")
+    notify_poll_seconds: float = Field(default=2.0, gt=0, description="How often pending notifications are checked")
+    notify_max_attempts: int = Field(
+        default=8, ge=1, le=20, description="Delivery attempts before a notification is marked failed (~7 h)"
+    )
+    notify_timeout_seconds: float = Field(default=10.0, gt=0, le=60, description="Timeout for one delivery attempt")
+    smtp_host: str | None = Field(default=None, description="SMTP server for email notifications (unset = no email)")
+    smtp_port: int = Field(default=587, ge=1, le=65535, description="SMTP port (587 STARTTLS, 465 TLS)")
+    smtp_security: Literal["starttls", "tls", "none"] = Field(
+        default="starttls", description="'starttls' (587), 'tls' (465) or 'none' (trusted local relay only)"
+    )
+    smtp_username: str | None = Field(default=None, description="SMTP user (unset = no authentication)")
+    smtp_password: SecretStr | None = Field(default=None, description="SMTP password")
+    smtp_from: str = Field(default="argus@localhost", description="Sender address of notification emails")
+
+    @field_validator("encryption_key", mode="before")
+    @classmethod
+    def _empty_key_is_none(cls, value: Any) -> Any:
+        return None if value in ("", None) else value
+
+    @field_validator("encryption_key")
+    @classmethod
+    def _long_enough(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and len(value.get_secret_value()) < 32:
+            raise ValueError("ARGUS_ENCRYPTION_KEY must be at least 32 characters")
+        return value
 
     # --- Observability ---------------------------------------------------------------------
     log_format: Literal["text", "json"] = Field(

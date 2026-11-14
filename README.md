@@ -227,9 +227,16 @@ own investigations, monitors, alerts, API keys and audit trail. Roles are per wo
 can be mapped from identity-provider groups, and every endpoint is tested to return 404 for another
 workspace's data ([`docs/explained/14-team-workspaces.md`](docs/explained/14-team-workspaces.md)).
 
+**Outbound alerts**: drift alerts reach people where they work: Slack, Microsoft Teams, email,
+or signed webhooks (Standard Webhooks, HMAC-SHA256 with replay protection and zero-downtime secret
+rotation) for a SIEM or SOAR. A transactional outbox means no alert is lost, deliveries are retried
+with backoff for about 7 hours, and replicas share the work without duplicates. Destination URLs
+are SSRF-guarded and encrypted at rest with AES-256-GCM
+([`docs/explained/15-outbound-alerts.md`](docs/explained/15-outbound-alerts.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
-`investigation_id`, and ships 12 unit-tested alert rules with runbooks and a Grafana dashboard —
+`investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —
 as a ServiceMonitor, PrometheusRule and dashboard ConfigMap on Kubernetes, or a Prometheus + Grafana
 overlay for Docker Compose ([`docs/explained/12-observability.md`](docs/explained/12-observability.md)).
 Operator guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · How it works:

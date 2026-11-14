@@ -216,6 +216,8 @@ async function switchWorkspace(id) {
 
 async function enterApp(me) {
   state.me = me;
+  const linkedWs = new URLSearchParams(location.search).get("ws"); // links in notifications name their workspace
+  if (linkedWs && (me.workspaces || []).some((w) => w.id === linkedWs)) setActiveWorkspace(linkedWs);
   chooseWorkspace(me);
   $("#signin").hidden = true;
   $("#user-name").textContent = `${me.name}`;

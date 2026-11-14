@@ -1204,6 +1204,171 @@
         "y": 48
       },
       "id": 27,
+      "title": "Notifications",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "delivered, retry (will be tried again), failed (gave up), cancelled (channel paused)",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "normal"
+            }
+          },
+          "noValue": "None yet",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 49
+      },
+      "id": 28,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (outcome) (increase(argus_notifications_total[1h]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Deliveries by outcome (per hour)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Cluster-wide outbox backlog; grows while a destination is down",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "noValue": "None yet",
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 49
+      },
+      "id": 29,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(argus_notifications_pending)",
+          "legendFormat": "pending",
+          "refId": "A"
+        }
+      ],
+      "title": "Waiting to be sent",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "From the event to a successful delivery, retries included",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 2,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "noValue": "None yet",
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 49
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, channel_type) (rate(argus_notification_delivery_seconds_bucket[1h])))",
+          "legendFormat": "{{channel_type}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Time to deliver (p95)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
+      "id": 31,
       "title": "Platform & security",
       "type": "row"
     },
@@ -1232,9 +1397,9 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 49
+        "y": 58
       },
-      "id": 28,
+      "id": 32,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -1283,9 +1448,9 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 49
+        "y": 58
       },
-      "id": 29,
+      "id": 33,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -1343,9 +1508,9 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 49
+        "y": 58
       },
-      "id": 30,
+      "id": 34,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -1403,9 +1568,9 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 57
+        "y": 66
       },
-      "id": 31,
+      "id": 35,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -1454,9 +1619,9 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 57
+        "y": 66
       },
-      "id": 32,
+      "id": 36,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -1505,9 +1670,9 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 57
+        "y": 66
       },
-      "id": 33,
+      "id": 37,
       "options": {
         "legend": {
           "displayMode": "list",
@@ -1556,9 +1721,9 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 57
+        "y": 66
       },
-      "id": 34,
+      "id": 38,
       "options": {
         "legend": {
           "displayMode": "list",
