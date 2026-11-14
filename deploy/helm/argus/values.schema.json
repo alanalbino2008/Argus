@@ -424,6 +424,9 @@
               "type": "string"
             }
           }
+        },
+        "scheduledReports": {
+          "type": "boolean"
         }
       }
     }

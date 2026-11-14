@@ -280,6 +280,50 @@
     </form>
   </div>
 
+  <!-- ================================================================ report schedule -->
+  <div id="schedule-modal" class="modal-root" aria-hidden="true">
+    <form class="modal wide" role="dialog" aria-labelledby="schedule-title" id="schedule-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="schedule-title">Schedule a report</h2><p>Argus sends the latest scan's PDF report on a regular schedule. Email gets the PDF; Slack, Teams and webhooks get a summary.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body schedule-grid">
+        <div class="field"><label class="label" for="schedule-name">Name</label>
+          <input id="schedule-name" class="input" maxlength="128" placeholder="e.g. Weekly exposure — Acme" autocomplete="off"></div>
+        <div class="field"><label class="label" for="schedule-target">Target</label>
+          <input id="schedule-target" class="input" list="schedule-targets" maxlength="253" placeholder="acme.com" autocomplete="off">
+          <datalist id="schedule-targets"></datalist>
+          <div class="hint">Uses the most recent completed scan. Watch the target in Monitoring to keep scans fresh.</div></div>
+        <div class="field"><span class="label">Every</span>
+          <div class="schedule-when">
+            <select id="schedule-frequency" class="select" aria-label="Frequency"><option value="weekly">Week, on</option><option value="monthly">Month, on day</option></select>
+            <select id="schedule-weekday" class="select" aria-label="Day of the week"><option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option><option value="3">Thursday</option><option value="4">Friday</option><option value="5">Saturday</option><option value="6">Sunday</option></select>
+            <select id="schedule-day" class="select" aria-label="Day of the month" hidden></select>
+            <input id="schedule-time" class="input" type="time" value="08:00" aria-label="Time">
+          </div></div>
+        <div class="field"><label class="label" for="schedule-tz">Time zone</label>
+          <select id="schedule-tz" class="select"></select></div>
+        <div class="field span-2"><span class="label">Send to</span>
+          <div id="schedule-channels" class="schedule-channels"></div></div>
+        <div class="field"><label class="label" for="schedule-for">Prepared for</label>
+          <input id="schedule-for" class="input" maxlength="200" placeholder="Client or recipient" autocomplete="off"></div>
+        <div class="field"><label class="label" for="schedule-tlp">Sharing</label>
+          <select id="schedule-tlp" class="select"><option value="RED">TLP:RED</option><option value="AMBER+STRICT">TLP:AMBER+STRICT</option><option value="AMBER" selected>TLP:AMBER</option><option value="GREEN">TLP:GREEN</option><option value="CLEAR">TLP:CLEAR</option></select></div>
+        <div class="field span-2">
+          <label class="check"><input type="checkbox" id="schedule-skip" checked> Only send when there is a new scan since the last report</label>
+          <label class="check"><input type="checkbox" id="schedule-inventory" checked> Include the full asset inventory</label>
+          <label class="check"><input type="checkbox" id="schedule-compare" checked> Compare with the previous scan</label>
+          <p class="muted small" style="margin:4px 0 0">People in attack paths are always pseudonymised in scheduled reports.</p>
+        </div>
+        <div class="error-text span-2" id="schedule-error" role="alert"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn" type="button" data-close>Cancel</button>
+        <button class="btn primary" type="submit" id="schedule-submit">Create schedule</button>
+      </div>
+    </form>
+  </div>
+
   <!-- ================================================================ signing secret -->
   <div id="secret-modal" class="modal-root" aria-hidden="true">
     <div class="modal" role="dialog" aria-labelledby="secret-title">

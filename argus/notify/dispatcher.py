@@ -13,6 +13,7 @@ import json
 import logging
 import random
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -25,6 +26,7 @@ from argus.storage.notification_repo import NotificationRepository
 
 logger = logging.getLogger("argus.notify")
 
+FileLoader = Callable[[str, str], Awaitable[tuple[str, bytes] | None]]  # (report id, workspace id)
 BACKOFF_SECONDS = (30, 120, 600, 1800, 3600, 7200, 14400)
 CONCURRENCY = 5
 PURGE_EVERY = 3600.0
@@ -46,10 +48,17 @@ def _parse(value: str | None) -> datetime | None:
 
 
 class NotificationDispatcher:
-    def __init__(self, repo: NotificationRepository, settings: Settings, transport: Transport | None = None):
+    def __init__(
+        self,
+        repo: NotificationRepository,
+        settings: Settings,
+        transport: Transport | None = None,
+        files: FileLoader | None = None,
+    ):
         self.repo = repo
         self.settings = settings
         self.transport = transport or Transport(settings)
+        self.files = files  # loads a stored report PDF to attach to emails
         self._last_purge = 0.0
 
     async def tick(self) -> int:
@@ -91,7 +100,15 @@ class NotificationDispatcher:
         if kind == "email":
             if not self.transport.email_available:
                 return Result(False, False, error="Email is not configured on this server")
-            message = render.email(event, self.settings.smtp_from, list(channel.get("recipients") or []))
+            attachment = None
+            if event.get("type") == "report.scheduled":
+                report = event["report"]
+                attachment = await self.files(report["id"], event["workspace"]["id"]) if self.files else None
+                if attachment is None:
+                    return Result(False, False, error="The report file has expired; generate the report again")
+            message = render.email(
+                event, self.settings.smtp_from, list(channel.get("recipients") or []), attachment=attachment
+            )
             return await self.transport.send_email(message)
         url = secrets.get("url")
         if not url:

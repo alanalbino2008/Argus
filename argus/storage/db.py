@@ -319,6 +319,47 @@ class ReportRow(Base):
     created_by: Mapped[str] = mapped_column(String(128))
 
 
+class ReportScheduleRow(Base):
+    """A report generated and sent automatically, e.g. every Monday at 08:00 Europe/London."""
+
+    __tablename__ = "report_schedules"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    target: Mapped[str] = mapped_column(String(512))
+    frequency: Mapped[str] = mapped_column(String(16))
+    weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hour: Mapped[int] = mapped_column(Integer)
+    minute: Mapped[int] = mapped_column(Integer)
+    timezone: Mapped[str] = mapped_column(String(64))
+    options: Mapped[dict[str, Any]] = mapped_column(JSON)
+    channel_ids: Mapped[list[str]] = mapped_column(JSON)
+    skip_unchanged: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    last_report_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_investigation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128))
+
+
+class ReportFileRow(Base):
+    """The PDF of a scheduled report, kept for a limited time so email retries can attach it."""
+
+    __tablename__ = "report_files"
+
+    report_id: Mapped[str] = mapped_column(String(32), ForeignKey("reports.id", ondelete="CASCADE"), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    pdf: Mapped[bytes] = mapped_column(LargeBinary)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class Database:
     """Owns the async engine and session factory for one database URL."""
 

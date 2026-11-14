@@ -241,6 +241,11 @@ pseudonymised by default. Every report's SHA-256 fingerprint is registered, so r
 verify a copy is genuine and unmodified, even without an account
 ([`docs/explained/16-client-reports.md`](docs/explained/16-client-reports.md)).
 
+**Scheduled reports**: "every Monday at 08:00 Europe/London" sends the latest scan's PDF by
+email (attached) and a summary to Slack, Teams or a SIEM. Schedules are DST-correct, sent once
+across replicas, skip unchanged targets, and are always pseudonymised
+([`docs/explained/17-scheduled-reports.md`](docs/explained/17-scheduled-reports.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

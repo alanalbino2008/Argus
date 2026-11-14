@@ -5,6 +5,7 @@ import { empty, ico, severityPill } from "../components.js";
 import { confirmDialog, html, on, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, state } from "../state.js";
 import { handleNotificationAction, initNotifications, loadNotifications, notificationsCard } from "./notifications.js";
+import { handleScheduleAction, initSchedules, loadSchedules, schedulesCard } from "./schedules.js";
 
 let root;
 let actions;
@@ -15,9 +16,11 @@ export function initMonitoring(el, appActions) {
   root = el;
   actions = appActions;
   initNotifications(refresh);
+  initSchedules(refresh);
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     if (await handleNotificationAction(act, id, btn)) return;
+    if (await handleScheduleAction(act, id, btn)) return;
     try {
       if (act === "ack") {
         await api.post(`/api/alerts/${enc(id)}/acknowledge`);
@@ -48,7 +51,7 @@ export function initMonitoring(el, appActions) {
 
 export async function refresh() {
   try {
-    [alerts, monitors] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"), loadNotifications()]);
+    [alerts, monitors] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"), loadNotifications(), loadSchedules()]);
   } catch {
     return;
   }
@@ -99,5 +102,6 @@ function render() {
         </tbody></table>`}
     </div>
     ${notificationsCard()}
+    ${schedulesCard()}
   </div>`);
 }

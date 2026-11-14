@@ -116,6 +116,8 @@ class Settings(BaseSettings):
         default_factory=list, description="Former encryption keys, still accepted for decryption during rotation"
     )
     notifications_enabled: bool = Field(default=True, description="Run the notification dispatcher")
+    report_schedules_enabled: bool = Field(default=True, description="Run the scheduled-report loop")
+    report_poll_seconds: float = Field(default=60.0, gt=0, description="How often due report schedules are checked")
     notify_poll_seconds: float = Field(default=2.0, gt=0, description="How often pending notifications are checked")
     notify_max_attempts: int = Field(
         default=8, ge=1, le=20, description="Delivery attempts before a notification is marked failed (~7 h)"

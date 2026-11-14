@@ -106,6 +106,7 @@ config:
 # ---------------------------------------------------------------------------- notifications
 notifications:
   enabled: true                  # every replica runs a dispatcher; deliveries are claimed atomically
+  scheduledReports: true         # every replica runs the report scheduler; each due schedule is claimed once
   maxAttempts: 8                 # ~7 hours of retries with exponential backoff
   smtp:                          # email destinations (Slack, Teams and webhooks need no setup)
     host: ""                     # e.g. smtp.office365.com, smtp.gmail.com, email-smtp.eu-west-1.amazonaws.com

@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.17.0] — Phase 17: Scheduled reports
+
+### Added
+- **Report schedules per workspace** (migration `0009`): weekly or monthly, at a local time in
+  any IANA time zone (`tzdata`). Arithmetic is done in wall-clock time, so 08:00 stays 08:00
+  across daylight saving (gap: one hour later; fold: first occurrence, once).
+- Each run takes the latest completed scan of the target, issues the report through the
+  on-demand code path (branding, registry, fingerprint) and queues deliveries **in the same
+  transaction**. Email gets the PDF attached, a summary and a verification link; Slack, Teams
+  and webhooks get the summary, the fingerprint and a link (`report.scheduled` events).
+- Every replica runs the scheduler and each due schedule is claimed atomically, so a report is
+  sent once. Outcomes (`sent`, `skipped_unchanged`, `no_scan`, `failed`) are recorded on the
+  schedule, in the audit log and in `argus_scheduled_report_runs_total`.
+- Scheduled PDFs are stored 30 days for delivery retries (`GET /api/reports/{id}/file`), then
+  purged.
+- API `/api/reports/schedules` (create, update, delete, run now; workspace admins).
+  Destinations must belong to the workspace.
+- Web app: *Scheduled reports* on the Monitoring page (time zone preselected from the browser,
+  target suggestions, destinations, Run now, pause), and PDF download in the report history.
+- `argus_reports_generated_total` gains a `trigger` label (manual, scheduled). Helm
+  `notifications.scheduledReports`. `docs/explained/17-scheduled-reports.md`.
+
+### Changed
+- Until branding is set, reports from the Default workspace say they are issued by "Argus";
+  other workspaces use their own name.
+
+### Security and privacy
+- Unattended reports are always pseudonymised: the schedule API does not accept the
+  personal-details option.
+
 ## [1.16.0] — Phase 16: Client reports
 
 ### Added

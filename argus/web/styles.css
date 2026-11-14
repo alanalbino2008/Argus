@@ -738,3 +738,12 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .verify.ok svg { color: var(--ok); }
 .verify.bad { background: color-mix(in srgb, var(--sev-critical) 12%, transparent); color: var(--text); }
 .verify.bad svg { color: var(--sev-critical); }
+
+/* ------------------------------------------------------------------ scheduled reports */
+.schedule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+.schedule-grid .field + .field { margin-top: 0; }
+.schedule-grid .span-2 { grid-column: 1 / -1; }
+.schedule-when { display: flex; gap: 8px; flex-wrap: wrap; }
+.schedule-when .select, .schedule-when .input { width: auto; flex: 1 1 120px; }
+.schedule-channels { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+@media (max-width: 760px) { .schedule-grid { grid-template-columns: 1fr; } }

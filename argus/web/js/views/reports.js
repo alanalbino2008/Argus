@@ -1,6 +1,7 @@
 // Client PDF reports: options dialog, report history, and verifying a received report.
 
-import { api, downloadPost, enc } from "../api.js";
+import { api, download, downloadPost, enc } from "../api.js";
+import { ico } from "../components.js";
 import { $, copyText, formatDate, html, on, openModal, setHTML, toast } from "../dom.js";
 import { state } from "../state.js";
 
@@ -16,7 +17,8 @@ async function loadHistory(invId) {
       <table class="table"><thead><tr><th>Reference</th><th>Issued</th><th>For</th><th>Fingerprint (SHA-256)</th></tr></thead><tbody>
       ${reports.map((r) => html`<tr><td class="mono">${r.id}</td><td>${formatDate(r.created_at)}<div class="muted small">${r.created_by}</div></td>
         <td>${r.prepared_for || "—"}<div class="muted small">TLP:${r.tlp}</div></td>
-        <td><button type="button" class="btn sm ghost mono" data-copy="${r.sha256}" title="Copy the full fingerprint">${short(r.sha256)}</button></td></tr>`)}
+        <td><button type="button" class="btn sm ghost mono" data-copy="${r.sha256}" title="Copy the full fingerprint">${short(r.sha256)}</button>
+          ${r.file_available ? html`<button type="button" class="btn sm ghost" data-report-file="${r.id}">${ico("download")}PDF</button>` : ""}</td></tr>`)}
       </tbody></table>`);
   } catch {
     /* viewers without history access still get the dialog */
@@ -39,6 +41,13 @@ export async function openReport() {
 }
 
 export function initReports() {
+  on(document, "click", "[data-report-file]", async (_e, btn) => {
+    try {
+      await download(`/api/reports/${enc(btn.dataset.reportFile)}/file`, `argus-report-${btn.dataset.reportFile}.pdf`);
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  });
   on(document, "click", "[data-copy]", async (_e, btn) => {
     await copyText(btn.dataset.copy);
     toast("Fingerprint copied", "success", 1800);

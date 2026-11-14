@@ -282,6 +282,22 @@ class InvestigationRepository:
             row = (await s.execute(stmt)).scalars().first()
         return Investigation.model_validate(row.data) if row else None
 
+    async def latest_completed(self, target: str, *, workspace_id: str) -> Investigation | None:
+        """The most recent completed investigation of ``target`` in this workspace (scheduled reports)."""
+        stmt = (
+            select(InvestigationRow)
+            .where(
+                InvestigationRow.workspace_id == workspace_id,
+                func.lower(InvestigationRow.target) == target.strip().lower(),
+                InvestigationRow.status == InvestigationStatus.COMPLETED.value,
+            )
+            .order_by(InvestigationRow.created_at.desc())
+            .limit(1)
+        )
+        async with self.db.session() as s:
+            row = (await s.execute(stmt)).scalars().first()
+        return Investigation.model_validate(row.data) if row else None
+
     async def load_graph(self, investigation_id: str) -> IntelligenceGraph | None:
         async with self.db.session() as s:
             if await s.get(InvestigationRow, investigation_id) is None:

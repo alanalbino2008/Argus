@@ -103,6 +103,9 @@ def _delivery(row: NotificationDeliveryRow, channel: NotificationChannelRow | No
 
 
 def _summary(event: dict[str, Any]) -> str:
+    if event.get("type") == "report.scheduled":
+        report = event.get("report") or {}
+        return f"Report {report.get('id')} for {report.get('target')} ({str(report.get('rating', '')).upper()})"[:300]
     if event.get("type") == "alert.raised":
         alert = event.get("alert") or {}
         return f"{str(alert.get('severity', '')).upper()}: {alert.get('headline', '')}"[:300]
@@ -144,6 +147,27 @@ async def enqueue_event(session: AsyncSession, workspace_id: str, event: dict[st
             session.add(_new_delivery(channel, event, moment))
             queued += 1
     return queued
+
+
+async def enqueue_to_channels(
+    session: AsyncSession, workspace_id: str, channel_ids: list[str], event: dict[str, Any]
+) -> int:
+    """Queue ``event`` for the listed channels that still exist in this workspace and are enabled."""
+    if not channel_ids:
+        return 0
+    channels = (
+        await session.scalars(
+            select(NotificationChannelRow).where(
+                NotificationChannelRow.id.in_(channel_ids),
+                NotificationChannelRow.workspace_id == workspace_id,
+                NotificationChannelRow.enabled.is_(True),
+            )
+        )
+    ).all()
+    moment = _now()
+    for channel in channels:
+        session.add(_new_delivery(channel, event, moment))
+    return len(channels)
 
 
 async def enqueue_alert(session: AsyncSession, alert: dict[str, Any], public_url: str | None) -> int:

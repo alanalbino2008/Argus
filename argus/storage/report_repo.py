@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.reports.data import Branding
-from argus.storage.db import Database, ReportBrandingRow, ReportRow
+from argus.storage.db import Database, ReportBrandingRow, ReportFileRow, ReportRow
 
 _KEEP: Any = object()  # "leave the logo as it is"
 
@@ -90,11 +93,43 @@ class ReportRepository:
             row = await s.get(ReportBrandingRow, workspace_id)
         return row.logo_png if row else None
 
-    async def record(self, **fields: Any) -> dict[str, Any]:
+    async def record(
+        self,
+        *,
+        fields: dict[str, Any],
+        file: tuple[str, bytes, timedelta] | None = None,
+        after_record: Callable[[AsyncSession, dict[str, Any]], Awaitable[Any]] | None = None,
+    ) -> tuple[dict[str, Any], Any]:
+        """Register a report, optionally keep its file, and run ``after_record`` in the same transaction."""
         row = ReportRow(created_at=_now(), **fields)
+        result = None
         async with self.db.session() as s, s.begin():
             s.add(row)
-        return _report(row)
+            await s.flush()  # the report row must exist before its file (foreign key)
+            if file is not None:
+                filename, pdf, keep = file
+                s.add(ReportFileRow(report_id=row.id, workspace_id=row.workspace_id, filename=filename, pdf=pdf,
+                                    expires_at=_now() + keep))  # fmt: skip
+            report = _report(row)
+            report["file_available"] = file is not None
+            report["filename"] = file[0] if file is not None else None
+            if after_record is not None:
+                result = await after_record(s, report)
+        return report, result
+
+    async def file(self, report_id: str, *, workspace_id: str | None = None) -> tuple[str, bytes] | None:
+        """A stored report file, if it has not expired (and belongs to ``workspace_id`` when given)."""
+        async with self.db.session() as s:
+            row = await s.get(ReportFileRow, report_id)
+        if row is None or (workspace_id is not None and row.workspace_id != workspace_id):
+            return None
+        expires = row.expires_at if row.expires_at.tzinfo else row.expires_at.replace(tzinfo=timezone.utc)
+        return (row.filename, row.pdf) if expires > _now() else None
+
+    async def purge_files(self) -> int:
+        async with self.db.session() as s, s.begin():
+            result = await s.execute(delete(ReportFileRow).where(ReportFileRow.expires_at < _now()))
+        return cast("CursorResult[Any]", result).rowcount or 0
 
     async def list_reports(
         self, *, workspace_id: str, investigation_id: str | None = None, limit: int = 50
@@ -108,7 +143,19 @@ class ReportRepository:
         if investigation_id:
             stmt = stmt.where(ReportRow.investigation_id == investigation_id)
         async with self.db.session() as s:
-            return [_report(r) for r in await s.scalars(stmt)]
+            rows = list(await s.scalars(stmt))
+            stored = (
+                set(
+                    await s.scalars(
+                        select(ReportFileRow.report_id).where(
+                            ReportFileRow.report_id.in_([r.id for r in rows]), ReportFileRow.expires_at > _now()
+                        )
+                    )
+                )
+                if rows
+                else set()
+            )
+        return [{**_report(r), "file_available": r.id in stored} for r in rows]
 
     async def find_by_sha256(self, sha256: str) -> dict[str, Any] | None:
         async with self.db.session() as s:

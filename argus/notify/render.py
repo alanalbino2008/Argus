@@ -74,6 +74,61 @@ def probe_event(workspace: dict[str, Any], channel_name: str, by: str) -> dict[s
     }
 
 
+def report_event(
+    record: dict[str, Any],
+    data: Any,
+    schedule: dict[str, Any],
+    workspace: dict[str, Any],
+    public_url: str | None,
+) -> dict[str, Any]:
+    """A scheduled report is ready: what Slack/Teams/webhooks receive (email also gets the PDF)."""
+    return {
+        "type": "report.scheduled",
+        "id": f"evt_report_{record['id']}",
+        "occurred_at": record.get("created_at") or _now_iso(),
+        "workspace": {"id": workspace.get("id"), "name": workspace.get("name")},
+        "report": {
+            "id": record["id"],
+            "schedule": {"id": schedule["id"], "name": schedule["name"]},
+            "target": record["target"],
+            "investigation_id": record["investigation_id"],
+            "rating": data.rating,
+            "score": data.score,
+            "counts": data.counts,
+            "severity_counts": data.severity_counts,
+            "trend": data.trend,
+            "tlp": record["tlp"],
+            "prepared_for": record.get("prepared_for"),
+            "sha256": record["sha256"],
+            "filename": record.get("filename"),
+            "url": _link(public_url, f"/?ws={workspace.get('id')}&inv={record['investigation_id']}"),
+            "verify_url": _link(public_url, f"/api/reports/verify/{record['sha256']}"),
+        },
+    }
+
+
+def _report_lines(event: dict[str, Any], *, attached: bool) -> list[str]:
+    r = event["report"]
+    sev = r["severity_counts"]
+    lines = [
+        f"Overall exposure: {str(r['rating']).upper()} (risk score {r['score']}/100)",
+        f"{r['counts']['paths']} attack paths: "
+        + ", ".join(f"{sev.get(s, 0)} {s}" for s in ("critical", "high", "medium", "low")),
+    ]
+    if r.get("trend"):
+        t = r["trend"]
+        lines.append(
+            f"Since {t['previous_date']}: risk {t['risk_delta']:+d}, {t['new_paths']} new and "
+            f"{t['resolved_paths']} resolved attack path(s)"
+        )
+    lines.append(
+        f"Classification: TLP:{r['tlp']}" + (f" · prepared for {r['prepared_for']}" if r.get("prepared_for") else "")
+    )
+    lines.append(f"Report {r['id']} · SHA-256 {r['sha256']}")
+    lines.append("The PDF is attached." if attached else "Download the PDF from Argus.")
+    return lines
+
+
 # ---------------------------------------------------------------------------- escaping
 def slack_escape(text: Any) -> str:
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -92,6 +147,9 @@ def header_safe(text: Any, limit: int = 200) -> str:
 
 # ---------------------------------------------------------------------------- renderers
 def _title(event: dict[str, Any]) -> str:
+    if event["type"] == "report.scheduled":
+        report = event["report"]
+        return f"{report['schedule']['name']}: {report['target']} ({str(report['rating']).upper()})"
     if event["type"] == "alert.raised":
         alert = event["alert"]
         return f"{alert['severity'].upper()} drift on {alert['target']}"
@@ -100,6 +158,18 @@ def _title(event: dict[str, Any]) -> str:
 
 def slack(event: dict[str, Any]) -> dict[str, Any]:
     workspace = slack_escape(event["workspace"].get("name") or "")
+    if event["type"] == "report.scheduled":
+        report = event["report"]
+        text = "\n".join([f":page_facing_up: *{slack_escape(_title(event))}*",
+                          *(slack_escape(x) for x in _report_lines(event, attached=False))])  # fmt: skip
+        report_blocks: list[dict[str, Any]] = [
+            {"type": "section", "text": {"type": "mrkdwn", "text": text[:2900]}},
+            {"type": "context", "elements": [{"type": "mrkdwn", "text": f"Argus · workspace {workspace}"}]},
+        ]
+        if report.get("url"):
+            report_blocks.append({"type": "actions", "elements": [
+                {"type": "button", "text": {"type": "plain_text", "text": "Open in Argus"}, "url": report["url"]}]})  # fmt: skip
+        return {"text": slack_escape(_title(event))[:3000], "blocks": report_blocks}
     if event["type"] != "alert.raised":
         text = slack_escape(event.get("message", ""))
         return {
@@ -129,7 +199,14 @@ def slack(event: dict[str, Any]) -> dict[str, Any]:
 def teams(event: dict[str, Any]) -> dict[str, Any]:
     body: list[dict[str, Any]] = []
     actions: list[dict[str, Any]] = []
-    if event["type"] != "alert.raised":
+    if event["type"] == "report.scheduled":
+        body.append({"type": "TextBlock", "text": markdown_escape(_title(event)), "weight": "Bolder", "size": "Medium",
+                     "wrap": True})  # fmt: skip
+        body += [{"type": "TextBlock", "text": markdown_escape(x), "wrap": True}
+                 for x in _report_lines(event, attached=False)]  # fmt: skip
+        if event["report"].get("url"):
+            actions.append({"type": "Action.OpenUrl", "title": "Open in Argus", "url": event["report"]["url"]})
+    elif event["type"] != "alert.raised":
         body.append({"type": "TextBlock", "text": markdown_escape(event.get("message", "")), "wrap": True})
     else:
         alert = event["alert"]
@@ -178,12 +255,27 @@ def teams(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def email(event: dict[str, Any], sender: str, recipients: list[str]) -> EmailMessage:
+def email(
+    event: dict[str, Any], sender: str, recipients: list[str], attachment: tuple[str, bytes] | None = None
+) -> EmailMessage:
     msg = EmailMessage()
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
     msg["Subject"] = header_safe(f"[Argus] {_title(event)}")
     msg["Message-ID"] = f"<{event['id']}.{secrets.token_hex(4)}@argus>"
+    if event["type"] == "report.scheduled":
+        lines = _report_lines(event, attached=attachment is not None)
+        report = event["report"]
+        verify = f"Verify this report: {report['verify_url']}" if report.get("verify_url") else ""
+        msg.set_content("\n".join([_title(event), "", *lines, "", verify]).strip() + "\n")
+        items = "".join(f"<li>{html.escape(x)}</li>" for x in lines)
+        link = (f'<p><a href="{html.escape(report["verify_url"], quote=True)}">Verify this report</a></p>'
+                if report.get("verify_url") else "")  # fmt: skip
+        msg.add_alternative(f"<h2>{html.escape(_title(event))}</h2><ul>{items}</ul>{link}", subtype="html")
+        if attachment is not None:
+            filename, pdf = attachment
+            msg.add_attachment(pdf, maintype="application", subtype="pdf", filename=header_safe(filename, 255))
+        return msg
     if event["type"] != "alert.raised":
         text = event.get("message", "")
         msg.set_content(text)
