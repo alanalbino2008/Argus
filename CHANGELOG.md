@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.33.0] — Phase 33: Argus accounts & Argus Personal
+
+### Added
+- **Argus Personal** (`argus --personal`, `ARGUS_EDITION=personal`): one investigator's Argus on
+  their own computer, listening on 127.0.0.1 only, with its data in the user's application-data
+  folder.
+- **Unlocked by an Argus account.** Sign-in and sign-up happen in the app; the API, including
+  admin API keys, answers only after sign-in.
+- **The account service** (`ARGUS_ACCOUNT_SERVICE_ENABLED`, migration `0018`):
+  - subscription accounts with plans (trial, personal, professional), statuses (trialing,
+    active, past_due, cancelled, suspended) and a paid-until date;
+  - per-plan computer limits (sign out on one to use another);
+  - scrypt password hashing; lock-out after five failed sign-ins; no account enumeration (same
+    answer and timing for unknown emails); open or closed sign-up; rate limits;
+  - administration endpoints, ready for a payment provider's webhook.
+- **Signed licences** (Ed25519):
+  - issued per computer, checked offline with the public key, impossible to forge or edit;
+  - bound to the issuing service and the computer, so a licence copied to another computer is
+    refused;
+  - renewed daily in the background; works offline for 14 days by default.
+- **Never held hostage**: when a subscription is not current (ended, cancelled, offline too long,
+  or the computer was signed out elsewhere), Argus Personal turns **read-only**. Cases stay
+  readable, verifiable and exportable, and new work answers `402` with the reason. A banner shows
+  it, with "Check again".
+- Settings → **Your Argus subscription**: plan, status, paid-until, last renewal, offline limit.
+- `argus --generate-licence-keys`; Helm 0.23.0 values for the account service; Python client
+  `subscription_accounts()`, `set_subscription()`.
+- `docs/explained/33-accounts-and-argus-personal.md`.
+
 ## [1.32.0] — Phase 32: Timeline & map
 
 ### Added

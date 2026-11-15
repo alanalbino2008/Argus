@@ -22,6 +22,12 @@ export function initSettings(el) {
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     try {
+      if (act === "licence-check") {
+        data.personal = await api.post("/api/personal/refresh");
+        toast(data.personal.access === "full" ? "Your subscription is active" : data.personal.reason, data.personal.access === "full" ? "success" : "error", 6000);
+        render();
+        return;
+      }
       if (act === "route-check") {
         btn.disabled = true;
         btn.textContent = "Testing…";
@@ -172,9 +178,10 @@ export async function refresh() {
     wsAdmin && ws ? api.get(`/api/workspaces/${ws}/members`).catch(() => null) : null,
     wsAdmin ? api.get("/api/reports/branding").catch(() => null) : null,
     api.get("/api/opsec/routes").catch(() => null),
+    fetch("/api/personal/status").then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec] = await Promise.all(tasks);
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec };
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal] = await Promise.all(tasks);
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -302,6 +309,23 @@ function verifyCard() {
   </div>`;
 }
 
+function subscriptionCard() {
+  const p = data.personal;
+  if (!p) return "";
+  const status = { trialing: ["accent", "In trial"], active: ["ok", "Active"], past_due: ["warn", "Payment due"], cancelled: ["critical", "Cancelled"], suspended: ["critical", "Suspended"] }[p.status] || ["", p.status || "—"];
+  return html`<div class="card card-pad" style="margin-top:16px" id="subscription-card">
+    <div class="card-head wrap"><div><h2>Your Argus subscription</h2><p class="muted small">Argus Personal keeps your cases on this computer; your account unlocks it. The account service only learns that this computer signed in, never anything about your cases.</p></div>
+      <span style="display:flex;gap:6px"><button class="btn sm" data-act="licence-check">${ico("check")}Check now</button></span></div>
+    ${p.access !== "full" ? html`<div class="callout warn" style="margin-bottom:12px">${ico("alert")}<span>${p.reason}</span></div>` : ""}
+    <dl class="kv"><dt>Account</dt><dd>${p.account?.email || "—"}</dd><dt>Plan</dt><dd>${p.plan_label || "—"} <span class="pill ${status[0]}">${status[1]}</span></dd>
+      <dt>${p.status === "trialing" ? "Trial ends" : "Paid until"}</dt><dd>${p.valid_until ? formatDate(p.valid_until) : "—"}</dd>
+      <dt>Last renewed</dt><dd>${p.renewed_at ? timeAgo(p.renewed_at) : "—"}${p.renewal_problem ? html` <span class="muted small">(${p.renewal_problem})</span>` : ""}</dd>
+      <dt>Works offline until</dt><dd>${p.offline_until ? formatDate(p.offline_until) : "—"}</dd>
+      <dt>Account service</dt><dd class="mono small">${p.account_service || "not configured"}</dd></dl>
+    <p class="muted small" style="margin-top:10px">If a subscription ends, nothing is lost: your cases stay readable, verifiable and exportable, and only new work waits until it is renewed.</p>
+  </div>`;
+}
+
 function workspacesCard() {
   const current = state.workspace;
   const platform = !!state.me?.platform_admin;
@@ -406,7 +430,8 @@ function render() {
           <dt>Version</dt><dd>${h ? `Argus ${h.version}` : "—"}</dd><dt>Database</dt><dd>${h ? `${h.database.backend} · ${h.database.reachable ? "reachable" : "unreachable"}` : "—"}</dd></dl>
       </div>
     </div>
-    ${workspacesCard()}
+    ${subscriptionCard()}
+    ${data.personal ? "" : workspacesCard()}
     ${safetyCard()}
     ${apiCard()}
     ${brandingCard()}

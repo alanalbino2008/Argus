@@ -146,6 +146,9 @@
               }
             }
           }
+        },
+        "licenceSigningKey": {
+          "type": "string"
         }
       }
     },
@@ -230,6 +233,18 @@
         },
         "geocoderUrl": {
           "type": "string"
+        },
+        "accountService": {
+          "type": "boolean"
+        },
+        "accountSignup": {
+          "type": "boolean"
+        },
+        "trialDays": {
+          "type": "integer"
+        },
+        "licenceOfflineDays": {
+          "type": "integer"
         }
       }
     },

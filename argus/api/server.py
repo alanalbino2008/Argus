@@ -47,7 +47,9 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
+from argus.accounts.personal import PersonalLicence
 from argus.api import remediation_hooks
+from argus.api.account_routes import router as account_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
@@ -64,6 +66,8 @@ from argus.api.onboarding_routes import scope_warnings
 from argus.api.openapi import build_openapi
 from argus.api.opsec_routes import route_for
 from argus.api.opsec_routes import router as opsec_router
+from argus.api.personal_routes import licence_gate
+from argus.api.personal_routes import router as personal_router
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
@@ -116,6 +120,7 @@ from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.schedule_repo import ScheduleRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
+from argus.storage.subscriber_repo import AppStateRepository, SubscriberRepository
 from argus.storage.supplier_repo import SupplierRepository
 from argus.storage.user_repo import UserRepository
 from argus.storage.watch_repo import AccountWatchRepository
@@ -209,6 +214,11 @@ async def lifespan(app: FastAPI):
     app.state.remediation = RemediationRepository(db)
     app.state.cases = CaseRepository(db)
     app.state.account_watches = AccountWatchRepository(db)
+    app.state.subscribers = SubscriberRepository(db)
+    app.state.app_state = AppStateRepository(db)
+    app.state.personal = PersonalLicence(settings, app.state.app_state)
+    if settings.edition == "personal":
+        await app.state.personal.load()
     app.state.remediation_clock = RemediationClock(app.state.remediation, settings)
     app.state.rescan = partial(_rescan, app)
     app.state.exposure_monitor = ExposureMonitor(
@@ -264,6 +274,11 @@ async def lifespan(app: FastAPI):
         if settings.account_watch_enabled and settings.monitors_enabled
         else None
     )
+    licence_task = (
+        asyncio.create_task(app.state.personal.run_forever(), name="licence-renewal")
+        if settings.edition == "personal"
+        else None
+    )
     janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
     scheduler_task = (
         asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
@@ -284,6 +299,7 @@ async def lifespan(app: FastAPI):
                 exposure_task,
                 remediation_task,
                 watch_task,
+                licence_task,
             )
             if t
         ]
@@ -345,7 +361,9 @@ async def _install_bootstrap_key(app: FastAPI, settings: Settings) -> None:
     await app.state.audit.record(
         SYSTEM, "key.bootstrap", record["id"], details={"source": "env" if supplied else "generated"}
     )
-    if not supplied:
+    if not supplied and settings.edition == "personal":
+        logger.info("Created this installation's admin API key (not shown: Argus Personal signs in with an account)")
+    elif not supplied:
         banner = "=" * 72
         logger.warning(
             "\n%s\n No admin API key existed, so one was generated. It will NOT be shown again:\n\n"
@@ -416,6 +434,7 @@ app = FastAPI(
 )
 app.openapi = partial(build_openapi, app)  # type: ignore[method-assign]
 
+app.middleware("http")(licence_gate)  # personal edition: the subscription decides what is allowed
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(ObservabilityMiddleware)  # outermost: times and labels everything, incl. errors
 # Same-origin by default. The UI is served by this app, so CORS is only needed for
@@ -447,6 +466,8 @@ app.include_router(opsec_router)
 app.include_router(watch_router)
 app.include_router(inspect_router)
 app.include_router(map_router)
+app.include_router(account_router)
+app.include_router(personal_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))

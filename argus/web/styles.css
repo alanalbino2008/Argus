@@ -642,6 +642,7 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
 
 /* ---------------------------------------------------------------- sign-in */
+.readonly-banner { position: fixed; left: 50%; top: calc(var(--topbar-height) + 8px); transform: translateX(-50%); z-index: 60; max-width: min(720px, calc(100vw - 32px)); padding: 10px 14px; border-radius: var(--radius); background: color-mix(in srgb, var(--sev-high) 14%, var(--surface)); border: 1px solid var(--sev-high); color: var(--text); font-size: 13px; box-shadow: var(--shadow); }
 .signin-root { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: var(--bg); padding: 24px; }
 .signin { width: 100%; max-width: 400px; padding: 32px; }
 .signin .brand { margin: 0 0 18px; }

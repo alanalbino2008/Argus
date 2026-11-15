@@ -16,6 +16,10 @@ data:
   ARGUS_ACCOUNT_WATCH_ENABLED: {{ .Values.config.accountWatching | quote }}
   ARGUS_MAP_TILE_URL: {{ .Values.config.mapTileUrl | quote }}
   ARGUS_GEOCODER_URL: {{ .Values.config.geocoderUrl | quote }}
+  ARGUS_ACCOUNT_SERVICE_ENABLED: {{ .Values.config.accountService | quote }}
+  ARGUS_ACCOUNT_SIGNUP_ENABLED: {{ .Values.config.accountSignup | quote }}
+  ARGUS_TRIAL_DAYS: {{ .Values.config.trialDays | quote }}
+  ARGUS_LICENCE_OFFLINE_DAYS: {{ .Values.config.licenceOfflineDays | quote }}
   ARGUS_NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
   ARGUS_NOTIFY_MAX_ATTEMPTS: {{ .Values.notifications.maxAttempts | quote }}
   ARGUS_REPORT_SCHEDULES_ENABLED: {{ .Values.notifications.scheduledReports | quote }}

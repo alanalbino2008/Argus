@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.32.0"
+__version__ = "1.33.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -336,6 +336,14 @@ class ArgusClient:
     def geocode(self, case_id: str, item_id: str) -> dict[str, Any]:
         """Look up an address entity's position (sends the address to the geocoder, via the case's route)."""
         return self.post(f"/api/cases/{case_id}/items/{item_id}/geocode")
+
+    def subscription_accounts(self) -> list[dict[str, Any]]:
+        """Account service (platform admins): every subscription account."""
+        return self.get("/api/accounts")
+
+    def set_subscription(self, account_id: str, **changes: Any) -> dict[str, Any]:
+        """Account service: change plan, status or valid_until, e.g. from a payment provider's webhook handler."""
+        return self.patch(f"/api/accounts/{account_id}", changes)
 
     def verify_evidence(self, capture_id: str) -> dict[str, Any]:
         return self.post(f"/api/evidence/{capture_id}/verify")

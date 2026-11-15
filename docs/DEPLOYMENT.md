@@ -207,6 +207,41 @@ and the capture says so.
   when `ARGUS_MONITORS_ENABLED` is false. `ARGUS_ACCOUNT_WATCH_POLL_SECONDS` (default 60) is how
   often due watches are looked for.
 
+### Argus accounts and Argus Personal
+
+**The account service** (your central server) creates accounts and signs licences:
+
+```bash
+argus --generate-licence-keys      # prints a signing key (secret) and its public key
+```
+
+Set on the central deployment:
+* `ARGUS_ACCOUNT_SERVICE_ENABLED=true`;
+* `ARGUS_LICENCE_SIGNING_KEY=<secret key>` (Helm: `secrets.licenceSigningKey`);
+* `ARGUS_PUBLIC_URL=https://accounts.example.com`: this exact address is written into each
+  licence, and Argus Personal checks it;
+* optionally `ARGUS_ACCOUNT_SIGNUP_ENABLED=true` (open trials), `ARGUS_TRIAL_DAYS` and
+  `ARGUS_LICENCE_OFFLINE_DAYS`.
+
+Plans (trial, personal, professional), statuses (trialing, active, past_due, cancelled,
+suspended) and the paid-until date are changed with `PATCH /api/accounts/{id}`. When payments are
+added, the payment provider's webhook handler calls exactly that. Back up the signing key: if it
+changes, every Argus Personal installation needs the new public key.
+
+**Argus Personal** (each investigator's computer):
+
+```bash
+pip install argus-osint
+ARGUS_ACCOUNT_SERVER_URL=https://accounts.example.com ARGUS_LICENCE_PUBLIC_KEY=<public key> argus --personal
+```
+
+* It listens on `127.0.0.1` only, keeps its database in the user's application-data folder
+  (`ARGUS_HOME` overrides it) and opens the browser.
+* The account service only ever receives the email and password at sign-in, a random device id
+  and name, and the licence when renewing. Never case data.
+* It renews daily, works offline for `ARGUS_LICENCE_OFFLINE_DAYS`, and turns read-only (never
+  locked) when a subscription is not current.
+
 ### Maps
 
 * `ARGUS_MAP_TILE_URL` (default OpenStreetMap's tile server): map images. The **server** fetches

@@ -215,6 +215,27 @@ evidence itself is never changed.
   the case's route; the result is stored on the entity.
 * `GET /api/map/tiles/{z}/{x}/{y}.png`: map images, fetched and cached by the server.
 
+## Argus accounts (account service)
+
+Public (rate-limited):
+* `GET /api/accounts/public-key`: the key Argus Personal checks licences with, and the plans.
+* `POST /api/accounts/signup` (`email`, `password`, `name`): a trial account, when sign-up is open.
+* `POST /api/accounts/token` (`email`, `password`, `device_id`, `device_name`): a signed licence
+  for that computer.
+* `POST /api/accounts/refresh` (`licence`): a renewed licence with the account's current plan
+  and status.
+* `POST /api/accounts/sign-out` (`licence`): frees the computer's place on the account.
+
+Platform admins:
+* `GET /api/accounts` and `GET /api/accounts/{id}` (with its devices).
+* `PATCH /api/accounts/{id}` (`plan`, `status`, `valid_until`, `max_devices`,
+  `billing_reference`): what a payment provider's webhook calls.
+* `DELETE /api/accounts/{id}/devices/{device_id}`.
+
+Argus Personal (on the investigator's computer): `GET /api/personal/status`, and `POST` to
+`/api/personal/sign-in`, `/sign-up`, `/refresh` and `/sign-out`. While a subscription is not
+current, any other write answers `402` with `{"detail": "...", "read_only": true}`.
+
 ## Investigator safety (routes)
 
 ```bash

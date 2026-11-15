@@ -148,6 +148,51 @@ class WorkspaceMemberRow(Base):
     added_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
+class SubscriberAccountRow(Base):
+    """An Argus subscription account (account service): who may use the personal edition, on which plan."""
+
+    __tablename__ = "subscriber_accounts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True)  # stored lower-case
+    name: Mapped[str] = mapped_column(String(255), default="")
+    password_hash: Mapped[str] = mapped_column(String(255))
+    plan: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))  # trialing | active | past_due | cancelled | suspended
+    valid_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))  # end of the paid or trial period
+    max_devices: Mapped[int | None] = mapped_column(Integer, nullable=True)  # None: the plan's default
+    failed_logins: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    billing_reference: Mapped[str] = mapped_column(String(255), default="")  # e.g. a payment provider's customer id
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SubscriberDeviceRow(Base):
+    """A computer signed in to an Argus account (each holds its own licence)."""
+
+    __tablename__ = "subscriber_devices"
+    __table_args__ = (Index("ux_subscriber_devices", "account_id", "device_id", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(32), ForeignKey("subscriber_accounts.id", ondelete="CASCADE"))
+    device_id: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(128), default="")
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AppStateRow(Base):
+    """Small facts about this installation (its device id, the personal edition's licence...)."""
+
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict[str, Any]] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class UserRow(Base):
     """A person who signs in through the organisation's identity provider (OIDC)."""
 

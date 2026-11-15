@@ -58,6 +58,11 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
     window.dispatchEvent(new CustomEvent("argus:auth-required"));
     throw new ApiError(401, "Please sign in");
   }
+  if (res.status === 402) {
+    const info = await res.json().catch(() => null);
+    window.dispatchEvent(new CustomEvent("argus:read-only", { detail: info?.detail || "" }));
+    throw new ApiError(402, info?.detail || "Your subscription does not allow new work right now");
+  }
   if (raw) {
     if (!res.ok) throw new ApiError(res.status, describe(await res.json().catch(() => null), res.status));
     return res;
@@ -89,6 +94,14 @@ export async function authConfig() {
   } catch {
     return { sso: { enabled: false }, api_keys: true };
   }
+}
+
+/** Argus Personal: sign in (or create an account) with an Argus account; the server sets a session cookie. */
+export async function personalSignIn(path, body) {
+  const res = await fetch(`/api/personal/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, describe(data, res.status));
+  return data;
 }
 
 /** End an SSO session. Returns the provider's sign-out URL if it offers single logout. */

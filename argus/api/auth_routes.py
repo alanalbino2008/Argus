@@ -56,9 +56,11 @@ def _fail(code: str) -> RedirectResponse:
 async def auth_config(request: Request):
     """Public: which sign-in methods the web app should offer."""
     provider = getattr(request.app.state, "oidc", None)
+    personal = request.app.state.settings.edition == "personal"
     return {
-        "sso": {"enabled": provider is not None, "name": request.app.state.settings.oidc_display_name},
-        "api_keys": True,
+        "sso": {"enabled": provider is not None and not personal, "name": request.app.state.settings.oidc_display_name},
+        "api_keys": not personal,
+        "personal": request.app.state.personal.status() if personal else None,
     }
 
 

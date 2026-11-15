@@ -128,6 +128,32 @@ class Settings(BaseSettings):
     username_catalog_file: str | None = Field(
         default=None, description="A local copy of the community catalog (offline installs); used instead of the URL"
     )
+    # ---------------------------------------------------------------- editions and accounts
+    edition: Literal["server", "personal"] = Field(
+        default="server",
+        description="'personal': one person's Argus on their own computer, unlocked by their Argus account",
+    )
+    account_service_enabled: bool = Field(
+        default=False, description="Run the Argus account service here (subscription accounts and licences)"
+    )
+    licence_signing_key: SecretStr | None = Field(
+        default=None,
+        description="Account service: Ed25519 private key that signs licences (argus --generate-licence-keys)",
+    )
+    account_signup_enabled: bool = Field(
+        default=False, description="Account service: anyone may create a trial account"
+    )
+    trial_days: int = Field(default=14, ge=1, le=90, description="Account service: length of a new account's trial")
+    licence_offline_days: int = Field(
+        default=14, ge=1, le=90, description="Account service: how long a licence works without reaching the service"
+    )
+    account_server_url: str = Field(
+        default="", description="Personal edition: the Argus account service it signs in to (https://...)"
+    )
+    licence_public_key: str = Field(
+        default="", description="Personal edition: the account service's public key, to check licences offline"
+    )
+    licence_refresh_seconds: float = Field(default=6 * 3600, ge=60, description="Personal edition: renewal attempts")
     map_tile_url: str = Field(
         default="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         description="Map images (fetched by the server, never the browser); '' = maps without a background",

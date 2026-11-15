@@ -705,16 +705,26 @@
         <a id="signin-sso-link" class="btn primary sso-btn" href="/auth/oidc/login"><span id="signin-sso-name">Continue with single sign-on</span></a>
         <div class="divider"><span>or use an API key</span></div>
       </div>
+      <div id="signin-account" hidden>
+        <p id="signin-account-hint">Sign in with your Argus account. Your cases stay on this computer: the account only unlocks it.</p>
+        <div class="field" id="signin-name-field" hidden><label class="label" for="signin-name">Your name <span class="muted small">optional</span></label><input id="signin-name" class="input" autocomplete="name" maxlength="255"></div>
+        <div class="field"><label class="label" for="signin-email">Email</label><input id="signin-email" class="input" type="email" autocomplete="username" maxlength="320"></div>
+        <div class="field"><label class="label" for="signin-password">Password</label><input id="signin-password" class="input" type="password" autocomplete="current-password" maxlength="256"></div>
+        <p class="small muted" id="signin-mode-line" style="margin:0 0 6px"><a href="#" id="signin-mode">New to Argus? Create an account</a></p>
+      </div>
+      <div id="signin-keyblock">
       <p id="signin-key-hint">Paste your API key. On first start, an admin key is printed once in the server log.</p>
       <div class="field">
         <label class="label" for="signin-key">API key</label>
         <input id="signin-key" class="input mono" type="password" placeholder="argus_…" autocomplete="off">
+      </div>
       </div>
       <div class="error-text" id="signin-error" role="alert" style="margin-top:8px"></div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:8px">Sign in</button>
     </form>
   </div>
 
+  <div id="readonly-banner" class="readonly-banner" role="status" hidden><span id="readonly-text"></span> <a href="#" id="readonly-check">Check again</a></div>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script type="module" src="/static/js/main.js"></script>

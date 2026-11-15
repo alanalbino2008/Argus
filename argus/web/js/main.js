@@ -1,7 +1,7 @@
 // Argus web app entry point: sign-in, routing, top bar, shortcuts and cross-view actions.
 
-import { activeWorkspace, api, authConfig, clearKey, download, enc, endSession, setActiveWorkspace, storeKey, whoAmI } from "./api.js";
-import { $, $$, closeTopModal, html, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
+import { activeWorkspace, api, authConfig, clearKey, download, enc, endSession, personalSignIn, setActiveWorkspace, storeKey, whoAmI } from "./api.js";
+import { $, $$, closeTopModal, confirmDialog, html, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
 import * as graph from "./graph.js";
 import { icon, installSprite } from "./icons.js";
 import { closeInvestigation, openInvestigation, startScan, stopScan } from "./live.js";
@@ -187,8 +187,23 @@ const SSO_ERRORS = {
   provider_misconfigured: "Single sign-on is misconfigured. Contact your administrator.",
 };
 
+let personalMode = null; // the personal edition's status, or null on a server
+
+function showReadOnly(text) {
+  $("#readonly-text").textContent = text;
+  $("#readonly-banner").hidden = !text;
+}
+
 async function setupSignInOptions() {
   const config = await authConfig();
+  if (config.personal) {
+    personalMode = config.personal;
+    $("#signin-account").hidden = false;
+    $("#signin-keyblock").hidden = true;
+    if (!config.personal.configured) $("#signin-account-hint").textContent = "This installation has no Argus account service configured (ARGUS_ACCOUNT_SERVER_URL and ARGUS_LICENCE_PUBLIC_KEY).";
+    if (config.personal.access === "read_only") showReadOnly(config.personal.reason);
+    return;
+  }
   if (!config.sso?.enabled) return;
   $("#signin-sso").hidden = false;
   $("#signin-sso-name").textContent = `Continue with ${config.sso.name || "single sign-on"}`;
@@ -209,7 +224,7 @@ function takeSsoError() {
 function showSignIn(message = "") {
   $("#signin").hidden = false;
   $("#signin-error").textContent = message;
-  setTimeout(() => ($("#signin-sso").hidden ? $("#signin-key") : $("#signin-sso-link")).focus(), 50);
+  setTimeout(() => (personalMode ? $("#signin-email") : $("#signin-sso").hidden ? $("#signin-key") : $("#signin-sso-link")).focus(), 50);
 }
 
 function chooseWorkspace(me) {
@@ -253,8 +268,32 @@ async function enterApp(me) {
 }
 
 function setupAuth() {
+  let creating = false;
+  $("#signin-mode").addEventListener("click", (e) => {
+    e.preventDefault();
+    creating = !creating;
+    $("#signin-name-field").hidden = !creating;
+    $("#signin-mode").textContent = creating ? "Already have an account? Sign in" : "New to Argus? Create an account";
+    $("#signin-password").autocomplete = creating ? "new-password" : "current-password";
+    $("#signin-form button[type=submit]").textContent = creating ? "Create account and start trial" : "Sign in";
+  });
   $("#signin-form").addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (personalMode) {
+      const body = { email: $("#signin-email").value.trim(), password: $("#signin-password").value };
+      if (!body.email || !body.password) { $("#signin-error").textContent = "Enter your email and password."; return; }
+      try {
+        personalMode = await personalSignIn(creating ? "sign-up" : "sign-in", creating ? { ...body, name: $("#signin-name").value.trim() } : body);
+      } catch (err) {
+        $("#signin-error").textContent = err.message;
+        return;
+      }
+      $("#signin-password").value = "";
+      showReadOnly(personalMode.access === "read_only" ? personalMode.reason : "");
+      const me = await whoAmI("");
+      if (me) await enterApp(me);
+      return;
+    }
     const key = $("#signin-key").value.trim();
     const me = key ? await whoAmI(key) : null;
     if (!me) {
@@ -270,6 +309,13 @@ function setupAuth() {
     clearKey();
     clearInterval(pollTimer);
     closeInvestigation();
+    if (personalMode) {
+      if (!(await confirmDialog({ title: "Sign this computer out?", message: "Your cases stay on this computer. Signing out frees this computer's place on your account; sign in again to keep working.", confirm: "Sign out" }))) return;
+      await fetch("/api/personal/sign-out", { method: "POST" }).catch(() => null);
+      showReadOnly("");
+      showSignIn("You've been signed out.");
+      return;
+    }
     if (viaSession) {
       const providerSignOut = await endSession();
       if (providerSignOut) {
@@ -278,6 +324,13 @@ function setupAuth() {
       }
     }
     showSignIn("You've been signed out.");
+  });
+  window.addEventListener("argus:read-only", (e) => showReadOnly(e.detail));
+  $("#readonly-check").addEventListener("click", async (e) => {
+    e.preventDefault();
+    const status = await fetch("/api/personal/refresh", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (status) showReadOnly(status.access === "read_only" ? status.reason : "");
+    toast(status?.access === "full" ? "Your subscription is active again" : status?.reason || "Could not check right now", status?.access === "full" ? "success" : "error", 6000);
   });
   window.addEventListener("argus:auth-required", () => {
     clearKey();

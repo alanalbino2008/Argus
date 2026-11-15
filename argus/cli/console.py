@@ -276,6 +276,38 @@ async def check_platforms_cli() -> dict:
     return {"summary": counts, "platforms": rows}
 
 
+def personal_data_dir() -> Path:
+    """Where Argus Personal keeps its database: the platform's usual place for application data."""
+    if os.environ.get("ARGUS_HOME"):
+        return Path(os.environ["ARGUS_HOME"])
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "Argus"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Argus"
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "argus"
+
+
+def run_personal(port: int) -> None:
+    """Argus Personal: only this computer can reach it (127.0.0.1), data in the user's own folder."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    home = personal_data_dir()
+    home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.environ.setdefault("ARGUS_EDITION", "personal")
+    os.environ.setdefault("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{home / 'argus.db'}")
+    os.environ.setdefault("ARGUS_PUBLIC_URL", f"http://127.0.0.1:{port}")
+    url = os.environ["ARGUS_PUBLIC_URL"]
+    console.print(BANNER)
+    console.print(f"[bold cyan]Argus Personal[/bold cyan] at {url}  ·  data in {home}")
+    if not os.environ.get("ARGUS_NO_BROWSER"):
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    # 127.0.0.1 only: nobody else on the network (café wifi, a shared office) can reach it.
+    uvicorn.run("argus.api.server:app", host="127.0.0.1", port=port, reload=False, access_log=False)
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -308,6 +340,16 @@ def cli_entrypoint():
         "--passive-only",
         action="store_true",
         help="Skip modules that contact the target's own systems (bug bounty programmes that forbid active testing)",
+    )
+    parser.add_argument(
+        "--personal",
+        action="store_true",
+        help="Start Argus Personal on this computer (signs in with an Argus account; data stays here)",
+    )
+    parser.add_argument(
+        "--generate-licence-keys",
+        action="store_true",
+        help="Account service operators: print a new licence signing key pair, then exit",
     )
     parser.add_argument(
         "--migrate",
@@ -349,6 +391,18 @@ def cli_entrypoint():
 
     if args.create_api_key:
         asyncio.run(create_api_key_cli(args.create_api_key, args.role))
+        return
+
+    if args.generate_licence_keys:
+        from argus.accounts.licence import generate_keypair
+
+        private, public = generate_keypair()
+        console.print("[bold]Account service[/bold] (keep secret): ARGUS_LICENCE_SIGNING_KEY=" + private)
+        console.print("[bold]Argus Personal[/bold] (safe to publish): ARGUS_LICENCE_PUBLIC_KEY=" + public)
+        return
+
+    if args.personal:
+        run_personal(args.port)
         return
 
     if args.serve or (not args.target and "--serve" in sys.argv):

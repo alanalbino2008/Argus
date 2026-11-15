@@ -95,6 +95,10 @@ secrets:
   #   - {name: tor, kind: tor, url: "http://tor.argus.svc:9080", description: "Tor"}
   #   - {name: vpn-de, kind: proxy, url: "http://user:pass@de.vpn.example:3128", anonymous: true}
   egressRoutes: []
+  # Account service only: the Ed25519 key that signs Argus Personal licences
+  # (argus --generate-licence-keys). Keep it secret and back it up: a new key means every
+  # Argus Personal installation must be given the new public key.
+  licenceSigningKey: ""
 
 # ---------------------------------------------------------------------------- application
 config:
@@ -110,6 +114,10 @@ config:
   accountWatching: true          # re-read watched accounts and record changes
   mapTileUrl: https://tile.openstreetmap.org/{z}/{x}/{y}.png  # fetched by the server, never the browser; "" = off
   geocoderUrl: https://nominatim.openstreetmap.org/search     # address look-up, only when asked; "" = off
+  accountService: false          # run the Argus account service (subscriptions for Argus Personal) here
+  accountSignup: false           # anyone may create a trial account
+  trialDays: 14
+  licenceOfflineDays: 14         # how long Argus Personal works without reaching the account service
   ransomwareFeedUrl: https://api.ransomware.live/v2   # ransomware leak-site research feed; "" turns it off
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone

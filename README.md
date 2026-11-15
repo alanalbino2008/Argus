@@ -375,6 +375,18 @@ notes and scans. Restricted cases are invisible even to administrators.
   which streets you are looking at
   ([`docs/explained/32-timeline-and-map.md`](docs/explained/32-timeline-and-map.md)).
 
+**Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
+laptop (`argus --personal`), with cases kept on that computer.
+
+- It is unlocked by an **Argus account**, created and checked by an account service you run
+  centrally. The service issues a signed licence per computer.
+- The licence is checked offline (it can't be forged or edited), renews itself in the background,
+  and keeps working offline for two weeks.
+- Plans, trials, a two-computer limit and subscription status are built in, ready for a payment
+  provider.
+- If a subscription lapses, cases stay readable, verifiable and exportable; only new work waits
+  ([`docs/explained/33-accounts-and-argus-personal.md`](docs/explained/33-accounts-and-argus-personal.md)).
+
 **Investigator safety**: the people you investigate can see every visit in their logs.
 
 - Captures and scans can go out through **Tor, a VPN or a proxy**, chosen per case, per capture
