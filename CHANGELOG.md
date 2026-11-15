@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.31.0] — Phase 31: Images & documents
+
+### Added
+- **Inspect** evidence files (photos, PDFs, Word, Excel, PowerPoint): what they reveal, and
+  signs of editing, all read on the server.
+  - **Photos**:
+    - EXIF camera, lens and serial numbers; dates with time zones; GPS position, altitude and
+      direction (with an OpenStreetMap link);
+    - PNG text and XMP (creator tool, edit history);
+    - SHA-256, MD5 and a perceptual hash.
+  - **Documents**:
+    - PDF author, creator, producer and dates; XMP and version IDs; pages;
+    - Office authors and last editor, company, template, editing time, comment authors, tracked
+      changes;
+    - computer user names leaked in file paths.
+  - **Findings** in plain words:
+    - a file whose real type differs from its name;
+    - editing software; changed after being taken;
+    - camera clock and GPS disagreeing (or the camera's time zone inferred from GPS);
+    - an embedded camera **preview that shows a different picture**;
+    - **AI-generator settings** (Stable Diffusion, ComfyUI) and IPTC "AI-generated" labels;
+    - Content Credentials (C2PA);
+    - PDFs saved more than once, or containing JavaScript, attachments or tracking links;
+    - stripped metadata explained as normal for social media.
+- **Check the shadows**: the NOAA solar position algorithm gives the sun's direction and height,
+  the shadow direction and the shadow length, for the photo's GPS place and time, or any place
+  and time (`/api/tools/sun`).
+- **Error level analysis** for JPEGs, with its limits stated.
+- **Copy without metadata**: an image re-saved with nothing but its pixels, for publishing or
+  sharing material from a source safely.
+- **Reverse image search** links (Google Lens, Bing, Yandex, TinEye): by address for public
+  images, else their upload pages with a warning to upload the clean copy.
+- From the inspector: add the photo's place to the case, and the time it was taken to the
+  timeline.
+- Every inspection is recorded in the evidence's chain of custody.
+- Python client: `inspect_evidence()`, `clean_copy()`, `sun()`.
+- `docs/explained/31-images-and-documents.md`.
+
+### Security
+- Hostile files are parsed defensively: Pillow's decompression-bomb limit (60 megapixels),
+  bounded reads of ZIP members (declared size checked first), `defusedxml` for Office XML (no
+  entity expansion), PDFs read without running anything, and bounds-checked EXIF thumbnail
+  parsing. Each inspection runs off the event loop with a time limit.
+- `pypdf` is now a declared dependency.
+
 ## [1.30.0] — Phase 30: People & account investigation
 
 ### Added

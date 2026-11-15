@@ -610,6 +610,13 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
   font-size: 12.5px; color: var(--text-2); line-height: 1.55;
 }
 .callout.warn { background: color-mix(in srgb, var(--sev-high) 12%, var(--surface)); color: var(--text); border-left: 3px solid var(--sev-high); }
+.modal.wide { max-width: 860px; width: calc(100vw - 32px); }
+.inspect-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.inspect-grid .kv { grid-template-columns: 110px 1fr; font-size: 12.5px; }
+.inspect-section { margin-top: 16px; }
+.inspect-section h3 { font-size: 13px; margin: 0 0 8px; }
+.ela-view { max-width: 100%; border-radius: var(--radius); border: 1px solid var(--border); background: #000; }
+.sun-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-items: end; }
 .callout.safe { background: color-mix(in srgb, var(--ok) 12%, var(--surface)); color: var(--text); border-left: 3px solid var(--ok); }
 
 .key-reveal {

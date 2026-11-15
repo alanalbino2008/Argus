@@ -354,6 +354,17 @@ notes and scans. Restricted cases are invisible even to administrators.
   the profile as evidence each time
   ([`docs/explained/30-people-and-accounts.md`](docs/explained/30-people-and-accounts.md)).
 
+**Images and documents**: **Inspect** any photo, PDF or Word, Excel or PowerPoint file in a case.
+
+- Hidden details: camera and serial number, when and where a photo was taken (with a map link),
+  authors and editors, company, software, comments, tracked changes, user names in file paths.
+- Signs of editing and disguise: editing software, re-saves, a camera preview that shows a
+  different picture, a file whose real type differs from its name, AI-generator settings and
+  labels, Content Credentials, PDF JavaScript and attachments.
+- **Check the shadows**: where the sun was at that place and time; **error level analysis**;
+  reverse image search links; a **copy without metadata** for publishing safely
+  ([`docs/explained/31-images-and-documents.md`](docs/explained/31-images-and-documents.md)).
+
 **Investigator safety**: the people you investigate can see every visit in their logs.
 
 - Captures and scans can go out through **Tor, a VPN or a proxy**, chosen per case, per capture

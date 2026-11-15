@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.30.0"
+__version__ = "1.31.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -312,6 +312,18 @@ class ArgusClient:
     def add_to_case(self, case_id: str, kind: str, **fields: Any) -> dict[str, Any]:
         """Add a note, entity, link, scan or event, e.g. ``add_to_case(id, "entity", data={...})``."""
         return self.post(f"/api/cases/{case_id}/items", {"kind": kind, **fields})
+
+    def inspect_evidence(self, capture_id: str, name: str) -> dict[str, Any]:
+        """What an evidence file reveals: metadata (camera, GPS, authors...) and signs of editing."""
+        return self.get(f"/api/evidence/{capture_id}/files/{name}/inspect")
+
+    def clean_copy(self, capture_id: str, name: str) -> bytes:
+        """An image from the evidence with all metadata removed, for publishing or sharing safely."""
+        return self.request("GET", f"/api/evidence/{capture_id}/files/{name}/clean", raw=True).content
+
+    def sun(self, lat: float, lon: float, at: str) -> dict[str, Any]:
+        """Where the sun was (and where shadows pointed) at a place and ISO 8601 time with offset."""
+        return self.get("/api/tools/sun", lat=lat, lon=lon, at=at)
 
     def verify_evidence(self, capture_id: str) -> dict[str, Any]:
         return self.post(f"/api/evidence/{capture_id}/verify")

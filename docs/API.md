@@ -189,6 +189,20 @@ curl -X POST https://argus.example.com/api/cases/case_…/watches \
 * Changes are added to the case timeline as events, and with `capture_on_change` the profile page
   is captured as evidence (by `account-watcher`).
 
+## Inspecting evidence files
+
+* `GET /api/evidence/{id}/files/{name}/inspect`: `groups` of metadata (File, Image, Camera,
+  Settings, Dates, Location, People, Document, Software…), `findings` (`level` `warning`,
+  `notice` or `info`, and a plain-English `text`), `gps` (with `map_url`), `taken_at`, `sun`
+  and `reverse_search` links.
+* `GET …/error-level`: error level analysis of a JPEG, as a PNG.
+* `GET …/clean`: the image with every piece of metadata removed (download).
+* `GET /api/tools/sun?lat=51.5&lon=-0.12&at=2024-06-21T13:00:00+01:00`: the sun's azimuth and
+  elevation, the shadow direction and the shadow-to-height ratio.
+
+Each inspection, analysis and clean copy is written to the evidence's chain of custody; the
+evidence itself is never changed.
+
 ## Investigator safety (routes)
 
 ```bash

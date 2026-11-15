@@ -2,6 +2,7 @@
 // and evidence preserved with fingerprints and a chain of custody.
 
 import { api, download, enc, request } from "../api.js";
+import { initInspector, inspectable, openInspector } from "./inspector.js";
 import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
@@ -77,6 +78,7 @@ function evidenceCard(c) {
       ${c.warnings.length ? html`<div class="muted small" style="margin-top:4px">${ico("info")} ${c.warnings.join(" · ")}</div>` : ""}
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
         <button class="btn sm" data-act="verify" data-id="${c.id}">${ico("check")}Verify</button>
+        ${c.files.filter(inspectable).map((f) => html`<button class="btn sm" data-act="inspect" data-id="${c.id}" data-file="${f.name}" title="Hidden details and signs of editing">${ico("search")}Inspect ${c.files.filter(inspectable).length > 1 ? f.name : ""}</button>`)}
         ${c.files.map((f) => html`<button class="btn sm ghost" data-act="file" data-id="${c.id}" data-file="${f.name}" title="${f.sha256}">${ico("download")}${f.name}</button>`)}
         ${c.timestamped ? html`<button class="btn sm ghost" data-act="tsr" data-id="${c.id}">${ico("download")}timestamp.tsr</button>` : ""}
       </div>
@@ -395,6 +397,7 @@ function syncSafety(prefix) {
 export function initCases(el, actions) {
   root = el;
   actionsRef = actions;
+  initInspector(() => refresh());
   $("#capture-egress").addEventListener("change", syncCapture);
   $("#watch-platform").addEventListener("change", syncWatch);
   ["case", "safety"].forEach((prefix) => {
@@ -414,6 +417,7 @@ export function initCases(el, actions) {
     try {
       if (act === "back") { current = null; return refresh(); }
       if (act === "watch-history") return showHistory(id);
+      if (act === "inspect") return openInspector(current, id, btn.dataset.file);
       if (act === "watch-check") {
         btn.disabled = true;
         const r = await api.post(`/api/cases/${enc(current.id)}/watches/${enc(id)}/check`).finally(() => { btn.disabled = false; });

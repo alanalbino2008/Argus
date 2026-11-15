@@ -440,6 +440,13 @@
       <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start watching</button></div>
     </form>
   </div>
+  <div id="inspect-modal" class="modal-root" aria-hidden="true">
+    <div class="modal wide" role="dialog" aria-labelledby="inspect-modal-h">
+      <div class="modal-head"><div><h2 id="inspect-modal-h">Inspect a file</h2><p id="inspect-sub">What the file reveals: hidden details, and signs it was edited. Findings are leads, not verdicts.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body" id="inspect-body"></div>
+    </div>
+  </div>
   <div id="history-modal" class="modal-root" aria-hidden="true">
     <div class="modal" role="dialog" aria-labelledby="history-modal-h">
       <div class="modal-head"><div><h2 id="history-modal-h">Account history</h2><p id="history-sub"></p></div>
