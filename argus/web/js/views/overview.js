@@ -7,11 +7,21 @@ import { formatDate, html, on, plural, setHTML, timeAgo } from "../dom.js";
 import { typeInfo } from "../icons.js";
 import { isRunning, on as onState, state } from "../state.js";
 import { checklistCard, hideChecklist } from "./guide.js";
+import { ratingCard, ratingUrl } from "./ratings.js";
 
 let root;
 let actions;
 let recent = null;
 let checklist; // undefined = not loaded, null = nothing to show
+let rating = { key: null, data: null };
+
+function loadRating(inv) {
+  // Recalculate when another investigation opens or this one finishes (paths are final then).
+  const key = inv?.id && state.paths ? `${inv.id}:${inv.status}` : null;
+  if (!key || key === rating.key) return;
+  rating = { key, data: rating.data && rating.data.investigation_id === inv.id ? rating.data : null };
+  api.get(ratingUrl(inv.id)).then((r) => { if (rating.key === key) { rating.data = r; render(); } }).catch(() => {});
+}
 
 export function initOverview(el, appActions) {
   root = el;
@@ -201,6 +211,7 @@ function relatedPanel() {
 }
 
 function dashboard(inv) {
+  loadRating(inv);
   const paths = state.paths?.paths || [];
   const flags = state.analytics?.risk_flags || [];
   return html`<div class="page">
@@ -218,6 +229,7 @@ function dashboard(inv) {
       </div>
     </div>
     ${kpis(inv)}
+    ${rating.data?.investigation_id === inv.id ? ratingCard(rating.data) : ""}
     <div class="grid two" style="margin-top:16px">
       <div>
         <div class="card-head" style="margin-top:6px"><h2>Top attack paths</h2>${paths.length ? html`<button class="btn ghost sm" data-action="goPaths">View all ${paths.length}</button>` : ""}</div>

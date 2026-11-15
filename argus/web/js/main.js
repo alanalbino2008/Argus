@@ -11,13 +11,14 @@ import { initHistory, refresh as refreshHistory } from "./views/history.js";
 import { initModals, openDiff, openNewInvestigation, startTour } from "./views/modals.js";
 import { initReports, openReport } from "./views/reports.js";
 import { initGuide, markPathsReviewed, openGuide } from "./views/guide.js";
+import { initRatings, refresh as refreshRatings } from "./views/ratings.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
 import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 
-const VIEWS = ["overview", "graph", "paths", "people", "monitoring", "history", "settings"];
+const VIEWS = ["overview", "graph", "paths", "people", "monitoring", "ratings", "history", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -39,6 +40,7 @@ function route() {
   if (view === "monitoring") refreshMonitoring();
   if (view === "settings") refreshSettings();
   if (view === "paths") markPathsReviewed();
+  if (view === "ratings") refreshRatings();
 }
 
 // ------------------------------------------------------------------ actions shared by views
@@ -148,7 +150,7 @@ function setupShortcuts() {
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing || e.metaKey || e.ctrlKey || e.altKey || !$("#signin").hidden || $(".modal-root.open")) return;
-    const map = { o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", h: "history" };
+    const map = { o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", r: "ratings", h: "history" };
     if (map[e.key]) go(map[e.key]);
     else if (e.key === "n") { e.preventDefault(); actions.newInvestigation(); }
     else if (e.key === "/") { e.preventDefault(); go("graph"); setTimeout(() => $("#graph-search").focus(), 120); }
@@ -284,6 +286,7 @@ async function boot() {
   initPeople($("#view-people"), actions);
   initMonitoring($("#view-monitoring"), actions);
   initHistory($("#view-history"), actions);
+  initRatings($("#view-ratings"), actions);
   initSettings($("#view-settings"));
 
   $$(".nav-item").forEach((el) => el.addEventListener("click", () => go(el.dataset.view)));

@@ -51,6 +51,8 @@ from argus.api.monitor_routes import router as monitor_router
 from argus.api.notification_routes import router as notification_router
 from argus.api.onboarding_routes import router as onboarding_router
 from argus.api.onboarding_routes import scope_warnings
+from argus.api.rating_routes import benchmark, ensure_history, rate
+from argus.api.rating_routes import router as rating_router
 from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
@@ -84,6 +86,7 @@ from argus.storage import Database, InvestigationRecorder, InvestigationReposito
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
+from argus.storage.rating_repo import RatingRepository
 from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.schedule_repo import ScheduleRepository
@@ -170,6 +173,7 @@ async def lifespan(app: FastAPI):
     await _audit_plugins(app)
     app.state.monitors = MonitorRepository(db)
     app.state.reports = ReportRepository(db)
+    app.state.ratings = RatingRepository(db)
     app.state.schedules = ScheduleRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
     app.state.notifications = NotificationRepository(db, app.state.secret_box)
@@ -305,6 +309,7 @@ app.include_router(monitor_router)
 app.include_router(notification_router)
 app.include_router(report_router)
 app.include_router(onboarding_router)
+app.include_router(rating_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -893,6 +898,25 @@ async def export_stix(inv_id: str, request: Request, ws: WorkspaceContext = VIEW
         media_type="application/stix+json;version=2.1",
         headers={"Content-Disposition": f"attachment; filename=argus_{inv_id}_stix.json"},
     )
+
+
+@app.get("/api/investigation/{inv_id}/rating")
+async def get_rating(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
+    """Security rating (A-F) with its factor breakdown, improvement plan, trend and benchmark."""
+    repo = get_repo(request)
+    inv = await _resolve(inv_id, repo, ws.id)
+    graph = await _resolve_graph(inv_id, repo, ws.id)
+    rating = await rate(request.app, inv, graph)
+    await ensure_history(request.app, ws.id, inv.config.target)  # the trend needs earlier scans rated too
+    history = await request.app.state.ratings.history(inv.config.target, workspace_id=ws.id)
+    return {
+        **rating,
+        "target": inv.config.target,
+        "investigation_id": inv_id,
+        "live": inv.status.value in ACTIVE_STATUSES,
+        "history": history,
+        "benchmark": await benchmark(request.app, ws.id, inv.config.target, rating.get("score", 0)),
+    }
 
 
 class ReportRequest(BaseModel):

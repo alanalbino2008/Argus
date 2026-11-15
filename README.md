@@ -278,6 +278,20 @@ the engine never investigates a third party's domain
 
 ([`docs/explained/20-infrastructure-pivoting.md`](docs/explained/20-infrastructure-pivoting.md)).
 
+**Security rating**: a transparent A–F grade from eight weighted factors (patching, leaks,
+network, web and TLS, email, brand, DNS, social engineering).
+
+- Every point lost is a finding with its fix.
+- Critical issues cap the grade.
+- Unassessed factors lower the rating's confidence rather than counting as perfect.
+- A "fastest route to the next grade" shows what to fix first.
+- Ratings are tracked over time, and a **Ratings** portfolio page benchmarks each organisation
+  against the others assessed in the workspace, never against invented industry averages.
+- The rating is included in PDF reports.
+
+([`docs/explained/21-security-rating.md`](docs/explained/21-security-rating.md), which is also the published
+methodology).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

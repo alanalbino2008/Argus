@@ -56,6 +56,13 @@ INK = colors.HexColor("#111827")
 MUTED = colors.HexColor("#6b7280")
 RULE = colors.HexColor("#e5e7eb")
 SOFT = colors.HexColor("#f5f6f8")
+GRADE_COLOURS = {
+    "A": colors.HexColor("#2f9e44"),
+    "B": colors.HexColor("#5c940d"),
+    "C": colors.HexColor("#c99a06"),
+    "D": colors.HexColor("#e8590c"),
+    "F": colors.HexColor("#c0262d"),
+}
 SEVERITY_COLOURS = {
     "critical": colors.HexColor("#c0262d"),
     "high": colors.HexColor("#e8590c"),
@@ -391,7 +398,20 @@ def _cover(d: ReportData, s: dict[str, ParagraphStyle], accent: colors.Color) ->
     badge.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), rating_colour), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
                                ("LEFTPADDING", (0, 0), (-1, -1), 8)]))  # fmt: skip
-    out += [badge, Spacer(1, 22 * mm)]
+    out.append(badge)
+    if d.security_rating:
+        r = d.security_rating
+        rating_badge = Table(
+            [[Paragraph('<font color="#ffffff">SECURITY RATING</font>', s["small"]),
+              Paragraph(f'<font color="#ffffff" size="13"><b>{esc(r["grade"])}</b></font>'
+                        f'<font color="#ffffff" size="9">  {round(r["score"])}/100</font>', s["body"])]],
+            colWidths=[38 * mm, 40 * mm], hAlign="LEFT",
+        )  # fmt: skip
+        rating_badge.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), GRADE_COLOURS.get(r["grade"], MUTED)),
+                                          ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("TOPPADDING", (0, 0), (-1, -1), 7),
+                                          ("BOTTOMPADDING", (0, 0), (-1, -1), 7), ("LEFTPADDING", (0, 0), (-1, -1), 8)]))  # fmt: skip
+        out += [Spacer(1, 3 * mm), rating_badge]
+    out.append(Spacer(1, 22 * mm))
     out.append(
         Paragraph(
             f"<b>TLP:{esc(d.options.tlp)}</b>: {esc(TLP_MEANING[d.options.tlp])} This report describes security "
@@ -455,6 +475,39 @@ def _executive(d: ReportData, s: dict[str, ParagraphStyle], width: float) -> lis
             s["muted"],
         )
     )
+    if d.security_rating:
+        out += _rating_section(d, s, width)
+    return out
+
+
+def _hex(colour: colors.Color) -> str:
+    return "#" + colour.hexval()[2:]
+
+
+def _rating_section(d: ReportData, s: dict[str, ParagraphStyle], width: float) -> list[Flowable]:
+    r = d.security_rating
+    out: list[Flowable] = [Spacer(1, 4 * mm), Paragraph("Security rating", s["H2"])]
+    notes = [f"<b>{esc(r['grade'])}</b> ({round(r['score'])}/100)"]
+    if r.get("capped_at"):
+        notes.append(f"capped at {r['capped_at']} by {r['critical_issues']} critical issue(s); "
+                     f"{round(r['uncapped_score'])} without the cap")  # fmt: skip
+    notes.append(f"confidence {round(r['confidence'] * 100)}%" + (" (provisional)" if r.get("provisional") else ""))
+    out.append(Paragraph(" · ".join(notes) + ". Eight factors, weighted as published in the Argus rating methodology "
+                         f"(version {esc(r['methodology'])}).", s["body"]))  # fmt: skip
+    rows: list[list[Any]] = [["Factor", "Weight", "Score", "Grade", "Issues"]]
+    for f in r["factors"]:
+        grade = f["grade"] or "—"
+        rows.append([
+            Paragraph(esc(f["name"]), s["cell"]), Paragraph(f"{round(f['weight'] * 100)}%", s["cell"]),
+            Paragraph(str(round(f["score"])) if f["assessed"] else "not assessed", s["cell"]),
+            Paragraph(f'<font color="{_hex(GRADE_COLOURS[grade])}"><b>{grade}</b></font>' if grade in GRADE_COLOURS else grade,
+                      s["cell"]),
+            Paragraph(str(f["issue_count"]), s["cell"]),
+        ])  # fmt: skip
+    out.append(_table(rows, [width - 88 * mm, 20 * mm, 24 * mm, 20 * mm, 24 * mm]))
+    if r.get("plan"):
+        out += [Spacer(1, 3 * mm), Paragraph(f"Fastest route to grade {esc(r['plan_reaches'])}", s["H2"])]
+        out.append(_bullets([f"{p['title']}: {p['fix']}" for p in r["plan"]], s))
     return out
 
 

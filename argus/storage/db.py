@@ -15,7 +15,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, LargeBinary, String, event, false, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    LargeBinary,
+    String,
+    event,
+    false,
+    text,
+)
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -358,6 +371,22 @@ class ReportFileRow(Base):
     filename: Mapped[str] = mapped_column(String(255))
     pdf: Mapped[bytes] = mapped_column(LargeBinary)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class RatingRow(Base):
+    """A computed security rating for one completed investigation (cached; recomputed if the methodology changes)."""
+
+    __tablename__ = "ratings"
+
+    investigation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    target: Mapped[str] = mapped_column(String(512), index=True)  # lower-cased
+    methodology: Mapped[str] = mapped_column(String(32))
+    score: Mapped[float] = mapped_column(Float)
+    grade: Mapped[str] = mapped_column(String(2))
+    confidence: Mapped[float] = mapped_column(Float)
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Database:

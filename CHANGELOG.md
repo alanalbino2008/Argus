@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.21.0] — Phase 21: Security rating
+
+### Added
+- **Rating engine** (`argus/intel/rating.py`, methodology `2026.11-1`):
+  - eight weighted factors fed by attack paths and direct measurements (DMARC/SPF policy, header
+    grade, security.txt, certificate expiry, exposed-surface size), with strengths credited;
+  - severity points with diminishing returns per factor;
+  - critical caps (1 critical → at most 69 (D), 3 or more → at most 59 (F));
+  - A–F bands;
+  - coverage-based confidence: unassessed factors are excluded, and a rating under 60% confidence
+    is provisional;
+  - per-issue impact (uncapped) and gain (capped), and the fastest route to the next grade.
+- Ratings stored per completed investigation (migration `0010`), recomputed when the methodology
+  version changes.
+- `GET /api/investigation/{id}/rating` (with trend and benchmark) and `GET /api/ratings`
+  (portfolio: grade distribution, median, trend, change, weakest factor, percentile).
+  Benchmarks are workspace-relative and need at least 3 organisations.
+- Web app: a **Security rating** card on each investigation (grade, factor bars, fastest route,
+  trend sparkline, benchmark), and a **Ratings** portfolio page (shortcut **R**).
+- PDF reports: rating badge on the cover and a *Security rating* section (factor table,
+  fastest route), pseudonymised like the rest of the report.
+- `docs/explained/21-security-rating.md`, the published methodology.
+
 ## [1.20.0] — Phase 20: Infrastructure pivoting
 
 ### Added

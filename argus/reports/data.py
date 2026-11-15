@@ -31,6 +31,7 @@ from argus.intel.attack import map_investigation
 from argus.intel.diff import compare
 from argus.intel.identity import resolve_people
 from argus.intel.paths import find_attack_paths
+from argus.intel.rating import compute_rating
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 
 Tlp = Literal["CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"]
@@ -110,6 +111,7 @@ class ReportData:
     generator: str = ""
     lookalikes: list[dict[str, Any]] = field(default_factory=list)
     related: list[dict[str, Any]] = field(default_factory=list)
+    security_rating: dict[str, Any] = field(default_factory=dict)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -187,6 +189,19 @@ def _redact_path(path: dict[str, Any], redact: Callable[[str], str]) -> dict[str
     for step in out.get("steps") or []:
         step["label"] = redact(str(step.get("label", "")))
     return out
+
+
+def _rating_for_report(rating: dict[str, Any], redact: Callable[[str], str]) -> dict[str, Any]:
+    """The rating, with issue titles pseudonymised like the rest of the report."""
+    titles = {i["id"]: redact(i["title"]) for i in rating["issues"]}
+    return {
+        **{k: rating[k] for k in ("score", "grade", "confidence", "provisional", "critical_issues", "capped_at",
+                                  "uncapped_score", "methodology")},
+        "factors": rating["factors"],
+        "plan": [{"title": titles[i], "fix": next(x["fix"] for x in rating["issues"] if x["id"] == i)}
+                 for i in rating["plan"]["issues"]],
+        "plan_reaches": rating["plan"]["reaches"],
+    }  # fmt: skip
 
 
 def build_report_data(
@@ -333,6 +348,7 @@ def build_report_data(
                 (e for e in entities if e.metadata.get("lookalike")), key=lambda e: -e.metadata["lookalike"]["risk"]
             )
         ][:15],
+        security_rating=_rating_for_report(compute_rating(graph, found["paths"]), redact),
         related=[
             {
                 "domain": e.value,

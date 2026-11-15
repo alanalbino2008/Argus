@@ -795,3 +795,27 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .progress { height: 6px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width .4s ease; }
 @media (max-width: 760px) { .guide-ok, .guide-modes, .guide-live { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------------------ security ratings */
+.grade { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; font-weight: 750; font-size: 15px; color: #fff; background: var(--text-3); flex: none; }
+.grade.sm { width: 22px; height: 22px; font-size: 12px; border-radius: 6px; }
+.grade.xl { width: 84px; height: 84px; font-size: 46px; border-radius: 18px; }
+.grade-A { background: #2f9e44; } .grade-B { background: #5c940d; } .grade-C { background: #c99a06; }
+.grade-D { background: #e8590c; } .grade-F { background: #c0262d; } .grade-none { background: var(--surface-2); color: var(--text-3); }
+.grade-fill-A { background: #2f9e44; } .grade-fill-B { background: #5c940d; } .grade-fill-C { background: #c99a06; }
+.grade-fill-D { background: #e8590c; } .grade-fill-F { background: #c0262d; }
+.rating-head { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.rating-summary { flex: 1; min-width: 240px; }
+.rating-summary h2 { margin: 0 0 4px; display: flex; gap: 8px; align-items: center; }
+.rating-summary p { margin: 2px 0; }
+.rating-trend { text-align: right; }
+.rating-body { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 24px; margin-top: 18px; }
+.factor-list { display: grid; gap: 8px; }
+.factor-row { display: grid; grid-template-columns: 210px minmax(0, 1fr) 24px; gap: 10px; align-items: center; font-size: 13px; }
+.factor-row .bar-track { height: 8px; }
+.rating-plan h3 { font-size: 14px; margin: 0 0 8px; display: flex; gap: 8px; align-items: center; }
+.rating-plan ol { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13px; }
+.kpi-grade { display: flex; gap: 14px; align-items: center; }
+.grid.kpis:has(.kpi-grade) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.sparkline { display: block; }
+@media (max-width: 900px) { .rating-body { grid-template-columns: 1fr; } .factor-row { grid-template-columns: 150px minmax(0, 1fr) 24px; } }
