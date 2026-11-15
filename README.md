@@ -332,6 +332,16 @@ an owner, a deadline from the workspace's severity policy, and a timeline.
 - A two-page, fingerprinted **board report** PDF, which can be emailed monthly
   ([`docs/explained/26-executive-dashboard.md`](docs/explained/26-executive-dashboard.md)).
 
+**Compliance mapping**: Argus's evidence mapped to **Cyber Essentials, ISO/IEC 27001:2022, NIST
+CSF 2.0 and DORA**.
+
+- Each control is met, partially met, a gap, or not assessed. Each status shows its reasons, its
+  evidence and the findings behind it, which can be tracked as fixes.
+- Coverage is labelled honestly (outside-in evidence can't prove everything), and no evidence is
+  never treated as a pass.
+- Exports: a CSV per framework and a JSON evidence pack for auditors and GRC tools
+  ([`docs/explained/27-compliance-mapping.md`](docs/explained/27-compliance-mapping.md)).
+
 **API & integrations**: a documented REST API (OpenAPI 3.1 at `/docs`, with authentication,
 workspace header and required role on every operation), per-key rate limits with `RateLimit-*`
 headers, and an official Python client (`clients/python`).

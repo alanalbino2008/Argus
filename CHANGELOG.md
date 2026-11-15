@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.27.0] — Phase 27: Compliance mapping
+
+### Added
+- **Compliance mapping** for four frameworks: **Cyber Essentials** (v3.2), **ISO/IEC 27001:2022
+  Annex A** (13 controls), **NIST CSF 2.0** (10 outcomes) and **DORA** (6 articles).
+- Each control is judged from three kinds of evidence:
+  - the open attack paths and exposure findings that would breach it;
+  - supplier status;
+  - process checks: recent scans, continuous monitoring, alerting, remediation deadlines and SLA
+    compliance, the Cyber Essentials 14-day patch window, critical weaknesses with owners, the
+    supplier register and monitoring, and threat intelligence.
+- **Statuses**: met, partially met (including gaps already owned and on a deadline), gap, and not
+  assessed. Each status shows its reasons and evidence, and its findings can be tracked as fixes
+  in one click.
+- **Honest coverage**: each control is labelled direct, partial or process. Without evidence a
+  control is never "met": problems are reported, but a pass needs a recent scan of your own
+  organisation.
+- Exports: a **CSV per framework** (for audit preparation or a statement of applicability) and a
+  **JSON evidence pack** of every framework (for GRC tools), both audited.
+- **Compliance page** (shortcut **C**), API `/api/compliance`, Python client `compliance()`, and
+  `docs/explained/27-compliance-mapping.md`.
+
+### Quality
+- A catalogue integrity test checks that every mapped attack-path rule, exposure kind and process
+  check exists, so a typo can never make a control look met.
+
 ## [1.26.0] — Phase 26: Executive dashboard & board report
 
 ### Added

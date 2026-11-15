@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.26.0"
+__version__ = "1.27.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -257,6 +257,11 @@ class ArgusClient:
         return self.post("/api/exposure/findings/status", {"ids": finding_ids, "status": status, "note": note})[
             "updated"
         ]
+
+    # ------------------------------------------------------------------ compliance
+    def compliance(self) -> dict[str, Any]:
+        """Evidence mapped to Cyber Essentials, ISO 27001, NIST CSF 2.0 and DORA, control by control."""
+        return self.get("/api/compliance")
 
     # ------------------------------------------------------------------ executive
     def executive(self, *, days: int = 90) -> dict[str, Any]:

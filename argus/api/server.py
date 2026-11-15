@@ -49,6 +49,7 @@ from sqlalchemy import text
 from argus import __version__
 from argus.api import remediation_hooks
 from argus.api.auth_routes import router as auth_router
+from argus.api.compliance_routes import router as compliance_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
@@ -413,6 +414,7 @@ app.include_router(supplier_router)
 app.include_router(exposure_router)
 app.include_router(remediation_router)
 app.include_router(executive_router)
+app.include_router(compliance_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))

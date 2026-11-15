@@ -137,6 +137,20 @@ curl -X POST https://argus.example.com/api/exposure/findings/status \
 Exposure alerts arrive through the same destinations as drift alerts. Their `alert.exposure`
 object carries the counts and the scope, and never staff addresses.
 
+## Compliance
+
+`GET /api/compliance` returns, for each framework (`cyber_essentials`, `iso27001`, `nist_csf`,
+`dora`):
+* counts by status (`met`, `partial`, `gap`, `not_assessed`);
+* every control, with its `coverage`, `status`, `reasons`, `evidence` and `gaps`.
+
+Exports:
+* `GET /api/compliance/{framework}/export.csv`, one framework;
+* `GET /api/compliance/evidence.json`, every framework.
+
+Both are audited. The mapping is outside-in evidence that supports an audit; it is not a
+certification.
+
 ## Executive view and board report
 
 `GET /api/executive?days=90` (30, 90 or 180) returns:
