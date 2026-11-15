@@ -12,6 +12,22 @@ function setInvestigation(payload) {
   emit("investigation", state.investigation);
 }
 
+/** Modules add details to entities after first reporting them; at the end, read the final versions. */
+async function refreshEntities() {
+  const id = state.investigation?.id;
+  if (!id) return;
+  try {
+    const saved = await api.get(`/api/investigation/${enc(id)}/graph`);
+    if (state.investigation?.id !== id) return;
+    for (const element of saved.elements || []) {
+      const d = element.data || {};
+      const entity = element.group === "nodes" ? state.entities.get(d.id) : null;
+      if (entity && d.metadata) entity.metadata = d.metadata;
+    }
+    emit("entities-refreshed");
+  } catch { /* the live versions stay shown */ }
+}
+
 export async function loadIntel() {
   const id = state.investigation?.id;
   if (!id) return;
@@ -68,6 +84,7 @@ function handle(msg) {
       emit("analytics", state.analytics);
       graph.relayout();
       loadIntel();
+      refreshEntities();
       pushFeed("Investigation complete");
       toast(`Investigation of ${state.investigation.target} complete`, "success");
       emit("history-changed");

@@ -154,6 +154,25 @@ class Settings(BaseSettings):
         default="", description="Personal edition: the account service's public key, to check licences offline"
     )
     licence_refresh_seconds: float = Field(default=6 * 3600, ge=60, description="Personal edition: renewal attempts")
+    # ---------------------------------------------------------------- cryptocurrency
+    bitcoin_api_url: str = Field(
+        default="https://mempool.space/api", description="Esplora-compatible Bitcoin API (mempool.space, Blockstream)"
+    )
+    evm_chains: dict[str, str] = Field(
+        default_factory=lambda: {"ethereum": "https://eth.blockscout.com"},
+        description='Blockscout instances to trace Ethereum-style addresses on, e.g. {"ethereum": ..., "base": ...}',
+    )
+    crypto_counterparties: int = Field(default=12, ge=1, le=50, description="Counterparty wallets kept per wallet")
+    sanctions_sdn_url: str = Field(
+        default="https://www.treasury.gov/ofac/downloads/sdn.csv", description="OFAC SDN list (CSV); '' = off"
+    )
+    sanctions_comments_url: str = Field(
+        default="https://www.treasury.gov/ofac/downloads/sdn_comments.csv",
+        description="OFAC SDN remarks continued (CSV), where long entries list more addresses",
+    )
+    sanctions_file: str | None = Field(
+        default=None, description="A folder holding saved copies of sdn.csv (and sdn_comments.csv), for offline use"
+    )
     map_tile_url: str = Field(
         default="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         description="Map images (fetched by the server, never the browser); '' = maps without a background",

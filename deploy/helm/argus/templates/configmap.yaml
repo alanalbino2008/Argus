@@ -16,6 +16,9 @@ data:
   ARGUS_ACCOUNT_WATCH_ENABLED: {{ .Values.config.accountWatching | quote }}
   ARGUS_MAP_TILE_URL: {{ .Values.config.mapTileUrl | quote }}
   ARGUS_GEOCODER_URL: {{ .Values.config.geocoderUrl | quote }}
+  ARGUS_BITCOIN_API_URL: {{ .Values.config.bitcoinApiUrl | quote }}
+  ARGUS_EVM_CHAINS: {{ .Values.config.evmChains | toJson | quote }}
+  ARGUS_SANCTIONS_SDN_URL: {{ .Values.config.sanctionsSdnUrl | quote }}
   ARGUS_ACCOUNT_SERVICE_ENABLED: {{ .Values.config.accountService | quote }}
   ARGUS_ACCOUNT_SIGNUP_ENABLED: {{ .Values.config.accountSignup | quote }}
   ARGUS_TRIAL_DAYS: {{ .Values.config.trialDays | quote }}

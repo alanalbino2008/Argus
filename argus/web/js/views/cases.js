@@ -21,9 +21,9 @@ let pendingEntity = null; // an entity sent from the graph, waiting for a case t
 const thumbs = new Map(); // capture id -> object URL of its screenshot
 
 const ENTITY_TYPES = ["person", "organisation", "username", "account", "email", "phone", "domain", "ip", "address",
-  "location", "vehicle", "document", "other"];
+  "location", "vehicle", "document", "wallet", "other"];
 const FROM_GRAPH = { person: "person", email: "email", username: "username", phone: "phone", domain: "domain",
-  subdomain: "domain", ip_address: "ip", organization: "organisation", location: "location" };
+  subdomain: "domain", ip_address: "ip", organization: "organisation", location: "location", crypto_wallet: "wallet" };
 const canEdit = () => ["analyst", "admin"].includes(state.workspace?.role);
 const short = (digest) => `${digest.slice(0, 12)}…`;
 const anonymous = (c) => c.opsec_mode === "anonymous";

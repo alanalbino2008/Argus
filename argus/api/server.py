@@ -972,6 +972,12 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
     passive_only = req.passive_only or anonymous  # an anonymous case never touches its subjects' own systems
 
     ttype = req.target_type or detect_target_type(target)
+    if ttype == EntityType.CRYPTO_WALLET:
+        from argus.intel.crypto import classify
+
+        if classify(target) is None:
+            raise HTTPException(status_code=422, detail="That is not a valid wallet address: its checksum does not "
+                                                        "match, so it was probably mistyped")  # fmt: skip
     if not settings.allow_private_targets:
         try:
             validate_scan_target(target, ttype)

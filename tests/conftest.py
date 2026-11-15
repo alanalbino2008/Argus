@@ -24,13 +24,17 @@ def database_url(tmp_path, name: str) -> str:
 @pytest.fixture(autouse=True)
 def _no_live_username_catalog(monkeypatch):
     """Tests never download the community username catalog unless they opt in."""
+    from argus.intel import sanctions
     from argus.modules.identity import catalog
 
     monkeypatch.setenv("ARGUS_USERNAME_CATALOG_URL", "")
+    monkeypatch.setenv("ARGUS_SANCTIONS_SDN_URL", "")  # nor the sanctions list
     get_settings.cache_clear()
     catalog.reset()
+    sanctions.reset()
     yield
     catalog.reset()
+    sanctions.reset()
     get_settings.cache_clear()
 
 

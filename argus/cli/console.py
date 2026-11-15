@@ -43,6 +43,12 @@ def detect_target_type(target: str) -> EntityType:
     except ValueError:
         pass
 
+    # 2. Cryptocurrency wallet (checksum verified, so a random string is never mistaken for one)
+    from argus.intel.crypto import classify
+
+    if classify(target_clean) is not None:
+        return EntityType.CRYPTO_WALLET
+
     # 2. Email Address
     if re.match(r"^[^@]+@[^@]+\.[^@]+$", target_clean):
         return EntityType.EMAIL

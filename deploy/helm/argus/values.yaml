@@ -114,6 +114,9 @@ config:
   accountWatching: true          # re-read watched accounts and record changes
   mapTileUrl: https://tile.openstreetmap.org/{z}/{x}/{y}.png  # fetched by the server, never the browser; "" = off
   geocoderUrl: https://nominatim.openstreetmap.org/search     # address look-up, only when asked; "" = off
+  bitcoinApiUrl: https://mempool.space/api   # Esplora-compatible (mempool.space, Blockstream, your own node)
+  evmChains: {ethereum: "https://eth.blockscout.com"}   # Blockscout instances, e.g. add base, polygon
+  sanctionsSdnUrl: https://www.treasury.gov/ofac/downloads/sdn.csv   # OFAC list; "" = off
   accountService: false          # run the Argus account service (subscriptions for Argus Personal) here
   accountSignup: false           # anyone may create a trial account
   trialDays: 14

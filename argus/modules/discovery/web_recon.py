@@ -22,6 +22,7 @@ import aiohttp
 
 from argus.core.http import HttpClient, read_limited
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel.crypto import find_addresses
 from argus.modules.base import BaseModule
 
 MAX_PAGE = 600_000
@@ -182,10 +183,14 @@ class WebReconModule(BaseModule):
         # 4. contacts published on the site
         emails: set[str] = set()
         phones: dict[str, float] = {}
-        for path in ("/", "/contact", "/contact-us", "/about"):
+        wallets: dict[str, Any] = {}
+        for path in ("/", "/contact", "/contact-us", "/about", "/donate"):
             status, body = await self._get(session, base + path, config)
             if status == 200:
-                found_emails, found_phones = extract_contacts(body.decode("utf-8", errors="ignore"), domain)
+                text = body.decode("utf-8", errors="ignore")
+                for found_wallet in find_addresses(text, limit=20):  # checksums verified: no false wallets
+                    wallets.setdefault(found_wallet.value, found_wallet)
+                found_emails, found_phones = extract_contacts(text, domain)
                 emails |= found_emails
                 for number, confidence in found_phones.items():
                     phones[number] = max(confidence, phones.get(number, 0))
@@ -196,6 +201,14 @@ class WebReconModule(BaseModule):
             )  # fmt: skip
             yield mail
             yield Relation.create(mail.id, entity.id, RelationType.ASSOCIATED_WITH, label="Published on website")
+        for value, wallet in list(wallets.items())[:20]:
+            found = Entity.create(
+                EntityType.CRYPTO_WALLET, value, label=f"{wallet.label} {value[:10]}…",
+                metadata={"origin": "published on website", "chain": wallet.chain, "traceable": wallet.traceable},
+                source_module=self.name, confidence=0.95, depth=depth,
+            )  # fmt: skip
+            yield found
+            yield Relation.create(found.id, entity.id, RelationType.ASSOCIATED_WITH, label="Published on website")
         for number, confidence in sorted(phones.items())[:10]:
             phone = Entity.create(
                 EntityType.PHONE, number, label=number, metadata={"origin": "published on website"},

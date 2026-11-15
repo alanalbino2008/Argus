@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.34.0] — Phase 34: Crypto investigations
+
+### Added
+- **Wallet targets.** Scans accept Bitcoin and Ethereum-style addresses (detected
+  automatically). Every address's checksum is verified, so mistyped or invented addresses are
+  refused with an explanation:
+  - Base58Check for legacy and script addresses;
+  - Bech32 and Bech32m for SegWit and Taproot (BIP 173 and BIP 350);
+  - EIP-55 for Ethereum, using a Keccak-256 implementation checked against SHA-3 at every padding
+    length.
+- **Bitcoin wallets** (`bitcoin_wallet`, Esplora API, e.g. mempool.space):
+  - balance, totals, transaction count and active dates;
+  - who paid the wallet and whom it paid (amounts, counts, dates);
+  - **same-owner addresses** by the common-input heuristic, with **CoinJoins detected and
+    excluded** from both same-owner links and payments.
+- **Ethereum-compatible wallets** (`evm_wallet`, Blockscout, any number of chains):
+  - balance, transaction and token-transfer counts per chain;
+  - native and token flows (failed transactions excluded);
+  - public labels (exchanges, contracts) and ENS names.
+- **Sanctions screening** against the US Treasury OFAC SDN list (official CSV files, cached daily,
+  or offline copies). Every wallet and every counterparty is checked, with the designated party's
+  name and programmes.
+- **Services are not followed**: exchanges, contracts and very busy wallets are flagged, and the
+  trail stops there, so strangers are never linked through an exchange.
+- **Wallets on websites**: scans pick up checksum-valid addresses on a site's pages (including
+  `/donate`).
+- Graph: wallet type and panel (badges, sanctions warnings, balances, money in and out, explorer
+  link). Cases: "wallet" entities, from the graph too. Helm 0.24.0 settings.
+- `docs/explained/34-crypto-investigations.md`.
+
+### Fixed
+- The graph's details panel now refreshes when a scan finishes, so details that modules add late
+  in a scan (for any entity type) appear without reopening the investigation.
+
 ## [1.33.0] — Phase 33: Argus accounts & Argus Personal
 
 ### Added

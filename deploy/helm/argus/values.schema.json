@@ -245,6 +245,18 @@
         },
         "licenceOfflineDays": {
           "type": "integer"
+        },
+        "bitcoinApiUrl": {
+          "type": "string"
+        },
+        "evmChains": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "sanctionsSdnUrl": {
+          "type": "string"
         }
       }
     },

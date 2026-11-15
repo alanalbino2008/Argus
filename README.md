@@ -375,6 +375,17 @@ notes and scans. Restricted cases are invisible even to administrators.
   which streets you are looking at
   ([`docs/explained/32-timeline-and-map.md`](docs/explained/32-timeline-and-map.md)).
 
+**Crypto investigations**: give Argus a Bitcoin or Ethereum-style wallet address (or let it find
+the addresses published on a website) and it follows the money.
+
+- Balance, totals and active dates; who paid the wallet and whom it paid, with amounts.
+- Addresses that share an owner (spent together), with CoinJoins detected and excluded.
+- Exchange and service labels.
+- A check of every wallet and counterparty against the **US Treasury's sanctions list**.
+- Every address's checksum is verified, so mistyped or invented addresses are refused. Free public
+  data, no API keys
+  ([`docs/explained/34-crypto-investigations.md`](docs/explained/34-crypto-investigations.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

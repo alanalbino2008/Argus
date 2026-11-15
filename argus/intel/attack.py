@@ -191,6 +191,7 @@ ENTITY_TECHNIQUES: dict[EntityType, tuple[str, ...]] = {
     EntityType.VULNERABILITY: ("T1596.005",),
     EntityType.BREACH: ("T1589.001",),
     EntityType.URL: ("T1594",),
+    EntityType.CRYPTO_WALLET: ("T1593",),
 }
 
 MAX_EXAMPLES = 5

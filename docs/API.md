@@ -215,6 +215,18 @@ evidence itself is never changed.
   the case's route; the result is stored on the entity.
 * `GET /api/map/tiles/{z}/{x}/{y}.png`: map images, fetched and cached by the server.
 
+## Crypto wallets
+
+Start a scan with a wallet address as the target (`target_type` `crypto_wallet`, or detected
+automatically). An address whose checksum does not match answers `422`. Wallet entities carry:
+* `balance`, `total_received` and `total_sent` (Bitcoin), or `chains` (per EVM chain: balance,
+  transactions, token transfers, active dates);
+* `sanctions` (OFAC SDN listings), `sanctioned_counterparties`, `label` and `ens`;
+* `service` (an exchange, contract or busy service, not followed further) and `coinjoins`.
+
+`SENT_FUNDS` relations go from payer to payee with `amount`, `asset`, `chain`, `transactions`,
+`first` and `last`. `SAME_WALLET` links Bitcoin addresses spent together.
+
 ## Argus accounts (account service)
 
 Public (rate-limited):

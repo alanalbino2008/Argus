@@ -21,6 +21,9 @@ const HIDDEN_META = new Set([
   "sample_keys", "archive_url", "exposed_files", "platforms_unreliable", "platforms_checked", "platforms_unreachable",
   "public_listing", "evidence", "file", "category", "live", "repository", "path", "repository_owner", "bucket",
   "provider", "ownership", "archived_on", "archived_status",
+  "chain", "chains", "address_kind", "checksum", "asset", "balance", "total_received", "total_sent", "transactions",
+  "explorer_url", "sanctions", "sanctioned_counterparties", "service", "coinjoins", "transactions_examined",
+  "first_seen", "last_seen", "label", "ens", "traceable",
 ]);
 
 const CATEGORY_LABEL = {
@@ -67,6 +70,7 @@ export function initGraphView(appActions) {
   on($("#graph-empty"), "click", "[data-action]", (_e, el) => actions[el.dataset.action]?.());
 
   onState("graph", () => { renderLegend(); renderEmpty(); });
+  onState("entities-refreshed", () => renderDetails());
   onState("reset", () => { selected = null; pivotsFor = null; renderAll(); });
   onState("investigation", renderEmpty);
   ["analytics", "attack", "paths"].forEach((e) => onState(e, () => { renderIntel(); renderDetails(); }));
@@ -183,9 +187,54 @@ function renderDetails() {
 }
 
 /** Purpose-built panels for profile facts, software lifecycle and CVE threat intelligence. */
+const CHAIN = { bitcoin: "Bitcoin", evm: "Ethereum-compatible", litecoin: "Litecoin", tron: "Tron", monero: "Monero" };
+const amount = (n, asset) => `${Number(n).toLocaleString(undefined, { maximumFractionDigits: 8 })} ${asset}`;
+
+/** Money in and out of a wallet, from the graph's SENT_FUNDS relations. */
+function walletFlows(entity) {
+  const rows = [];
+  for (const r of state.relations.values()) {
+    if (r.type !== "SENT_FUNDS" || (r.source_id !== entity.id && r.target_id !== entity.id)) continue;
+    const out = r.source_id === entity.id;
+    const other = state.entities.get(out ? r.target_id : r.source_id);
+    if (other) rows.push({ out, other, md: r.metadata || {} });
+  }
+  return rows.sort((a, b) => (b.md.amount || 0) - (a.md.amount || 0));
+}
+
+function walletBlock(entity) {
+  const md = entity.metadata || {};
+  const chains = md.chains ? Object.entries(md.chains) : [];
+  const flows = walletFlows(entity);
+  const badges = [
+    md.sanctions?.length ? html`<span class="pill critical">Sanctioned (OFAC)</span>` : "",
+    md.sanctioned_counterparties?.length ? html`<span class="pill critical">Dealt with ${md.sanctioned_counterparties.length} sanctioned wallet${md.sanctioned_counterparties.length > 1 ? "s" : ""}</span>` : "",
+    md.label ? html`<span class="pill accent">${md.label}</span>` : "",
+    md.service ? html`<span class="pill warn" title="Exchanges, contracts and very busy wallets mix many people's money: Argus does not follow their counterparties">Service or exchange</span>` : "",
+    md.coinjoins ? html`<span class="pill warn">Used CoinJoin ${md.coinjoins}×</span>` : "",
+    md.ens ? html`<span class="pill">${md.ens}</span>` : "",
+  ];
+  const rows = md.chain === "bitcoin" ? [["Balance", md.balance != null && amount(md.balance, "BTC")], ["Received in total", md.total_received != null && amount(md.total_received, "BTC")],
+    ["Sent in total", md.total_sent != null && amount(md.total_sent, "BTC")], ["Transactions", md.transactions], ["Address type", md.address_kind],
+    ["Active", md.first_seen ? `${formatDay(md.first_seen)} – ${formatDay(md.last_seen)}${md.transactions_examined && md.transactions > md.transactions_examined ? ` (latest ${md.transactions_examined} examined)` : ""}` : null]] : [];
+  return html`<div class="section"><div class="section-title">${CHAIN[md.chain] || "Crypto"} wallet</div>
+    <div class="intel-badges">${badges}</div>
+    ${md.sanctions?.length ? html`<div class="callout warn" style="margin:8px 0">${ico("alert")}<span>On the US Treasury sanctions list (OFAC SDN): <b>${md.sanctions.map((s) => s.name).join("; ")}</b> · ${[...new Set(md.sanctions.flatMap((s) => s.programs))].join(", ")}</span></div>` : ""}
+    ${md.sanctioned_counterparties?.length ? html`<div class="callout warn" style="margin:8px 0">${ico("alert")}<span>Money moved between this wallet and sanctioned addresses: ${md.sanctioned_counterparties.map((s) => `${s.name} (${s.address.slice(0, 12)}…)`).join("; ")}</span></div>` : ""}
+    <dl class="kv">${rows.filter(([, v]) => v !== null && v !== undefined && v !== false && v !== "").map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}
+      ${chains.map(([name, c]) => html`<dt>${name[0].toUpperCase() + name.slice(1)}</dt><dd>${amount(c.balance, c.asset)} · ${c.transactions} transactions${c.token_transfers ? ` · ${c.token_transfers} token transfers` : ""}${c.contract ? " · smart contract" : ""}${c.first_seen ? ` · ${formatDay(c.first_seen)} – ${formatDay(c.last_seen)}` : ""}</dd>`)}
+      ${md.checksum ? html`<dt>Checksum</dt><dd>${md.checksum === "verified" ? "Verified: a real, correctly typed address" : md.checksum}</dd>` : ""}</dl>
+    ${flows.length ? html`<div class="section-title" style="margin-top:12px">Money in and out</div>
+      ${flows.slice(0, 12).map((f) => html`<div class="list-row clickable" data-select="${f.other.id}"><span class="pill ${f.out ? "warn" : "ok"}">${f.out ? "Sent" : "Received"}</span>
+        <div class="list-main"><div class="list-title">${amount(f.md.amount, f.md.asset)}</div><div class="list-sub">${f.out ? "to" : "from"} ${f.other.metadata?.label || f.other.value.slice(0, 16) + "…"} · ${f.md.transactions} tx${f.md.last ? ` · last ${formatDay(f.md.last)}` : ""}${f.md.chain && f.md.chain !== "bitcoin" ? ` · ${f.md.chain}` : ""}</div></div></div>`)}` : ""}
+    ${md.explorer_url || chains[0] ? html`<p class="small" style="margin-top:8px"><a href="${md.explorer_url || chains[0][1].explorer_url}" target="_blank" rel="noopener noreferrer nofollow" referrerpolicy="no-referrer">Open in a block explorer ↗</a> <span class="muted">(leaves Argus: the explorer sees your connection)</span></p>` : ""}
+  </div>`;
+}
+
 function intelBlocks(entity) {
   const md = entity.metadata || {};
   const blocks = [];
+  if (entity.type === "crypto_wallet") blocks.push(walletBlock(entity));
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;
     const rows = [

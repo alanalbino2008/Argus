@@ -37,6 +37,7 @@ class EntityType(str, Enum):
     BREACH = "breach"
     LOCATION = "location"
     URL = "url"
+    CRYPTO_WALLET = "crypto_wallet"
     GENERIC = "generic"
 
 
@@ -56,6 +57,8 @@ class RelationType(str, Enum):
     EXPOSES = "EXPOSES"
     ASSOCIATED_WITH = "ASSOCIATED_WITH"
     EXTRACTED_FROM = "EXTRACTED_FROM"
+    SENT_FUNDS = "SENT_FUNDS"  # wallet -> wallet, with amounts and times in the relation's metadata
+    SAME_WALLET = "SAME_WALLET"  # spent together in one Bitcoin transaction: most likely one owner
 
 
 def generate_entity_id(entity_type: EntityType, value: str) -> str:

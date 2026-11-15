@@ -207,6 +207,19 @@ and the capture says so.
   when `ARGUS_MONITORS_ENABLED` is false. `ARGUS_ACCOUNT_WATCH_POLL_SECONDS` (default 60) is how
   often due watches are looked for.
 
+### Crypto investigations
+
+All sources are free and need no keys:
+* `ARGUS_BITCOIN_API_URL` (default `https://mempool.space/api`): any Esplora-compatible API.
+  Point it at your own node's Esplora to keep lookups in-house.
+* `ARGUS_EVM_CHAINS` (default Ethereum): Blockscout instances by chain, e.g.
+  `{"ethereum": "https://eth.blockscout.com", "base": "https://base.blockscout.com"}`. Each extra
+  chain is one more look-up per wallet.
+* `ARGUS_SANCTIONS_SDN_URL` and `ARGUS_SANCTIONS_COMMENTS_URL` (OFAC's own files, cached for a
+  day), or `ARGUS_SANCTIONS_FILE`: a folder with saved copies of `sdn.csv` and `sdn_comments.csv`
+  for offline installs.
+* `ARGUS_CRYPTO_COUNTERPARTIES` (default 12): counterparties kept per wallet.
+
 ### Argus accounts and Argus Personal
 
 **The account service** (your central server) creates accounts and signs licences:

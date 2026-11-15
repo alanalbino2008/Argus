@@ -11,6 +11,8 @@ import { loadRoutes, routeOptions } from "../opsec.js";
 // ------------------------------------------------------------------ type detection (mirrors the server)
 export function detectType(value) {
   const t = value.trim();
+  // Wallet formats (the server also verifies each address's checksum before tracing it).
+  if (/^0x[0-9a-fA-F]{40}$/.test(t) || /^(bc1|BC1)[02-9ac-hj-np-zAC-HJ-NP-Z]{11,71}$/.test(t) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(t)) return "crypto_wallet";
   if (/^(\d{1,3}\.){3}\d{1,3}$/.test(t) || (t.includes(":") && /^[0-9a-f:]+$/i.test(t))) return "ip_address";
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) return "email";
   if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(t)) return "domain";
@@ -59,7 +61,7 @@ export async function openNewInvestigation({ target = "", type = "", watch = fal
     ? `For the case "${caseTitle}": the scan is linked to it${anonymous ? ". The case is anonymous, so the scan is passive and routed." : "."}`
     : "";
   $("#new-target").value = target;
-  $("#new-type").value = ["domain", "ip_address", "email", "username", "phone"].includes(type) ? type : "";
+  $("#new-type").value = ["domain", "ip_address", "email", "username", "phone", "crypto_wallet"].includes(type) ? type : "";
   try { $("#new-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch { /* ignore */ }
   $("#new-authorized").checked = false;
   $("#new-variants").checked = false;
