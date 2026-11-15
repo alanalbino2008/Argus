@@ -137,6 +137,34 @@ curl -X POST https://argus.example.com/api/exposure/findings/status \
 Exposure alerts arrive through the same destinations as drift alerts. Their `alert.exposure`
 object carries the counts and the scope, and never staff addresses.
 
+## Cases and evidence
+
+```bash
+curl -X POST https://argus.example.com/api/cases \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"title": "Fake charity", "purpose": "Investigating a fundraising appeal for a news story", "confirmed": true}'
+```
+
+```bash
+curl -X POST https://argus.example.com/api/cases/case_…/captures \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/appeal", "note": "Before it is taken down"}'
+```
+
+The capture endpoint returns:
+* the evidence's `digest` (SHA-256 of its manifest);
+* its `files`, each with a SHA-256;
+* whether it was `timestamped`;
+* any `warnings` (e.g. a pop-up dismissed, internal addresses refused).
+
+Other endpoints:
+* `POST /api/cases/{id}/uploads` (multipart `file`, `note`) adds evidence you already hold.
+* `POST /api/cases/{id}/items` adds a `note`, `entity`, `link`, `scan` or `event`.
+* `POST /api/evidence/{id}/verify` recomputes every fingerprint and the custody chain.
+* `GET /api/cases/{id}/export` downloads the self-verifying bundle.
+
+Evidence files are served for download only (never rendered by Argus), except raster images.
+
 ## Compliance
 
 `GET /api/compliance` returns, for each framework (`cyber_essentials`, `iso27001`, `nist_csf`,

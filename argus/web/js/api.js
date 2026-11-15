@@ -51,8 +51,9 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
   const headers = {};
   if (currentKey()) headers.Authorization = `Bearer ${currentKey()}`;
   if (activeWorkspace()) headers["X-Argus-Workspace"] = activeWorkspace(); // every call is scoped to one team
-  if (body !== undefined) headers["Content-Type"] = "application/json";
-  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const isForm = typeof FormData !== "undefined" && body instanceof FormData; // file uploads
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { method, headers, body: body === undefined ? undefined : isForm ? body : JSON.stringify(body) });
   if (res.status === 401) {
     window.dispatchEvent(new CustomEvent("argus:auth-required"));
     throw new ApiError(401, "Please sign in");

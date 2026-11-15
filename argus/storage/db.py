@@ -25,6 +25,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    Text,
     event,
     false,
     text,
@@ -529,6 +530,94 @@ class RemediationPolicyRow(Base):
     auto_create: Mapped[str] = mapped_column(String(16), default="off")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_by: Mapped[str] = mapped_column(String(128))
+
+
+class CaseRow(Base):
+    """An investigation as a body of work: its purpose, notes, people, links, timeline and evidence."""
+
+    __tablename__ = "cases"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    purpose: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed | archived
+    restricted: Mapped[bool] = mapped_column(Boolean, default=False)  # only the owner and members can open it
+    members: Mapped[list[str]] = mapped_column(JSON)
+    tags: Mapped[list[str]] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class CaseItemRow(Base):
+    """Something in a case: a note, a person or other entity, a link between two, a scan, an event."""
+
+    __tablename__ = "case_items"
+    __table_args__ = (Index("ix_case_items_case_kind", "case_id", "kind"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(16))  # note | entity | link | scan | event
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text, default="")
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvidenceCaptureRow(Base):
+    """A preserved web page or uploaded file, with its manifest, digest and optional trusted timestamp."""
+
+    __tablename__ = "evidence_captures"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"), index=True)
+    workspace_id: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str] = mapped_column(String(16))  # web | upload
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    title: Mapped[str] = mapped_column(String(300), default="")
+    note: Mapped[str] = mapped_column(String(1000), default="")
+    digest: Mapped[str] = mapped_column(String(64), index=True)  # SHA-256 of the canonical manifest
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSON)
+    timestamp_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # RFC 3161 reply
+    warnings: Mapped[list[str]] = mapped_column(JSON)
+    captured_by: Mapped[str] = mapped_column(String(128))
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EvidenceFileRow(Base):
+    __tablename__ = "evidence_files"
+
+    capture_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_captures.id", ondelete="CASCADE"), primary_key=True
+    )
+    name: Mapped[str] = mapped_column(String(200), primary_key=True)
+    media_type: Mapped[str] = mapped_column(String(128))
+    sha256: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class EvidenceCustodyRow(Base):
+    """Chain of custody: who did what with a piece of evidence, each entry chained to the last by hash."""
+
+    __tablename__ = "evidence_custody"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    capture_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("evidence_captures.id", ondelete="CASCADE"), index=True
+    )
+    seq: Mapped[int] = mapped_column(Integer)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    by: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(32))  # captured | viewed | downloaded | exported | verified
+    detail: Mapped[str] = mapped_column(String(500), default="")
+    prev_hash: Mapped[str] = mapped_column(String(64))
+    hash: Mapped[str] = mapped_column(String(64))
 
 
 class Database:

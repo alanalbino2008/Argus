@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.28.0] — Phase 28: Cases & evidence capture
+
+### Added
+- **Cases** (migration `0015`), each with a required purpose. A case holds:
+  - people and other entities (person, organisation, username, account, email, phone, domain, IP,
+    address, location, vehicle, document), with free-form details shown in full;
+  - links between them, marked confirmed, likely or possible;
+  - a timeline of events;
+  - notes and linked scans.
+- **Restricted cases** visible only to the owner and named members, with no administrator
+  exception (source protection).
+- **+ Case** on any graph entity sends it into a case with its details.
+- **Evidence capture**: Argus's server fetches the page, so the investigator stays hidden. It keeps
+  the raw response, a **full-page screenshot**, the rendered page, the text, and the headers and
+  redirects. Evidence files (chat screenshots, documents, photos) can also be uploaded.
+- **Proof that holds up**:
+  - SHA-256 for every file and a manifest **digest**;
+  - optional **RFC 3161 trusted timestamps** (`ARGUS_EVIDENCE_TIMESTAMP_URL`, sending only the
+    digest);
+  - a hash-chained **chain of custody** (captured, viewed, downloaded, exported, verified);
+  - one-click **verify** of files, digest and custody.
+- **Evidence bundle** export (ZIP): the case, the captures with their manifests, custody and
+  timestamps, `SHA256SUMS`, and a README on how to check everything without Argus.
+- **Cases page** (shortcut **K**), API `/api/cases` and `/api/evidence`, Python client
+  `create_case()`, `capture()`, `add_to_case()`, `verify_evidence()` and `export_case()`.
+- `docs/explained/28-cases-and-evidence.md`.
+
+### Security
+- The capture browser's only route out is a **guard proxy**. It resolves each host itself, allows
+  public addresses only, connects to the checked address (no DNS rebinding), and lists what it
+  refused.
+- The browser is driven through the DevTools Protocol: pop-ups that would stall a headless
+  browser are dismissed, and downloads are denied.
+- Captured HTML and non-image files are never rendered by Argus: they download only, with a
+  `sandbox` security policy. SVG is never shown inline.
+- Chrome's headless shell, which has no Google services, is preferred to protect the
+  investigator's privacy (`ARGUS_CAPTURE_BROWSER`).
+
 ## [1.27.0] — Phase 27: Compliance mapping
 
 ### Added

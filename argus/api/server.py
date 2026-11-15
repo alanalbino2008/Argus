@@ -49,6 +49,7 @@ from sqlalchemy import text
 from argus import __version__
 from argus.api import remediation_hooks
 from argus.api.auth_routes import router as auth_router
+from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.executive_routes import router as executive_router
@@ -98,6 +99,7 @@ from argus.security.network import validate_scan_target
 from argus.security.oidc import OidcProvider
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from argus.storage.case_repo import CaseRepository
 from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
@@ -198,6 +200,7 @@ async def lifespan(app: FastAPI):
     app.state.suppliers = SupplierRepository(db)
     app.state.exposure = ExposureRepository(db)
     app.state.remediation = RemediationRepository(db)
+    app.state.cases = CaseRepository(db)
     app.state.remediation_clock = RemediationClock(app.state.remediation, settings)
     app.state.rescan = partial(_rescan, app)
     app.state.exposure_monitor = ExposureMonitor(
@@ -415,6 +418,7 @@ app.include_router(exposure_router)
 app.include_router(remediation_router)
 app.include_router(executive_router)
 app.include_router(compliance_router)
+app.include_router(case_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))

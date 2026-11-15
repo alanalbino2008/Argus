@@ -3,10 +3,11 @@
 
 import { api, enc } from "../api.js";
 import { empty, entityIcon, ico, severityPill } from "../components.js";
-import { $, $$, formatDay, html, on, setHTML, timeAgo } from "../dom.js";
+import { $, $$, formatDay, html, on, setHTML, timeAgo, toast } from "../dom.js";
 import { ENTITY_TYPES, typeInfo } from "../icons.js";
 import * as graph from "../graph.js";
 import { isRunning, on as onState, state } from "../state.js";
+import { addEntityToCase } from "./cases.js";
 
 let actions;
 let selected = null;
@@ -54,6 +55,10 @@ export function initGraphView(appActions) {
     const visible = !graph.isTypeVisible(chip.dataset.type);
     graph.setTypeVisible(chip.dataset.type, visible);
     chip.classList.toggle("off", !visible);
+  });
+  on($("#pane-details"), "click", "[data-to-case]", () => {
+    const entity = selected && state.entities.get(selected);
+    if (entity) addEntityToCase(entity, state.investigation?.id).catch((err) => toast(err.message, "error"));
   });
   on($("#pane-details"), "click", "[data-select]", (_e, el) => graph.selectNode(el.dataset.select));
   on($("#pane-intel"), "click", "[data-select]", (_e, el) => graph.selectNode(el.dataset.select));
@@ -156,6 +161,7 @@ function renderDetails() {
     <div class="entity-head">
       ${entityIcon(entity.type, "entity-icon")}
       <div style="min-width:0"><div class="muted small">${info.label}</div><div class="entity-value">${entity.value}</div></div>
+      ${["analyst", "admin"].includes(state.workspace?.role) ? html`<button class="btn sm ghost" data-to-case title="Add this to a case, with its details" style="margin-left:auto">${ico("plus")}Case</button>` : ""}
     </div>
     <dl class="kv">
       <dt>Confidence</dt><dd>${Math.round((entity.confidence ?? 1) * 100)}%</dd>

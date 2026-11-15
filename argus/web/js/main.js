@@ -17,13 +17,14 @@ import { initExposure, refresh as refreshExposure } from "./views/exposure.js";
 import { initRemediation, refresh as refreshRemediation } from "./views/remediation.js";
 import { initExecutive, refresh as refreshExecutive } from "./views/executive.js";
 import { initCompliance, refresh as refreshCompliance } from "./views/compliance.js";
+import { initCases, refresh as refreshCases } from "./views/cases.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
 import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 
-const VIEWS = ["executive", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "compliance", "ratings", "history", "settings"];
+const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "compliance", "ratings", "history", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -52,6 +53,7 @@ function route() {
   if (view === "remediation") refreshRemediation();
   if (view === "executive") refreshExecutive();
   if (view === "compliance") refreshCompliance();
+  if (view === "cases") refreshCases();
 }
 
 // ------------------------------------------------------------------ actions shared by views
@@ -161,7 +163,7 @@ function setupShortcuts() {
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing || e.metaKey || e.ctrlKey || e.altKey || !$("#signin").hidden || $(".modal-root.open")) return;
-    const map = { x: "executive", o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", w: "remediation", c: "compliance", r: "ratings", h: "history" };
+    const map = { x: "executive", k: "cases", o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", w: "remediation", c: "compliance", r: "ratings", h: "history" };
     if (map[e.key]) go(map[e.key]);
     else if (e.key === "n") { e.preventDefault(); actions.newInvestigation(); }
     else if (e.key === "/") { e.preventDefault(); go("graph"); setTimeout(() => $("#graph-search").focus(), 120); }
@@ -303,6 +305,7 @@ async function boot() {
   initRemediation($("#view-remediation"));
   initExecutive($("#view-executive"));
   initCompliance($("#view-compliance"));
+  initCases($("#view-cases"), actions);
   initSettings($("#view-settings"));
 
   $$(".nav-item").forEach((el) => el.addEventListener("click", () => go(el.dataset.view)));

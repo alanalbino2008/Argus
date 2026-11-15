@@ -57,6 +57,15 @@ class Settings(BaseSettings):
     exposure_poll_seconds: float = Field(
         default=300.0, gt=0, description="How often due exposure checks are looked for"
     )
+    capture_browser: str = Field(
+        default="auto",
+        description="Headless Chromium/Chrome for evidence screenshots: 'auto' (find one), 'off', or a path",
+    )
+    evidence_timestamp_url: str | None = Field(
+        default=None,
+        description="RFC 3161 timestamp authority for evidence (e.g. https://freetsa.org/tsr); only digests are sent",
+    )
+    evidence_max_upload_mb: int = Field(default=25, ge=1, le=200, description="Largest evidence file accepted")
     remediation_poll_seconds: float = Field(
         default=300.0, gt=0, description="How often overdue remediation tasks and expired acceptances are checked"
     )

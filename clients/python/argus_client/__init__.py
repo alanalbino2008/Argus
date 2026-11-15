@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.27.0"
+__version__ = "1.28.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -257,6 +257,31 @@ class ArgusClient:
         return self.post("/api/exposure/findings/status", {"ids": finding_ids, "status": status, "note": note})[
             "updated"
         ]
+
+    # ------------------------------------------------------------------ cases and evidence
+    def cases(self) -> list[dict[str, Any]]:
+        return self.get("/api/cases")
+
+    def create_case(self, title: str, *, purpose: str, restricted: bool = False, members: list[str] | None = None,
+                    tags: list[str] | None = None) -> dict[str, Any]:  # fmt: skip
+        """Open a case. You confirm there is a legitimate purpose for the investigation."""
+        return self.post("/api/cases", {"title": title, "purpose": purpose, "restricted": restricted,
+                                        "members": members or [], "tags": tags or [], "confirmed": True})  # fmt: skip
+
+    def capture(self, case_id: str, url: str, *, note: str = "") -> dict[str, Any]:
+        """Preserve a web page as evidence: response, full-page screenshot, text, fingerprints."""
+        return self.post(f"/api/cases/{case_id}/captures", {"url": url, "note": note})
+
+    def add_to_case(self, case_id: str, kind: str, **fields: Any) -> dict[str, Any]:
+        """Add a note, entity, link, scan or event, e.g. ``add_to_case(id, "entity", data={...})``."""
+        return self.post(f"/api/cases/{case_id}/items", {"kind": kind, **fields})
+
+    def verify_evidence(self, capture_id: str) -> dict[str, Any]:
+        return self.post(f"/api/evidence/{capture_id}/verify")
+
+    def export_case(self, case_id: str) -> bytes:
+        """The self-verifying evidence bundle (ZIP)."""
+        return self.request("GET", f"/api/cases/{case_id}/export", raw=True).content
 
     # ------------------------------------------------------------------ compliance
     def compliance(self) -> dict[str, Any]:

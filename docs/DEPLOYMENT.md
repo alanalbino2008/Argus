@@ -178,6 +178,23 @@ on port 443.
 * Closed findings are deleted after `ARGUS_EXPOSURE_RETENTION_DAYS` (default 365, via
   `config.extraEnv`). Set it to your data-retention policy.
 
+### Evidence capture
+
+Screenshots need a headless browser on the server. Argus looks for one automatically
+(`ARGUS_CAPTURE_BROWSER=auto`) and prefers **chrome-headless-shell** (from Chrome for Testing):
+* it has no Google services, so it never reveals investigation activity to Google;
+* full Chromium or Chrome also work.
+
+Without a browser, pages are still captured (response, text, headers) but with no screenshot,
+and the capture says so.
+
+* `ARGUS_EVIDENCE_TIMESTAMP_URL`: an RFC 3161 timestamp authority (for example a commercial TSA,
+  or `https://freetsa.org/tsr`) for independent proof of when evidence existed. Only digests are
+  sent.
+* `ARGUS_EVIDENCE_MAX_UPLOAD_MB` (default 25) limits uploaded evidence files.
+* Evidence is stored in the database. Back it up like any other case material, and size the
+  database for screenshots (typically 0.2–3 MB per capture).
+
 ### Remediation
 
 Remediation needs no setup. Its clock (overdue alerts, expiring risk acceptances) runs on every

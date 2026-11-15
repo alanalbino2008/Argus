@@ -332,6 +332,17 @@ an owner, a deadline from the workspace's severity policy, and a timeline.
 - A two-page, fingerprinted **board report** PDF, which can be emailed monthly
   ([`docs/explained/26-executive-dashboard.md`](docs/explained/26-executive-dashboard.md)).
 
+**Cases & evidence capture** (for journalists, investigators and researchers): a case holds the
+people, accounts and addresses involved, how they connect (with how sure you are), a timeline,
+notes and scans. Restricted cases are invisible even to administrators.
+
+- Web pages are preserved by Argus's server, which keeps the investigator hidden: the response, a
+  full-page screenshot, the rendered page and the text.
+- Each capture is fingerprinted, optionally given a trusted RFC 3161 timestamp, and tracked with a
+  hash-chained chain of custody.
+- Cases export as an evidence bundle anyone can verify
+  ([`docs/explained/28-cases-and-evidence.md`](docs/explained/28-cases-and-evidence.md)).
+
 **Compliance mapping**: Argus's evidence mapped to **Cyber Essentials, ISO/IEC 27001:2022, NIST
 CSF 2.0 and DORA**.
 
