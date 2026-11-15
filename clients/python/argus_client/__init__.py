@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.25.0"
+__version__ = "1.26.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -257,6 +257,16 @@ class ArgusClient:
         return self.post("/api/exposure/findings/status", {"ids": finding_ids, "status": status, "note": note})[
             "updated"
         ]
+
+    # ------------------------------------------------------------------ executive
+    def executive(self, *, days: int = 90) -> dict[str, Any]:
+        """Overall status, five red/amber/green areas with reasons, key messages and top risks."""
+        return self.get("/api/executive", days=days)
+
+    def board_report(self, *, days: int = 90, tlp: str = "AMBER", prepared_for: str = "") -> bytes:
+        """The two-page board report (PDF), registered for verification."""
+        return self.request("POST", "/api/executive/report", json={"days": days, "tlp": tlp, "prepared_for": prepared_for},
+                            raw=True).content  # fmt: skip
 
     # ------------------------------------------------------------------ remediation
     def tasks(self, *, status: str = "active", assignee: str | None = None, overdue: bool = False) -> dict[str, Any]:

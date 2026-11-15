@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from argus.api.deps import WorkspaceContext, audit, client_ip, in_workspace
+from argus.api.executive_service import BOARD_TARGET
 from argus.notify.channels import TICKETING
 from argus.observability import metrics
 from argus.reports.branding import BrandingError, check_accent, decode_data_url, sanitise_logo
@@ -123,6 +124,10 @@ async def verify_report(sha256: str, request: Request):
 
 # ---------------------------------------------------------------------------- scheduled reports
 class ScheduleOptions(BaseModel):
+    kind: Literal["assessment", "board"] = Field(
+        default="assessment", description="assessment: one target's report; board: the workspace's board report"
+    )
+    period_days: Literal[30, 90, 180] = Field(default=90, description="Board reports: the period covered")
     prepared_for: str = Field(default="", max_length=200)
     tlp: Literal["CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"] = "AMBER"
     include_inventory: bool = True
@@ -131,7 +136,7 @@ class ScheduleOptions(BaseModel):
 
 class ScheduleRequest(BaseModel):
     name: str = Field(min_length=1, max_length=128)
-    target: str = Field(min_length=1, max_length=253)
+    target: str = Field(default="", max_length=253, description="The target (assessment reports only)")
     frequency: Literal["weekly", "monthly"] = "weekly"
     weekday: int | None = Field(default=0, ge=0, le=6)
     day_of_month: int | None = Field(default=None, ge=1, le=28)
@@ -199,12 +204,15 @@ async def create_schedule(body: ScheduleRequest, request: Request, ws: Workspace
         values["weekday"] = None
     _check_timing(values)
     await _check_channels(request, ws.id, body.channel_ids)
-    values["target"] = body.target.strip()
+    board = body.options.kind == "board"
+    if not board and not body.target.strip():
+        raise HTTPException(status_code=422, detail="Choose the target this report is about")
+    values["target"] = BOARD_TARGET if board else body.target.strip()
     values["name"] = body.name.strip()
     values["channel_ids"] = list(dict.fromkeys(body.channel_ids))
     schedule = await _schedules(request).create(workspace_id=ws.id, by=ws.principal.name, **values)
-    latest = await request.app.state.repo.latest_completed(schedule["target"], workspace_id=ws.id)
-    schedule["has_scan"] = latest is not None
+    latest = None if board else await request.app.state.repo.latest_completed(schedule["target"], workspace_id=ws.id)
+    schedule["has_scan"] = board or latest is not None
     await audit(
         request, ws.principal, "report.schedule_create", schedule["id"],
         details={"name": schedule["name"], "target": schedule["target"], "when": schedule["description"],

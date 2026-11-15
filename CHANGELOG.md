@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.26.0] — Phase 26: Executive dashboard & board report
+
+### Added
+- **Executive overview** (shortcut **X**, visible to every role), over 30, 90 or 180 days:
+  - an overall status with a one-line verdict;
+  - five areas, each red, amber, green or not measured, with the reason it was given: attack
+    surface, remediation, breach and dark-web exposure, supplier risk, threat activity;
+  - up to seven key messages, worst first, good news included;
+  - ratings with trends;
+  - risks to act on with owners and deadlines, including critical attack paths that nobody owns
+    (one click to track them).
+- **Board report (PDF)**: two branded A4 pages (overall status, key messages, areas, ratings,
+  risks, performance figures, how to read it). It is TLP-marked, fingerprinted and registered for
+  verification, and audited.
+- **Scheduled board reports**: a report schedule can cover the whole workspace (30, 90 or 180
+  days). Email gets the PDF; Slack, Teams and webhooks get the status and key messages.
+- API `/api/executive` and `/api/executive/report`, Python client `executive()` and
+  `board_report()`, and `docs/explained/26-executive-dashboard.md`.
+
+### Privacy
+- Board material names the owners of work but never the people findings are about. Exposure
+  appears as counts, and addresses in finding titles are masked.
+
+### Changed
+- The supplier view can be built without an HTTP request (shared with the board report).
+- Unique OpenAPI operation IDs: `exposure_overview` and `executive_overview`.
+
 ## [1.25.0] — Phase 25: Remediation workflow
 
 ### Added

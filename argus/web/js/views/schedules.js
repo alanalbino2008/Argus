@@ -54,6 +54,27 @@ export function schedulesCard() {
   </div>`;
 }
 
+function toggleKind() {
+  const board = $("#schedule-kind").value === "board";
+  $("#schedule-target-field").hidden = board;
+  $("#schedule-period-field").hidden = !board;
+  document.querySelectorAll("#schedule-form .assessment-only").forEach((el) => { el.hidden = board; });
+  $("#schedule-name").placeholder = board ? "e.g. Monthly board report" : "e.g. Weekly exposure — Acme";
+}
+
+/** Open the dialog preset for a monthly board report (from the Executive page). */
+export async function openBoardSchedule() {
+  await loadSchedules();
+  if (!channels.length) return false;
+  await openCreate();
+  $("#schedule-kind").value = "board";
+  $("#schedule-name").value = "Monthly board report";
+  $("#schedule-frequency").value = "monthly";
+  toggleFrequency();
+  toggleKind();
+  return true;
+}
+
 async function openCreate() {
   $("#schedule-form").reset();
   $("#schedule-error").textContent = "";
@@ -61,8 +82,10 @@ async function openCreate() {
   const local = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   setHTML($("#schedule-tz"), html`${["UTC", ...zones.filter((z) => z !== "UTC")].map((z) => html`<option value="${z}" ${z === local ? "selected" : ""}>${z.replaceAll("_", " ")}</option>`)}`);
   setHTML($("#schedule-day"), html`${Array.from({ length: 28 }, (_, i) => html`<option value="${i + 1}">${i + 1}</option>`)}`);
-  setHTML($("#schedule-channels"), html`${channels.map((c) => html`<label class="check"><input type="checkbox" value="${c.id}" ${c.enabled ? "" : "disabled"}> ${c.name} <span class="muted small">${c.type}${c.enabled ? "" : " (paused)"}</span></label>`)}`);
+  const ticketing = new Set(["jira", "servicenow"]);
+  setHTML($("#schedule-channels"), html`${channels.map((c) => html`<label class="check"><input type="checkbox" value="${c.id}" ${c.enabled && !ticketing.has(c.type) ? "" : "disabled"}> ${c.name} <span class="muted small">${c.type}${!c.enabled ? " (paused)" : ticketing.has(c.type) ? " (tickets only)" : ""}</span></label>`)}`);
   toggleFrequency();
+  toggleKind();
   try {
     const [monitors, recent] = await Promise.all([api.get("/api/monitors"), api.get("/api/investigations?limit=50&status=completed")]);
     const targets = [...new Set([...monitors.map((m) => m.target), ...recent.map((r) => r.target)])];
@@ -106,15 +129,17 @@ export async function handleScheduleAction(act, id, btn) {
 export function initSchedules(refresh) {
   onChange = refresh;
   $("#schedule-frequency").addEventListener("change", toggleFrequency);
+  $("#schedule-kind").addEventListener("change", toggleKind);
   $("#schedule-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const error = $("#schedule-error");
     const channelIds = [...document.querySelectorAll("#schedule-channels input:checked")].map((i) => i.value);
     const [hour, minute] = ($("#schedule-time").value || "08:00").split(":").map(Number);
     const monthly = $("#schedule-frequency").value === "monthly";
+    const board = $("#schedule-kind").value === "board";
     const body = {
       name: $("#schedule-name").value.trim(),
-      target: $("#schedule-target").value.trim(),
+      target: board ? "" : $("#schedule-target").value.trim(),
       frequency: monthly ? "monthly" : "weekly",
       weekday: monthly ? null : Number($("#schedule-weekday").value),
       day_of_month: monthly ? Number($("#schedule-day").value) : null,
@@ -122,9 +147,9 @@ export function initSchedules(refresh) {
       timezone: $("#schedule-tz").value,
       channel_ids: channelIds,
       skip_unchanged: $("#schedule-skip").checked,
-      options: { prepared_for: $("#schedule-for").value.trim(), tlp: $("#schedule-tlp").value, include_inventory: $("#schedule-inventory").checked, compare_previous: $("#schedule-compare").checked },
+      options: { kind: board ? "board" : "assessment", period_days: Number($("#schedule-period").value), prepared_for: $("#schedule-for").value.trim(), tlp: $("#schedule-tlp").value, include_inventory: $("#schedule-inventory").checked, compare_previous: $("#schedule-compare").checked },
     };
-    if (!body.name || !body.target) return (error.textContent = "Give the schedule a name and a target.");
+    if (!body.name || (!board && !body.target)) return (error.textContent = board ? "Give the schedule a name." : "Give the schedule a name and a target.");
     if (!channelIds.length) return (error.textContent = "Choose at least one destination.");
     try {
       const created = await api.post("/api/reports/schedules", body);

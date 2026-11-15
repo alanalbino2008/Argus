@@ -107,6 +107,8 @@ def _delivery(row: NotificationDeliveryRow, channel: NotificationChannelRow | No
 def _summary(event: dict[str, Any]) -> str:
     if event.get("type") == "report.scheduled":
         report = event.get("report") or {}
+        if report.get("kind") == "board":
+            return f"Board report {report.get('id')} ({str(report.get('overall', '')).upper()})"[:300]
         return f"Report {report.get('id')} for {report.get('target')} ({str(report.get('rating', '')).upper()})"[:300]
     if event.get("type") == "alert.raised":
         alert = event.get("alert") or {}

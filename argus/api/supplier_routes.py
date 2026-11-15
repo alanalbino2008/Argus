@@ -89,23 +89,23 @@ async def _add(request: Request, ws: WorkspaceContext, fields: dict[str, Any], b
     return supplier
 
 
-async def _view(request: Request, ws_id: str, supplier: dict[str, Any]) -> dict[str, Any]:
+async def supplier_view(app: Any, ws_id: str, supplier: dict[str, Any]) -> dict[str, Any]:
     """The supplier with its current rating (synced from its latest completed assessment), policy and risk."""
-    inv = await request.app.state.repo.latest_completed(supplier["domain"], workspace_id=ws_id)
+    inv = await app.state.repo.latest_completed(supplier["domain"], workspace_id=ws_id)
     grade, score, history = supplier["last_grade"], supplier["last_score"], []
     if inv is not None:
-        rating = await rate(request.app, inv)
+        rating = await rate(app, inv)
         if rating.get("grade"):
             grade, score = rating["grade"], rating["score"]
             if supplier["last_investigation_id"] != inv.id:
-                await _repo(request).record_assessment(
+                await app.state.suppliers.record_assessment(
                     supplier["id"], grade=grade, score=score, investigation_id=inv.id,
                     assessed_at=inv.completed_at or inv.created_at,
                 )  # fmt: skip
                 supplier = {**supplier, "last_investigation_id": inv.id,
                             "last_assessed_at": (inv.completed_at or inv.created_at).isoformat()}  # fmt: skip
-        await ensure_history(request.app, ws_id, supplier["domain"])
-        history = await request.app.state.ratings.history(supplier["domain"], workspace_id=ws_id, limit=6)
+        await ensure_history(app, ws_id, supplier["domain"])
+        history = await app.state.ratings.history(supplier["domain"], workspace_id=ws_id, limit=6)
     floor = policy_min_grade(supplier["tier"], supplier["min_grade_override"])
     return {
         **supplier,
@@ -117,6 +117,10 @@ async def _view(request: Request, ws_id: str, supplier: dict[str, Any]) -> dict[
         "trend": [h["score"] for h in history],
         "reassessed_every_days": TIERS[supplier["tier"]]["interval_hours"] // 24,
     }
+
+
+async def _view(request: Request, ws_id: str, supplier: dict[str, Any]) -> dict[str, Any]:
+    return await supplier_view(request.app, ws_id, supplier)
 
 
 @router.get("")

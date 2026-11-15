@@ -19,6 +19,7 @@
     <!-- ================================================================ navigation -->
     <nav class="nav" aria-label="Main">
       <div class="brand" title="Argus"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logo"/></svg></div>
+      <button class="nav-item" data-view="executive" title="Executive overview (X)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-layout"/></svg>Executive</button>
       <button class="nav-item" data-view="overview" title="Overview (O)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-overview"/></svg>Overview</button>
       <button class="nav-item" data-view="graph" title="Graph (G)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-graph"/></svg>Graph</button>
       <button class="nav-item" data-view="paths" title="Attack paths (P)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-paths"/></svg>Paths<span class="nav-dot" id="paths-dot" hidden></span></button>
@@ -107,6 +108,7 @@
       <section id="view-suppliers" class="view" aria-label="Supplier risk"></section>
       <section id="view-exposure" class="view" aria-label="Breach and dark-web exposure"></section>
       <section id="view-remediation" class="view" aria-label="Remediation"></section>
+      <section id="view-executive" class="view" aria-label="Executive overview"></section>
       <section id="view-ratings" class="view" aria-label="Security ratings"></section>
       <section id="view-history" class="view" aria-label="History"></section>
       <section id="view-settings" class="view" aria-label="Settings"></section>
@@ -422,13 +424,17 @@
   <div id="schedule-modal" class="modal-root" aria-hidden="true">
     <form class="modal wide" role="dialog" aria-labelledby="schedule-title" id="schedule-form" novalidate>
       <div class="modal-head">
-        <div><h2 id="schedule-title">Schedule a report</h2><p>Argus sends the latest scan's PDF report on a regular schedule. Email gets the PDF; Slack, Teams and webhooks get a summary.</p></div>
+        <div><h2 id="schedule-title">Schedule a report</h2><p>Argus sends a PDF on a regular schedule: one target's assessment, or the workspace's board report. Email gets the PDF; Slack, Teams and webhooks get a summary.</p></div>
         <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
       </div>
       <div class="modal-body schedule-grid">
+        <div class="field"><label class="label" for="schedule-kind">Report</label>
+          <select id="schedule-kind" class="select"><option value="assessment">Assessment of one target (detailed)</option><option value="board">Board report for the whole workspace (two pages)</option></select></div>
+        <div class="field" id="schedule-period-field" hidden><label class="label" for="schedule-period">Covering the last</label>
+          <select id="schedule-period" class="select"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="180">180 days</option></select></div>
         <div class="field"><label class="label" for="schedule-name">Name</label>
           <input id="schedule-name" class="input" maxlength="128" placeholder="e.g. Weekly exposure — Acme" autocomplete="off"></div>
-        <div class="field"><label class="label" for="schedule-target">Target</label>
+        <div class="field" id="schedule-target-field"><label class="label" for="schedule-target">Target</label>
           <input id="schedule-target" class="input" list="schedule-targets" maxlength="253" placeholder="acme.com" autocomplete="off">
           <datalist id="schedule-targets"></datalist>
           <div class="hint">Uses the most recent completed scan. Watch the target in Monitoring to keep scans fresh.</div></div>
@@ -448,9 +454,9 @@
         <div class="field"><label class="label" for="schedule-tlp">Sharing</label>
           <select id="schedule-tlp" class="select"><option value="RED">TLP:RED</option><option value="AMBER+STRICT">TLP:AMBER+STRICT</option><option value="AMBER" selected>TLP:AMBER</option><option value="GREEN">TLP:GREEN</option><option value="CLEAR">TLP:CLEAR</option></select></div>
         <div class="field span-2">
-          <label class="check"><input type="checkbox" id="schedule-skip" checked> Only send when there is a new scan since the last report</label>
-          <label class="check"><input type="checkbox" id="schedule-inventory" checked> Include the full asset inventory</label>
-          <label class="check"><input type="checkbox" id="schedule-compare" checked> Compare with the previous scan</label>
+          <label class="check assessment-only"><input type="checkbox" id="schedule-skip" checked> Only send when there is a new scan since the last report</label>
+          <label class="check assessment-only"><input type="checkbox" id="schedule-inventory" checked> Include the full asset inventory</label>
+          <label class="check assessment-only"><input type="checkbox" id="schedule-compare" checked> Compare with the previous scan</label>
           <p class="muted small" style="margin:4px 0 0">People in attack paths are always pseudonymised in scheduled reports.</p>
         </div>
         <div class="error-text span-2" id="schedule-error" role="alert"></div>
@@ -488,7 +494,7 @@
         <table class="table">
           <tbody>
             <tr><td><span class="kbd">N</span></td><td>New investigation</td></tr>
-            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">W</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Work (remediation) · Ratings · History</td></tr>
+            <tr><td><span class="kbd">X</span> <span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">W</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Executive · Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Work (remediation) · Ratings · History</td></tr>
             <tr><td><span class="kbd">/</span></td><td>Find in graph</td></tr>
             <tr><td><span class="kbd">F</span></td><td>Fit graph to screen</td></tr>
             <tr><td><span class="kbd">T</span></td><td>Toggle light / dark theme</td></tr>

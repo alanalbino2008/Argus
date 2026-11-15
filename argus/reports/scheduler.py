@@ -18,13 +18,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.core.settings import Settings
-from argus.notify.render import report_event
+from argus.notify.render import board_event, report_event
 from argus.observability import metrics
 from argus.reports.data import ReportData, ReportOptions
 from argus.reports.service import issue_report
@@ -51,6 +52,7 @@ class ReportScheduler:
         workspaces: WorkspaceRepository,
         audit: AuditLog,
         settings: Settings,
+        board: Callable[..., Awaitable[dict[str, Any]]] | None = None,
     ):
         self.schedules = schedules
         self.investigations = investigations
@@ -58,6 +60,7 @@ class ReportScheduler:
         self.workspaces = workspaces
         self.audit = audit
         self.settings = settings
+        self.board = board  # issues a workspace board report (see argus.api.executive_service)
         self._last_purge = 0.0
 
     async def tick(self) -> list[str]:
@@ -95,7 +98,33 @@ class ReportScheduler:
         )
         return outcome
 
+    async def run_board(self, schedule: dict[str, Any]) -> str:
+        """A board report covers the whole workspace: there is no scan to wait for or skip."""
+        ws_id, opts = schedule["workspace_id"], schedule["options"] or {}
+        try:
+            workspace = await self.workspaces.get(ws_id)
+            if workspace is None or self.board is None:
+                return await self._finish(schedule, "failed", "The workspace no longer exists.")
+
+            async def queue(session: AsyncSession, record: dict[str, Any], summary: dict[str, Any]) -> int:
+                event = board_event(record, summary, schedule, workspace, self.settings.public_url)
+                return await enqueue_to_channels(session, ws_id, schedule["channel_ids"], event)
+
+            issued = await self.board(
+                workspace, days=int(opts.get("period_days") or 90), tlp=opts.get("tlp") or "AMBER",
+                prepared_for=str(opts.get("prepared_for") or ""), issued_by=f"schedule: {schedule['name']}"[:128],
+                trigger="scheduled", keep_file_for=KEEP_FILES, after_record=queue,
+            )  # fmt: skip
+            report_id = issued["record"]["id"]
+            return await self._finish(schedule, "sent", f"Board report {report_id} queued to {issued['after'] or 0} "
+                                      "destination(s).", report_id=report_id)  # fmt: skip
+        except Exception as exc:
+            logger.exception("Scheduled board report %s failed", schedule["id"])
+            return await self._finish(schedule, "failed", f"Board report generation failed ({type(exc).__name__}).")
+
     async def run(self, schedule: dict[str, Any]) -> str:
+        if (schedule["options"] or {}).get("kind") == "board":
+            return await self.run_board(schedule)
         ws_id, target = schedule["workspace_id"], schedule["target"]
         try:
             inv = await self.investigations.latest_completed(target, workspace_id=ws_id)

@@ -50,6 +50,8 @@ from argus import __version__
 from argus.api import remediation_hooks
 from argus.api.auth_routes import router as auth_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
+from argus.api.executive_routes import router as executive_router
+from argus.api.executive_service import issue_board_report
 from argus.api.exposure_routes import router as exposure_router
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.notification_routes import router as notification_router
@@ -212,8 +214,9 @@ async def lifespan(app: FastAPI):
         files=lambda report_id, workspace_id: app.state.reports.file(report_id, workspace_id=workspace_id),
     )
     app.state.report_scheduler = ReportScheduler(
-        app.state.schedules, repo, app.state.reports, app.state.workspaces, app.state.audit, settings
-    )
+        app.state.schedules, repo, app.state.reports, app.state.workspaces, app.state.audit, settings,
+        board=partial(issue_board_report, app),
+    )  # fmt: skip
     report_task = (
         asyncio.create_task(app.state.report_scheduler.run_forever(), name="report-scheduler")
         if settings.report_schedules_enabled
@@ -409,6 +412,7 @@ app.include_router(rating_router)
 app.include_router(supplier_router)
 app.include_router(exposure_router)
 app.include_router(remediation_router)
+app.include_router(executive_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))

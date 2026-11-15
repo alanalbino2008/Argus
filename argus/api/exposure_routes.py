@@ -64,7 +64,7 @@ def _ordered(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @router.get("")
-async def overview(
+async def exposure_overview(
     request: Request,
     ws: WorkspaceContext = VIEWER,
     status: Literal["open", "resolved", "accepted", "all"] = "open",

@@ -116,8 +116,50 @@ def report_event(
     }
 
 
+def board_event(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    schedule: dict[str, Any],
+    workspace: dict[str, Any],
+    public_url: str | None,
+) -> dict[str, Any]:
+    """A scheduled board report is ready: the overall status and key messages (email also gets the PDF)."""
+    return {
+        "type": "report.scheduled",
+        "id": f"evt_report_{record['id']}",
+        "occurred_at": record.get("created_at") or _now_iso(),
+        "workspace": {"id": workspace.get("id"), "name": workspace.get("name")},
+        "report": {
+            "id": record["id"],
+            "kind": "board",
+            "schedule": {"id": schedule["id"], "name": schedule["name"]},
+            "target": record["target"],
+            "investigation_id": None,
+            "overall": summary["overall"],
+            "verdict": summary["verdict"],
+            "messages": summary["messages"][:5],
+            "areas": {a["key"]: a["status"] for a in summary["areas"]},
+            "period_days": summary["period_days"],
+            "tlp": record["tlp"],
+            "prepared_for": record.get("prepared_for"),
+            "sha256": record["sha256"],
+            "url": _link(public_url, f"/?ws={workspace.get('id')}#/executive"),
+            "verify_url": _link(public_url, f"/api/reports/verify/{record['sha256']}"),
+        },
+    }
+
+
 def _report_lines(event: dict[str, Any], *, attached: bool) -> list[str]:
     r = event["report"]
+    if r.get("kind") == "board":
+        return [
+            f"Overall: {str(r['overall']).upper()}. {r['verdict']}",
+            *r["messages"],
+            f"Classification: TLP:{r['tlp']}"
+            + (f" · prepared for {r['prepared_for']}" if r.get("prepared_for") else ""),
+            f"Report {r['id']} · SHA-256 {r['sha256']}",
+            "The PDF is attached." if attached else "Download the PDF from Argus.",
+        ]
     sev = r["severity_counts"]
     lines = [
         f"Overall exposure: {str(r['rating']).upper()} (risk score {r['score']}/100)",
@@ -158,6 +200,8 @@ def header_safe(text: Any, limit: int = 200) -> str:
 def _title(event: dict[str, Any]) -> str:
     if event["type"] == "report.scheduled":
         report = event["report"]
+        if report.get("kind") == "board":
+            return f"{report['schedule']['name']}: board report ({str(report['overall']).upper()})"
         return f"{report['schedule']['name']}: {report['target']} ({str(report['rating']).upper()})"
     if event["type"] == "alert.raised":
         alert = event["alert"]

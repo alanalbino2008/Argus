@@ -137,6 +137,27 @@ curl -X POST https://argus.example.com/api/exposure/findings/status \
 Exposure alerts arrive through the same destinations as drift alerts. Their `alert.exposure`
 object carries the counts and the scope, and never staff addresses.
 
+## Executive view and board report
+
+`GET /api/executive?days=90` (30, 90 or 180) returns:
+* `overall` (red, amber, green or grey) and a `verdict`;
+* five `areas`, each with `status`, `reason` and `figures`;
+* up to seven `messages`;
+* `top_risks`, with owners and deadlines;
+* your organisations' ratings.
+
+`POST /api/executive/report` returns the two-page board report PDF. Its ID and SHA-256 are in the
+`X-Report-Id` and `X-Report-SHA256` headers.
+
+```bash
+curl -X POST https://argus.example.com/api/executive/report -o board-report.pdf \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"days": 90, "tlp": "AMBER", "prepared_for": "Board of Directors"}'
+```
+
+To send it every month, create a report schedule with `"options": {"kind": "board", "period_days": 90}`
+and no `target`.
+
 ## Remediation
 
 Track a finding as a task, then move it through its lifecycle. Attack-path tasks are verified by

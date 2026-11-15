@@ -323,6 +323,15 @@ an owner, a deadline from the workspace's severity policy, and a timeline.
 - The page reports SLA compliance and median time to verified fix
   ([`docs/explained/25-remediation-workflow.md`](docs/explained/25-remediation-workflow.md)).
 
+**Executive dashboard & board report**: everything Argus knows, summarised as a board asks.
+
+- Five areas (attack surface, remediation, exposure, suppliers, threats) as red, amber or green,
+  each with the reason.
+- Key messages, worst first and including good news.
+- The risks to act on, with owners and deadlines.
+- A two-page, fingerprinted **board report** PDF, which can be emailed monthly
+  ([`docs/explained/26-executive-dashboard.md`](docs/explained/26-executive-dashboard.md)).
+
 **API & integrations**: a documented REST API (OpenAPI 3.1 at `/docs`, with authentication,
 workspace header and required role on every operation), per-key rate limits with `RateLimit-*`
 headers, and an official Python client (`clients/python`).

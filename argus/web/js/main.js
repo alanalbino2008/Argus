@@ -15,13 +15,14 @@ import { initRatings, refresh as refreshRatings } from "./views/ratings.js";
 import { initSuppliers, refresh as refreshSuppliers } from "./views/suppliers.js";
 import { initExposure, refresh as refreshExposure } from "./views/exposure.js";
 import { initRemediation, refresh as refreshRemediation } from "./views/remediation.js";
+import { initExecutive, refresh as refreshExecutive } from "./views/executive.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
 import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 
-const VIEWS = ["overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "ratings", "history", "settings"];
+const VIEWS = ["executive", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "ratings", "history", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -48,6 +49,7 @@ function route() {
   if (view === "suppliers") refreshSuppliers();
   if (view === "exposure") refreshExposure();
   if (view === "remediation") refreshRemediation();
+  if (view === "executive") refreshExecutive();
 }
 
 // ------------------------------------------------------------------ actions shared by views
@@ -157,7 +159,7 @@ function setupShortcuts() {
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing || e.metaKey || e.ctrlKey || e.altKey || !$("#signin").hidden || $(".modal-root.open")) return;
-    const map = { o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", w: "remediation", r: "ratings", h: "history" };
+    const map = { x: "executive", o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", w: "remediation", r: "ratings", h: "history" };
     if (map[e.key]) go(map[e.key]);
     else if (e.key === "n") { e.preventDefault(); actions.newInvestigation(); }
     else if (e.key === "/") { e.preventDefault(); go("graph"); setTimeout(() => $("#graph-search").focus(), 120); }
@@ -297,6 +299,7 @@ async function boot() {
   initSuppliers($("#view-suppliers"), actions);
   initExposure($("#view-exposure"));
   initRemediation($("#view-remediation"));
+  initExecutive($("#view-executive"));
   initSettings($("#view-settings"));
 
   $$(".nav-item").forEach((el) => el.addEventListener("click", () => go(el.dataset.view)));
