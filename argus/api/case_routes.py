@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from pydantic import BaseModel, Field
 
 from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.opsec_routes import find_route, route_for
 from argus.evidence.bundle import build_bundle
 from argus.evidence.capture import CaptureError, capture_upload, capture_url
 from argus.security.auth import Role
@@ -30,6 +31,7 @@ ENTITY_TYPES = ("person", "organisation", "username", "account", "email", "phone
 _capture_limiter = SlidingWindowLimiter(limit=20, window=60)
 
 ItemKind = Literal["note", "entity", "link", "scan", "event"]
+OpsecMode = Literal["standard", "anonymous"]
 
 
 class CaseRequest(BaseModel):
@@ -39,6 +41,8 @@ class CaseRequest(BaseModel):
     restricted: bool = Field(default=False, description="Only you and the members listed can open the case")
     members: list[str] = Field(default_factory=list, max_length=50)
     tags: list[str] = Field(default_factory=list, max_length=20)
+    egress: str = Field(default="", max_length=32, description="Route its captures and scans use; empty: direct")
+    opsec_mode: OpsecMode = Field(default="standard", description="anonymous: never touch the subjects directly")
     confirmed: bool = Field(description="Confirms there is a legitimate purpose for this investigation")
 
 
@@ -50,6 +54,8 @@ class CaseUpdate(BaseModel):
     restricted: bool | None = None
     members: list[str] | None = Field(default=None, max_length=50)
     tags: list[str] | None = Field(default=None, max_length=20)
+    egress: str | None = Field(default=None, max_length=32)
+    opsec_mode: OpsecMode | None = None
 
 
 class ItemRequest(BaseModel):
@@ -70,6 +76,7 @@ class ItemUpdate(BaseModel):
 class CaptureRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
     note: str = Field(default="", max_length=1000)
+    egress: str | None = Field(default=None, max_length=32, description="Route for this capture; default: the case's")
 
 
 def _repo(request: Request) -> Any:
@@ -124,6 +131,14 @@ async def _validate_item(request: Request, ws: WorkspaceContext, case_id: str, k
     return {k: v for k, v in data.items() if isinstance(k, str)} if kind == "note" else {}
 
 
+def _safety(request: Request, egress: str, mode: str) -> str:
+    """Check a case's route and mode go together; returns the route name ("" for direct)."""
+    route = find_route(request.app.state.settings, egress)
+    if mode == "anonymous" and (route is None or not route.is_anonymous):
+        raise HTTPException(status_code=422, detail="An anonymous case needs an anonymous route, such as Tor")
+    return route.name if route else ""
+
+
 def _aware(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
 
@@ -138,12 +153,15 @@ async def list_cases(request: Request, ws: WorkspaceContext = VIEWER):
 async def create_case(body: CaseRequest, request: Request, ws: WorkspaceContext = ANALYST):
     if not body.confirmed:
         raise HTTPException(status_code=422, detail="Confirm there is a legitimate purpose for this investigation")
+    egress = _safety(request, body.egress, body.opsec_mode)
     case = await _repo(request).create(
         workspace_id=ws.id, by=ws.principal.name, title=body.title.strip(), purpose=body.purpose.strip(),
         summary=body.summary, restricted=body.restricted, members=_clean_list(body.members), tags=_clean_list(body.tags, 40),
+        egress=egress, opsec_mode=body.opsec_mode,
     )  # fmt: skip
     await audit(request, ws.principal, "case.create", case["id"],
-                details={"title": case["title"], "purpose": case["purpose"], "restricted": case["restricted"]})  # fmt: skip
+                details={"title": case["title"], "purpose": case["purpose"], "restricted": case["restricted"],
+                         "route": egress or "direct", "opsec_mode": body.opsec_mode})  # fmt: skip
     return case
 
 
@@ -166,6 +184,9 @@ async def update_case(case_id: str, body: CaseUpdate, request: Request, ws: Work
         changes["members"] = _clean_list(changes["members"])
     if "tags" in changes:
         changes["tags"] = _clean_list(changes["tags"], 40)
+    if "egress" in changes or "opsec_mode" in changes:
+        changes["egress"] = _safety(request, changes.get("egress", case["egress"]),
+                                    changes.setdefault("opsec_mode", case["opsec_mode"]))  # fmt: skip
     updated = await _repo(request).update(case_id, workspace_id=ws.id, who=ws.principal.name, **changes)
     await audit(request, ws.principal, "case.update", case_id, details={k: str(v)[:200] for k, v in changes.items()})
     return updated
@@ -229,15 +250,17 @@ def _limit(ws: WorkspaceContext) -> None:
 @router.post("/cases/{case_id}/captures", status_code=201)
 async def capture_page(case_id: str, body: CaptureRequest, request: Request, ws: WorkspaceContext = ANALYST):
     """Preserve a public web page as it is now: response, screenshot, text, manifest and fingerprint."""
-    await _case(request, ws, case_id)
+    case = await _case(request, ws, case_id)
+    route = route_for(request.app.state.settings, case, body.egress)  # 409 if it would expose an anonymous case
     _limit(ws)
     try:
-        capture = await capture_url(body.url, request.app.state.settings)
+        capture = await capture_url(body.url, request.app.state.settings, route)
     except CaptureError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     saved = await _repo(request).add_capture(case_id, ws.id, capture, by=ws.principal.name, note=body.note)
     await audit(request, ws.principal, "evidence.capture", saved["id"],
-                details={"case": case_id, "url": body.url, "digest": saved["digest"], "timestamped": saved["timestamped"]})  # fmt: skip
+                details={"case": case_id, "url": body.url, "digest": saved["digest"], "timestamped": saved["timestamped"],
+                         "route": route.name if route else "direct"})  # fmt: skip
     return saved
 
 

@@ -6,6 +6,7 @@ import { $, closeModal, formatDate, html, openModal, setHTML, toast } from "../d
 import { typeInfo } from "../icons.js";
 import * as graph from "../graph.js";
 import { emit, state } from "../state.js";
+import { loadRoutes, routeOptions } from "../opsec.js";
 
 // ------------------------------------------------------------------ type detection (mirrors the server)
 export function detectType(value) {
@@ -44,13 +45,24 @@ export function initModals(appActions) {
   $("#tour-skip").addEventListener("click", endTour);
 }
 
-export function openNewInvestigation({ target = "", type = "", watch = false } = {}) {
+let forCase = null; // { caseId, anonymous } when started from a case
+
+export async function openNewInvestigation({ target = "", type = "", watch = false, caseId = null, caseTitle = "", egress = "", anonymous = false } = {}) {
+  forCase = caseId ? { caseId, anonymous } : null;
+  const routes = await loadRoutes();
+  $("#new-egress-field").hidden = !routes.length && !anonymous;
+  setHTML($("#new-egress"), routeOptions(routes, egress, { anonymousOnly: anonymous }));
+  $("#new-egress-note").textContent = caseId
+    ? `For the case "${caseTitle}": the scan is linked to it${anonymous ? ". The case is anonymous, so the scan is passive and routed." : "."}`
+    : "";
   $("#new-target").value = target;
   $("#new-type").value = ["domain", "ip_address", "email", "username", "phone"].includes(type) ? type : "";
   try { $("#new-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch { /* ignore */ }
   $("#new-authorized").checked = false;
-  $("#new-passive").checked = false;
-  $("#new-watch").checked = watch;
+  $("#new-passive").checked = anonymous;
+  $("#new-passive").disabled = anonymous;
+  $("#new-watch").checked = watch && !caseId;
+  $("#new-watch").disabled = !!caseId;
   $("#new-watch").dispatchEvent(new Event("change"));
   $("#new-error").textContent = "";
   $("#new-target").dispatchEvent(new Event("input"));
@@ -68,6 +80,11 @@ async function submitNew(e) {
   try { sessionStorage.setItem("argus_last_purpose", purpose); } catch { /* ignore */ }
 
   const body = { target, target_type: $("#new-type").value || null, max_depth: Number($("#new-depth").value), passive_only: $("#new-passive").checked, purpose, authorized: true };
+  const egress = $("#new-egress-field").hidden ? "" : $("#new-egress").value;
+  if (egress || forCase) {
+    if ($("#new-watch").checked) { error.textContent = "Scheduled re-scans connect directly. Untick Keep watching, or choose Direct."; return; }
+    Object.assign(body, { egress: egress || "direct" }, forCase ? { case_id: forCase.caseId } : {});
+  }
   const submit = $("#new-submit");
   submit.disabled = true;
   try {

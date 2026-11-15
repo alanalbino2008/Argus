@@ -44,6 +44,10 @@ RETRYABLE_EXCEPTIONS = (
     asyncio.TimeoutError,
 )
 DEFAULT_USER_AGENT = f"Argus-OSINT/{__version__} (+https://github.com/alanalbino2008/Argus)"
+# Used on routed (Tor / VPN) work: a plain desktop Chrome, so nothing names the tool or its owner.
+NEUTRAL_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 
 
 @dataclass
@@ -166,9 +170,15 @@ class HttpClient:
         global_concurrency: int = 50,
         max_retry_after: float = 30.0,
         allow_private: bool = False,
+        proxy: str | None = None,
+        user_agent: str | None = None,
     ):
+        """``proxy``: every request leaves through it (an egress route's guard proxy).
+        ``user_agent``: replaces every User-Agent, including ones a module sets itself."""
         self.session = session
         self.allow_private = allow_private
+        self.proxy = proxy
+        self.user_agent = user_agent
         self.max_retries = max(0, max_retries)
         self.backoff_base = backoff_base
         self.backoff_cap = backoff_cap
@@ -198,8 +208,11 @@ class HttpClient:
     async def _send(self, method: str, url: str, kwargs: dict[str, Any]) -> aiohttp.ClientResponse:
         host = urlsplit(url).hostname or "unknown"
         headers = dict(kwargs.pop("headers", None) or {})
-        headers.setdefault("User-Agent", DEFAULT_USER_AGENT)
+        headers = {k: v for k, v in headers.items() if not (self.user_agent and k.lower() == "user-agent")}
+        headers.setdefault("User-Agent", self.user_agent or DEFAULT_USER_AGENT)
         kwargs["headers"] = headers
+        if self.proxy:
+            kwargs["proxy"] = self.proxy
 
         if not self.allow_private:
             try:

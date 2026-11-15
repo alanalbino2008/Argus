@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.28.0"
+__version__ = "1.29.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -263,14 +263,33 @@ class ArgusClient:
         return self.get("/api/cases")
 
     def create_case(self, title: str, *, purpose: str, restricted: bool = False, members: list[str] | None = None,
-                    tags: list[str] | None = None) -> dict[str, Any]:  # fmt: skip
-        """Open a case. You confirm there is a legitimate purpose for the investigation."""
-        return self.post("/api/cases", {"title": title, "purpose": purpose, "restricted": restricted,
-                                        "members": members or [], "tags": tags or [], "confirmed": True})  # fmt: skip
+                    tags: list[str] | None = None, egress: str = "", anonymous: bool = False) -> dict[str, Any]:  # fmt: skip
+        """Open a case. You confirm there is a legitimate purpose for the investigation.
 
-    def capture(self, case_id: str, url: str, *, note: str = "") -> dict[str, Any]:
-        """Preserve a web page as evidence: response, full-page screenshot, text, fingerprints."""
-        return self.post(f"/api/cases/{case_id}/captures", {"url": url, "note": note})
+        ``egress``: the route (see :meth:`routes`) its captures and scans use. ``anonymous``: nothing
+        in the case may touch its subjects directly (needs an anonymous route, such as Tor).
+        """
+        return self.post("/api/cases", {"title": title, "purpose": purpose, "restricted": restricted,
+                                        "members": members or [], "tags": tags or [], "egress": egress,
+                                        "opsec_mode": "anonymous" if anonymous else "standard", "confirmed": True})  # fmt: skip
+
+    def capture(self, case_id: str, url: str, *, note: str = "", egress: str | None = None) -> dict[str, Any]:
+        """Preserve a web page as evidence: response, full-page screenshot, text, fingerprints.
+
+        ``egress``: a route name, or "direct"; by default the case's route.
+        """
+        body: dict[str, Any] = {"url": url, "note": note}
+        if egress is not None:
+            body["egress"] = egress
+        return self.post(f"/api/cases/{case_id}/captures", body)
+
+    def routes(self) -> list[dict[str, Any]]:
+        """Egress routes (Tor, VPN, proxy) the operator set up: names and kinds, never addresses."""
+        return self.get("/api/opsec/routes")["routes"]
+
+    def check_route(self, name: str) -> dict[str, Any]:
+        """Test a route: the address sites see through it, and whether it leaks this server's own."""
+        return self.post(f"/api/opsec/routes/{name}/check")
 
     def add_to_case(self, case_id: str, kind: str, **fields: Any) -> dict[str, Any]:
         """Add a note, entity, link, scan or event, e.g. ``add_to_case(id, "entity", data={...})``."""

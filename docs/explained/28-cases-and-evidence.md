@@ -121,6 +121,9 @@ protections:
 services. Full Chrome contacts Google in the background even with those services switched off,
 which would tell Google when and from where someone is investigating.
 
+To hide the **server** too, and send captures through Tor or a VPN, see
+[29 — Investigator safety](29-investigator-safety.md).
+
 ## 6. What a reviewer can check
 
 * `argus/evidence/guard_proxy.py`: the egress guard for the capture browser.

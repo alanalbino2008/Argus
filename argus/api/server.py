@@ -60,6 +60,8 @@ from argus.api.notification_routes import router as notification_router
 from argus.api.onboarding_routes import router as onboarding_router
 from argus.api.onboarding_routes import scope_warnings
 from argus.api.openapi import build_openapi
+from argus.api.opsec_routes import route_for
+from argus.api.opsec_routes import router as opsec_router
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
@@ -72,7 +74,7 @@ from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
-from argus.core.settings import Settings, get_settings
+from argus.core.settings import EgressRoute, Settings, get_settings
 from argus.demo import DEMO_TARGET, load_demo
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
@@ -419,6 +421,7 @@ app.include_router(remediation_router)
 app.include_router(executive_router)
 app.include_router(compliance_router)
 app.include_router(case_router)
+app.include_router(opsec_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -445,6 +448,12 @@ class StartScanRequest(BaseModel):
         description="Why this target is being investigated, e.g. 'HackerOne program X, ticket #123' or 'CTF'",
     )
     authorized: bool = Field(description="Confirms you are authorised to investigate this target")
+    egress: str | None = Field(
+        default=None, description="Egress route (see /api/opsec/routes) every request leaves through; 'direct': none"
+    )
+    case_id: str | None = Field(
+        default=None, description="Case the scan belongs to: it uses the case's route and is linked to the case"
+    )
 
 
 def _live_investigation(engine: ArgusEngine) -> Investigation:
@@ -583,10 +592,11 @@ async def launch_scan(
     purpose: str,
     workspace_id: str,
     monitor_id: str | None = None,
+    egress: EgressRoute | None = None,
 ) -> ArgusEngine:
     """Single code path for every scan (manual or scheduled): record, register, run in background."""
     repo: InvestigationRepository = app.state.repo
-    engine = ArgusEngine(config)
+    engine = ArgusEngine(config, egress=egress)
     engine.investigation.workspace_id = workspace_id
     engine.investigation.created_by = created_by
     engine.investigation.purpose = purpose
@@ -903,6 +913,15 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
         if unconfigured:
             raise HTTPException(status_code=422, detail=f"Modules need an API key first: {unconfigured}")
 
+    case = None
+    if req.case_id:
+        case = await request.app.state.cases.get(req.case_id, workspace_id=ws.id, who=principal.name)
+        if case is None:
+            raise HTTPException(status_code=404, detail="Case not found")
+    route = route_for(settings, case, req.egress)
+    anonymous = bool(case and case["opsec_mode"] == "anonymous")
+    passive_only = req.passive_only or anonymous  # an anonymous case never touches its subjects' own systems
+
     ttype = req.target_type or detect_target_type(target)
     if not settings.allow_private_targets:
         try:
@@ -930,7 +949,7 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
             target=target,
             target_type=ttype,
             max_depth=req.max_depth,
-            passive_only=req.passive_only,
+            passive_only=passive_only,
             enabled_modules=req.enabled_modules,
             concurrency_limit=req.concurrency_limit,
             allow_private_targets=settings.allow_private_targets,
@@ -940,7 +959,7 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
 
     try:  # fail fast (503) if we cannot record the scan, rather than run it unsaved
         engine = await launch_scan(
-            request.app, config, created_by=principal.name, purpose=req.purpose, workspace_id=ws.id
+            request.app, config, created_by=principal.name, purpose=req.purpose, workspace_id=ws.id, egress=route
         )
     except Exception as exc:
         logger.exception("Database unavailable")
@@ -954,16 +973,26 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
             "target": target,
             "target_type": ttype.value,
             "max_depth": req.max_depth,
-            "passive_only": req.passive_only,
+            "passive_only": passive_only,
             "purpose": req.purpose,
+            "route": route.name if route else "direct",
+            "case": req.case_id,
             "authorized_confirmed": True,
             # What the person was warned about (computed here, not trusted from the client).
             "scope_warnings": [w["code"] for w in scope_warnings(target, ttype, req.passive_only)],
         },
     )
 
+    if case is not None:
+        await request.app.state.cases.add_item(
+            case["id"], by=principal.name, kind="scan", title=target, body="",
+            data={"investigation_id": engine.investigation_id, "target": target}, occurred_at=None,
+        )  # fmt: skip
     return {
         "status": "launched",
+        "route": route.name if route else "direct",
+        "passive_only": passive_only,
+        "skipped_for_route": getattr(engine, "skipped_for_route", []),
         "investigation_id": engine.investigation_id,
         "target": target,
         "target_type": ttype.value,

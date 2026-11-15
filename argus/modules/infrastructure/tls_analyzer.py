@@ -84,6 +84,7 @@ class TlsAnalyzerModule(BaseModule):
     supported_entity_types = [EntityType.DOMAIN, EntityType.SUBDOMAIN]
     attack_techniques = ("T1596.003", "T1595")
     active = True  # connects to the target's own servers
+    direct_connections = True  # a raw TLS socket: cannot go through an egress route
     port = 443
 
     async def run(

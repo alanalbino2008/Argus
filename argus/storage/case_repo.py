@@ -23,7 +23,7 @@ from argus.evidence.capture import Capture, canonical, sha256
 from argus.storage.db import CaseItemRow, CaseRow, Database, EvidenceCaptureRow, EvidenceCustodyRow, EvidenceFileRow
 
 GENESIS = "0" * 64
-CASE_FIELDS = ("title", "purpose", "summary", "status", "restricted", "members", "tags")
+CASE_FIELDS = ("title", "purpose", "summary", "status", "restricted", "members", "tags", "egress", "opsec_mode")
 ITEM_FIELDS = ("title", "body", "data", "occurred_at")
 
 
@@ -41,7 +41,8 @@ def _case(row: CaseRow) -> dict[str, Any]:
     return {
         "id": row.id, "workspace_id": row.workspace_id, "title": row.title, "purpose": row.purpose,
         "summary": row.summary, "status": row.status, "restricted": bool(row.restricted),
-        "members": list(row.members or []), "tags": list(row.tags or []), "created_by": row.created_by,
+        "members": list(row.members or []), "tags": list(row.tags or []), "egress": row.egress or "",
+        "opsec_mode": row.opsec_mode or "standard", "created_by": row.created_by,
         "created_at": _iso(row.created_at), "updated_at": _iso(row.updated_at),
     }  # fmt: skip
 
@@ -59,7 +60,7 @@ def _capture(row: EvidenceCaptureRow) -> dict[str, Any]:
     return {
         "id": row.id, "case_id": row.case_id, "kind": row.kind, "url": row.url, "final_url": m.get("final_url"),
         "title": row.title, "note": row.note, "digest": row.digest, "status": m.get("status"),
-        "browser": m.get("browser"), "files": m.get("files", []), "timestamped": row.timestamp_token is not None,
+        "browser": m.get("browser"), "route": m.get("route"), "files": m.get("files", []), "timestamped": row.timestamp_token is not None,
         "warnings": list(row.warnings or []), "captured_by": row.captured_by, "captured_at": _iso(row.captured_at),
     }  # fmt: skip
 
@@ -82,7 +83,7 @@ class CaseRepository:
         moment = _now()
         row = CaseRow(id=f"case_{secrets.token_hex(8)}", workspace_id=workspace_id, created_by=by, created_at=moment,
                       updated_at=moment, **{"summary": "", "status": "open", "restricted": False, "members": [],
-                                            "tags": [], **fields})  # fmt: skip
+                                            "tags": [], "egress": "", "opsec_mode": "standard", **fields})  # fmt: skip
         async with self.db.session() as s, s.begin():
             s.add(row)
         return _case(row)

@@ -347,7 +347,7 @@ def test_capture_errors_are_explained(client, monkeypatch):
     r = client.post(f"/api/cases/{case['id']}/captures", json={"url": "ftp://example.com/file"})
     assert r.status_code == 422 and "http" in r.json()["detail"]
 
-    async def boom(url, settings):
+    async def boom(url, settings, route=None):
         raise cap.CaptureError("Could not load the page (ClientConnectorError)")
 
     monkeypatch.setattr("argus.api.case_routes.capture_url", boom)

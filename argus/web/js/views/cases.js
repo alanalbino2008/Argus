@@ -5,10 +5,13 @@ import { api, download, enc, request } from "../api.js";
 import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
+import { loadRoutes, routeOptions, routeWarning } from "../opsec.js";
 
 let root;
 let cases = null;
 let current = null; // the open case (with items and captures)
+let routes = []; // egress routes (names only), loaded with the case
+let actionsRef = null;
 let pendingEntity = null; // an entity sent from the graph, waiting for a case to be chosen
 const thumbs = new Map(); // capture id -> object URL of its screenshot
 
@@ -18,6 +21,18 @@ const FROM_GRAPH = { person: "person", email: "email", username: "username", pho
   subdomain: "domain", ip_address: "ip", organization: "organisation", location: "location" };
 const canEdit = () => ["analyst", "admin"].includes(state.workspace?.role);
 const short = (digest) => `${digest.slice(0, 12)}…`;
+const anonymous = (c) => c.opsec_mode === "anonymous";
+
+function safetyPills(c) {
+  return html`${anonymous(c) ? html`<span class="pill ok" title="Nothing in this case touches its subjects directly">${ico("shield")}Anonymous</span>` : ""}
+    <span class="pill ${c.egress ? "" : "high"}" title="How captures and scans reach the internet">${c.egress ? `via ${c.egress}` : "Direct"}</span>`;
+}
+
+function showWarning(id, text) {
+  const el = $(id);
+  el.textContent = text;
+  el.hidden = !text;
+}
 
 // ---------------------------------------------------------------------------- list
 function renderList() {
@@ -29,7 +44,7 @@ function renderList() {
     ${!cases.length ? html`<div class="card">${empty("report", "No cases yet", "Open a case for each investigation. Capture pages before they change or disappear, and export a bundle anyone can verify.")}</div>`
       : html`<div class="case-grid">${cases.map((c) => html`<button class="card card-pad case-card" data-open-case="${c.id}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${c.title}</b>
-          <span>${c.restricted ? html`<span class="pill" title="Only the owner and members can open it">${ico("shield")}Restricted</span>` : ""} <span class="pill ${c.status === "open" ? "accent" : ""}">${c.status}</span></span></div>
+          <span>${c.restricted ? html`<span class="pill" title="Only the owner and members can open it">${ico("shield")}Restricted</span>` : ""} ${anonymous(c) ? html`<span class="pill ok">Anonymous</span>` : ""} <span class="pill ${c.status === "open" ? "accent" : ""}">${c.status}</span></span></div>
         <p class="muted small" style="margin:6px 0">${c.purpose}</p>
         <div class="muted small">${c.counts.entity || 0} people & entities · ${c.counts.evidence || 0} evidence · ${c.counts.note || 0} notes · updated ${timeAgo(c.updated_at)}</div>
       </button>`)}</div>`}
@@ -53,7 +68,7 @@ function evidenceCard(c) {
     <div style="min-width:0">
       <b>${c.title || c.url || "Evidence"}</b>
       ${c.url ? html`<div class="mono small" style="overflow-wrap:anywhere">${c.url}</div>` : ""}
-      <div class="muted small">${c.kind === "web" ? "Captured" : "Added"} ${formatDate(c.captured_at)} by ${c.captured_by}${c.status ? ` · HTTP ${c.status}` : ""}</div>
+      <div class="muted small">${c.kind === "web" ? "Captured" : "Added"} ${formatDate(c.captured_at)} by ${c.captured_by}${c.status ? ` · HTTP ${c.status}` : ""}${c.route ? ` · ${c.route.kind === "direct" ? "direct" : `via ${c.route.name}`}` : ""}</div>
       <div class="small" style="margin-top:4px"><span class="mono" title="SHA-256 of the capture manifest">${short(c.digest)}</span>
         ${c.timestamped ? html` <span class="pill ok" title="An RFC 3161 timestamp authority signed this digest">Timestamped</span>` : ""}</div>
       ${c.note ? html`<div class="small" style="margin-top:4px"><i>${c.note}</i></div>` : ""}
@@ -93,11 +108,14 @@ function renderCase() {
     <div class="page-head">
       <div><a href="#" data-act="back" class="muted small">← All cases</a>
         <h1 style="margin-top:4px">${c.title} ${c.restricted ? html`<span class="pill" style="vertical-align:middle">${ico("shield")}Restricted</span>` : ""}</h1>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">${safetyPills(c)}</div>
         <p>${c.purpose}</p>
         <p class="muted small">Opened by ${c.created_by} ${timeAgo(c.created_at)}${c.restricted ? ` · visible to ${[c.created_by, ...c.members].join(", ")}` : ""}${c.tags.length ? ` · ${c.tags.join(", ")}` : ""}</p></div>
       <div class="page-actions">
         ${canEdit() ? html`<button class="btn sm primary" data-act="capture">${ico("eye")}Capture a page</button>
           <button class="btn sm" data-act="upload">${ico("plus")}Add evidence file</button>
+          <button class="btn sm" data-act="case-scan">${ico("search")}Scan for this case</button>
+          <button class="btn sm" data-act="safety">${ico("shield")}Safety</button>
           <button class="btn sm" data-act="export">${ico("download")}Evidence bundle</button>
           <select class="select" data-act-select="status" aria-label="Case status" style="max-width:130px">${["open", "closed", "archived"].map((s) => html`<option value="${s}" ${c.status === s ? "selected" : ""}>${s}</option>`)}</select>` : ""}
       </div>
@@ -185,7 +203,8 @@ const FORMS = {
     if (!$("#case-confirmed").checked) throw new Error("Confirm there is a legitimate purpose for this investigation.");
     const created = await api.post("/api/cases", { title: $("#case-title").value.trim(), purpose: $("#case-purpose").value.trim(),
       restricted: $("#case-restricted").checked, members: $("#case-members").value.split(",").map((m) => m.trim()).filter(Boolean),
-      tags: $("#case-tags").value.split(",").map((t) => t.trim()).filter(Boolean), confirmed: true });
+      tags: $("#case-tags").value.split(",").map((t) => t.trim()).filter(Boolean), egress: $("#case-egress").value,
+      opsec_mode: $("#case-anonymous").checked ? "anonymous" : "standard", confirmed: true });
     closeModal("case-modal");
     await openCase(created.id);
   },
@@ -194,13 +213,18 @@ const FORMS = {
     btn.disabled = true;
     btn.textContent = "Capturing…";
     try {
-      const ev = await api.post(`/api/cases/${enc(current.id)}/captures`, { url: $("#capture-url").value.trim(), note: $("#capture-note").value.trim() });
+      const ev = await api.post(`/api/cases/${enc(current.id)}/captures`, { url: $("#capture-url").value.trim(), note: $("#capture-note").value.trim(), egress: $("#capture-egress").value || "direct" });
       closeModal("capture-modal");
       toast(`Captured: fingerprint ${short(ev.digest)}${ev.timestamped ? " (timestamped)" : ""}`, "success", 6000);
     } finally {
       btn.disabled = false;
       btn.textContent = "Capture now";
     }
+  },
+  "safety-form": async () => {
+    await api.patch(`/api/cases/${enc(current.id)}`, { egress: $("#safety-egress").value, opsec_mode: $("#safety-anonymous").checked ? "anonymous" : "standard" });
+    closeModal("safety-modal");
+    toast("Safety settings saved (recorded in the audit log)", "success");
   },
   "upload-form": async () => {
     const file = $("#upload-file").files[0];
@@ -244,7 +268,7 @@ const FORMS = {
 };
 
 async function openDialog(act) {
-  const ids = { capture: "capture-modal", upload: "upload-modal", entity: "entity-modal", link: "link-modal", event: "event-modal", note: "note-modal", scan: "scan-modal", "new-case": "case-modal" };
+  const ids = { safety: "safety-modal", capture: "capture-modal", upload: "upload-modal", entity: "entity-modal", link: "link-modal", event: "event-modal", note: "note-modal", scan: "scan-modal", "new-case": "case-modal" };
   const modal = ids[act];
   const form = $(`#${modal} form`);
   form.reset();
@@ -257,6 +281,21 @@ async function openDialog(act) {
     setHTML($("#link-to"), options);
     $("#link-to").selectedIndex = 1;
   }
+  if (["capture", "safety", "new-case"].includes(act)) routes = await loadRoutes();
+  if (act === "capture") {
+    setHTML($("#capture-egress"), routeOptions(routes, current.egress, { anonymousOnly: anonymous(current) }));
+    if (anonymous(current) && !routes.some((r) => r.anonymous)) return toast("This case is anonymous but no anonymous route is set up", "error");
+    syncCapture();
+  }
+  if (act === "safety") {
+    setHTML($("#safety-egress"), routeOptions(routes, current.egress));
+    $("#safety-anonymous").checked = anonymous(current);
+    syncSafety("safety");
+  }
+  if (act === "new-case") {
+    setHTML($("#case-egress"), routeOptions(routes, routes.find((r) => r.anonymous)?.name || ""));
+    syncSafety("case");
+  }
   if (act === "entity") setHTML($("#entity-type"), html`${ENTITY_TYPES.map((t) => html`<option value="${t}">${t}</option>`)}`);
   if (act === "scan") {
     const recent = await api.get("/api/investigations?limit=50&status=completed");
@@ -266,8 +305,32 @@ async function openDialog(act) {
   openModal(modal);
 }
 
+function syncCapture() {
+  showWarning("#capture-warning", routeWarning(routes, $("#capture-egress").value));
+}
+
+/** Anonymous needs an anonymous route: offer only those, and say why. */
+function syncSafety(prefix) {
+  const select = $(`#${prefix}-egress`);
+  const anon = $(`#${prefix}-anonymous`).checked;
+  const chosen = select.value;
+  setHTML(select, routeOptions(routes, chosen, { anonymousOnly: anon }));
+  if (anon && !routes.some((r) => r.anonymous)) {
+    $(`#${prefix}-anonymous`).checked = false;
+    setHTML(select, routeOptions(routes, chosen));
+    toast("No anonymous route (such as Tor) is set up yet: ask your administrator", "error", 6000);
+  }
+  if (prefix === "safety") showWarning("#safety-warning", routeWarning(routes, select.value));
+}
+
 export function initCases(el, actions) {
   root = el;
+  actionsRef = actions;
+  $("#capture-egress").addEventListener("change", syncCapture);
+  ["case", "safety"].forEach((prefix) => {
+    $(`#${prefix}-anonymous`).addEventListener("change", () => syncSafety(prefix));
+    $(`#${prefix}-egress`).addEventListener("change", () => prefix === "safety" && syncSafety(prefix));
+  });
   onState("workspace", () => { cases = null; current = null; });
   on(root, "click", "[data-open-case]", (_e, btn) => openCase(btn.dataset.openCase).catch((err) => toast(err.message, "error")));
   on(root, "click", "[data-open-scan]", (_e, row) => actions.open(row.dataset.openScan));
@@ -280,6 +343,7 @@ export function initCases(el, actions) {
     const { act, id } = btn.dataset;
     try {
       if (act === "back") { current = null; return refresh(); }
+      if (act === "case-scan") return actionsRef.newInvestigation({ caseId: current.id, caseTitle: current.title, egress: current.egress, anonymous: anonymous(current) });
       if (act === "export") return download(`/api/cases/${enc(current.id)}/export`, `argus-case-${current.id}.zip`);
       if (act === "file") return download(`/api/evidence/${enc(id)}/files/${enc(btn.dataset.file)}?download=true`, btn.dataset.file);
       if (act === "tsr") return download(`/api/evidence/${enc(id)}/timestamp.tsr`, `${id}.tsr`);

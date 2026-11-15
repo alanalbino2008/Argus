@@ -42,15 +42,24 @@ from urllib.parse import urljoin, urlsplit
 import aiohttp
 
 from argus import __version__
-from argus.core.settings import Settings
-from argus.evidence.guard_proxy import GuardProxy
+from argus.core.http import NEUTRAL_USER_AGENT
+from argus.core.settings import EgressRoute, Settings
+from argus.evidence.guard_proxy import REFUSED_HEADER, ROUTE_FAILED_HEADER, GuardProxy
 from argus.security.network import BlockedDestinationError, GuardedResolver, assert_public_host, configured_proxy_hosts
 
 MAX_PAGE = 15 * 1024 * 1024
 MAX_REDIRECTS = 5
 BROWSER_TIMEOUT = 45.0
-USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Argus-Capture"
+# A plain desktop Chrome: nothing in a capture tells the site who, or what tool, is looking.
+USER_AGENT = NEUTRAL_USER_AGENT
+ACCEPT_LANGUAGE = "en-US,en;q=0.9"
+PRIVACY_FLAGS = (
+    # WebRTC can reveal the server's real address over UDP, bypassing any proxy: forbid it.
+    "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+    "--dns-prefetch-disable",
+    "--lang=en-US",
+    "--accept-lang=en-US",
 )
 # The headless shell first: it has no Google services, so it never "phones home" while you investigate.
 BROWSER_CANDIDATES = ("chrome-headless-shell", "chromium-headless-shell", "chromium", "chromium-browser",
@@ -151,19 +160,26 @@ def visible_text(markup: str) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------- fetching
-async def fetch(url: str, settings: Settings) -> dict[str, Any]:
-    """The server's response to ``url``, following (and re-checking) up to five redirects."""
-    resolver = None if settings.allow_private_targets else GuardedResolver(trusted_hosts=configured_proxy_hosts())
+async def fetch(url: str, settings: Settings, proxy: GuardProxy) -> dict[str, Any]:
+    """The server's response to ``url``, following (and re-checking) up to five redirects.
+
+    Every request goes through ``proxy``, the same guard (and route) the browser uses.
+    """
     chain: list[dict[str, Any]] = []
     async with aiohttp.ClientSession(
-        connector=aiohttp.TCPConnector(resolver=resolver), timeout=aiohttp.ClientTimeout(total=30),
-        headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}, trust_env=True,
+        timeout=aiohttp.ClientTimeout(total=45), trust_env=False,
+        headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+                 "Accept-Language": ACCEPT_LANGUAGE},
     ) as http:  # fmt: skip
         current = url
         for _ in range(MAX_REDIRECTS + 1):
             check_url(current, allow_private=settings.allow_private_targets)
             try:
-                async with http.get(current, allow_redirects=False) as resp:
+                async with http.get(current, allow_redirects=False, proxy=proxy.url) as resp:
+                    if resp.headers.get(REFUSED_HEADER):  # the guard refused a plain-HTTP destination
+                        raise BlockedDestinationError(current)
+                    if resp.status == 502 and resp.headers.get(ROUTE_FAILED_HEADER):
+                        raise CaptureError("The route could not reach the page (is the Tor or proxy service running?)")
                     body = await resp.content.read(MAX_PAGE + 1)
                     entry = {"url": current, "status": resp.status, "headers": dict(resp.headers.items())}
                     chain.append(entry)
@@ -177,6 +193,10 @@ async def fetch(url: str, settings: Settings) -> dict[str, Any]:
                             "content_type": resp.headers.get("Content-Type", ""), "body": body, "chain": chain}  # fmt: skip
             except BlockedDestinationError as exc:
                 raise CaptureError("The page redirected to an address that is not on the public internet") from exc
+            except aiohttp.ClientHttpProxyError as exc:  # the guard (or the route) refused a CONNECT
+                if exc.status == 403:
+                    raise CaptureError("Only pages on the public internet can be captured") from exc
+                raise CaptureError("The route could not reach the page (is the Tor or proxy service running?)") from exc
             except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
                 raise CaptureError(f"Could not load the page ({type(exc).__name__})") from exc
     raise CaptureError("Too many redirects")
@@ -313,68 +333,76 @@ async def _until_loaded(dt: _DevTools, notes: list[str]) -> None:
             return
 
 
-async def render(url: str, browser: str, settings: Settings) -> dict[str, Any]:
+async def render(url: str, browser: str, settings: Settings, proxy: GuardProxy | None = None) -> dict[str, Any]:
     """Full-page screenshot and rendered DOM, with every request forced through the guard proxy."""
+    if proxy is None:  # the proxy's lifetime is normally the caller's (see capture_url)
+        async with GuardProxy(allow_private=settings.allow_private_targets) as own:
+            return await render(url, browser, settings, own)
     notes: list[str] = []
-    async with GuardProxy(allow_private=settings.allow_private_targets) as proxy:
-        # Late writes by Chrome's helper processes must not fail the capture.
-        with tempfile.TemporaryDirectory(prefix="argus-capture-", ignore_cleanup_errors=True) as tmp:
-            mode = [] if is_headless_shell(browser) else ["--headless=new", *QUIET_FLAGS]
-            argv = [
-                browser, *mode, "--disable-gpu", "--hide-scrollbars", "--mute-audio", "--disable-extensions",
-                f"--user-agent={USER_AGENT}", f"--proxy-server=http://127.0.0.1:{proxy.port}",
-                "--proxy-bypass-list=<-loopback>", f"--user-data-dir={tmp}/profile", "--remote-debugging-port=0",
-                "--remote-allow-origins=*", "about:blank",
-            ]  # fmt: skip
-            if os.geteuid() == 0 or not settings.capture_browser_sandbox:  # Chrome refuses its sandbox as root
-                argv.insert(1, "--no-sandbox")
-            proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.DEVNULL,
-                                                        stderr=asyncio.subprocess.PIPE,
-                                                        start_new_session=True)  # its own process group  # fmt: skip
-            screenshot = dom = None
-            version = os.path.basename(browser)
-            try:
-                ws_url = await _devtools_url(proc)
-                async with aiohttp.ClientSession() as local:  # loopback to our own browser only
-                    ws = await local.ws_connect(ws_url, max_msg_size=64 * 1024 * 1024)
-                    dt = _DevTools(ws)
+    screenshot = dom = None
+    version = os.path.basename(browser)
+    # Late writes by Chrome's helper processes must not fail the capture.
+    with tempfile.TemporaryDirectory(prefix="argus-capture-", ignore_cleanup_errors=True) as tmp:
+        mode = [] if is_headless_shell(browser) else ["--headless=new", *QUIET_FLAGS]
+        argv = [
+            browser, *mode, *PRIVACY_FLAGS, "--disable-gpu", "--hide-scrollbars", "--mute-audio",
+            "--disable-extensions", f"--user-agent={USER_AGENT}", f"--proxy-server=http://127.0.0.1:{proxy.port}",
+            "--proxy-bypass-list=<-loopback>", f"--user-data-dir={tmp}/profile", "--remote-debugging-port=0",
+            "--remote-allow-origins=*", "about:blank",
+        ]  # fmt: skip
+        if os.geteuid() == 0 or not settings.capture_browser_sandbox:  # Chrome refuses its sandbox as root
+            argv.insert(1, "--no-sandbox")
+        proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.DEVNULL,
+                                                    stderr=asyncio.subprocess.PIPE,
+                                                    start_new_session=True)  # its own process group  # fmt: skip
+        screenshot = dom = None
+        version = os.path.basename(browser)
+        try:
+            ws_url = await _devtools_url(proc)
+            async with aiohttp.ClientSession() as local:  # loopback to our own browser only
+                ws = await local.ws_connect(ws_url, max_msg_size=64 * 1024 * 1024)
+                dt = _DevTools(ws)
+                try:
+                    version = (await dt.call("Browser.getVersion", page=False)).get("product", version)
                     try:
-                        version = (await dt.call("Browser.getVersion", page=False)).get("product", version)
-                        try:
-                            await dt.call("Browser.setDownloadBehavior", {"behavior": "deny"}, page=False)
-                        except CaptureError:
-                            notes.append("This browser cannot block downloads; none are kept in any case")
-                        target = await dt.call("Target.createTarget", {"url": "about:blank"}, page=False)
-                        attached = await dt.call("Target.attachToTarget", {"targetId": target["targetId"],
-                                                                           "flatten": True}, page=False)  # fmt: skip
-                        dt.session = attached["sessionId"]
-                        await dt.call("Page.enable")
-                        with contextlib.suppress(CaptureError):  # the default window size is an acceptable fallback
-                            await dt.call("Emulation.setDeviceMetricsOverride",
-                                          {"width": 1366, "height": 900, "deviceScaleFactor": 1, "mobile": False})  # fmt: skip
-                        await asyncio.wait_for(_load(dt, url, notes), BROWSER_TIMEOUT)
-                        metrics = await dt.call("Page.getLayoutMetrics")
-                        size = metrics.get("cssContentSize") or metrics.get("contentSize") or {}
-                        height = int(min(max(size.get("height", 900), 900), 16000))
-                        shot = await dt.call("Page.captureScreenshot", {
-                            "format": "png", "captureBeyondViewport": True,
-                            "clip": {"x": 0, "y": 0, "width": 1366, "height": height, "scale": 1}}, timeout=40)  # fmt: skip
-                        screenshot = base64.b64decode(shot.get("data", ""))
-                        if height == 16000:
-                            notes.append("The page is very long; the screenshot shows the first 16,000 pixels")
-                        result = await dt.call("Runtime.evaluate", {"expression": "document.documentElement.outerHTML",
-                                                                    "returnByValue": True})  # fmt: skip
-                        dom = str((result.get("result") or {}).get("value") or "").encode()
-                        with contextlib.suppress(CaptureError, asyncio.TimeoutError):
-                            await dt.call("Browser.close", page=False, timeout=5)
-                    finally:
-                        await dt.close()
-            except (CaptureError, asyncio.TimeoutError, aiohttp.ClientError, OSError, KeyError) as exc:
-                notes.append(f"The browser could not finish ({type(exc).__name__}: {str(exc)[:120]})")
-            finally:
-                _stop(proc)
-                await proc.wait()
-                _stop(proc)  # helpers (renderer, GPU, network) can outlive the main process
+                        await dt.call("Browser.setDownloadBehavior", {"behavior": "deny"}, page=False)
+                    except CaptureError:
+                        notes.append("This browser cannot block downloads; none are kept in any case")
+                    target = await dt.call("Target.createTarget", {"url": "about:blank"}, page=False)
+                    attached = await dt.call("Target.attachToTarget", {"targetId": target["targetId"],
+                                                                       "flatten": True}, page=False)  # fmt: skip
+                    dt.session = attached["sessionId"]
+                    await dt.call("Page.enable")
+                    for method, params in (("Emulation.setTimezoneOverride", {"timezoneId": "UTC"}),
+                                           ("Emulation.setLocaleOverride", {"locale": "en-US"})):  # fmt: skip
+                        with contextlib.suppress(CaptureError):  # nothing about the server's locale leaks
+                            await dt.call(method, params)
+                    with contextlib.suppress(CaptureError):  # the default window size is an acceptable fallback
+                        await dt.call("Emulation.setDeviceMetricsOverride",
+                                      {"width": 1366, "height": 900, "deviceScaleFactor": 1, "mobile": False})  # fmt: skip
+                    await asyncio.wait_for(_load(dt, url, notes), BROWSER_TIMEOUT)
+                    metrics = await dt.call("Page.getLayoutMetrics")
+                    size = metrics.get("cssContentSize") or metrics.get("contentSize") or {}
+                    height = int(min(max(size.get("height", 900), 900), 16000))
+                    shot = await dt.call("Page.captureScreenshot", {
+                        "format": "png", "captureBeyondViewport": True,
+                        "clip": {"x": 0, "y": 0, "width": 1366, "height": height, "scale": 1}}, timeout=40)  # fmt: skip
+                    screenshot = base64.b64decode(shot.get("data", ""))
+                    if height == 16000:
+                        notes.append("The page is very long; the screenshot shows the first 16,000 pixels")
+                    result = await dt.call("Runtime.evaluate", {"expression": "document.documentElement.outerHTML",
+                                                                "returnByValue": True})  # fmt: skip
+                    dom = str((result.get("result") or {}).get("value") or "").encode()
+                    with contextlib.suppress(CaptureError, asyncio.TimeoutError):
+                        await dt.call("Browser.close", page=False, timeout=5)
+                finally:
+                    await dt.close()
+        except (CaptureError, asyncio.TimeoutError, aiohttp.ClientError, OSError, KeyError) as exc:
+            notes.append(f"The browser could not finish ({type(exc).__name__}: {str(exc)[:120]})")
+        finally:
+            _stop(proc)
+            await proc.wait()
+            _stop(proc)  # helpers (renderer, GPU, network) can outlive the main process
     return {
         "screenshot": screenshot or None,
         "dom": dom if dom and dom.strip() else None,
@@ -454,10 +482,22 @@ def build(manifest_base: dict[str, Any], files: dict[str, tuple[str, bytes]]) ->
     return manifest, sha256(canonical(manifest))
 
 
-async def capture_url(url: str, settings: Settings) -> Capture:
+def route_record(route: EgressRoute | None) -> dict[str, Any]:
+    if route is None:
+        return {"name": "direct", "kind": "direct", "anonymous": False}
+    return {"name": route.name, "kind": route.kind, "anonymous": route.is_anonymous}
+
+
+async def capture_url(url: str, settings: Settings, route: EgressRoute | None = None) -> Capture:
+    """Capture ``url``; with a ``route`` every request (page, browser, assets) leaves through it."""
     url = check_url(url, allow_private=settings.allow_private_targets)
+    async with GuardProxy(allow_private=settings.allow_private_targets, upstream=route) as proxy:
+        return await _capture(url, settings, route, proxy)
+
+
+async def _capture(url: str, settings: Settings, route: EgressRoute | None, proxy: GuardProxy) -> Capture:
     captured_at = datetime.now(timezone.utc).isoformat()
-    page = await fetch(url, settings)
+    page = await fetch(url, settings, proxy)
     warnings: list[str] = []
     files: dict[str, tuple[str, bytes]] = {}
     media = (page["content_type"].split(";")[0].strip() or "application/octet-stream").lower()
@@ -470,7 +510,7 @@ async def capture_url(url: str, settings: Settings) -> Capture:
     browser_info: dict[str, Any] = {}
     browser = find_browser(settings)
     if browser and is_html:
-        rendered = await render(url, browser, settings)
+        rendered = await render(url, browser, settings, proxy)
         browser_info = {"browser": rendered["browser"], "blocked": rendered["blocked"]}
         warnings += rendered["notes"]
         if rendered["screenshot"]:
@@ -489,7 +529,7 @@ async def capture_url(url: str, settings: Settings) -> Capture:
         files["text.txt"] = ("text/plain", text.encode())
     manifest, digest = build({
         "kind": "web_capture", "url": url, "final_url": page["final_url"], "status": page["status"],
-        "title": title, "captured_at": captured_at, "method": "server", **browser_info,
+        "title": title, "captured_at": captured_at, "method": "server", "route": route_record(route), **browser_info,
     }, files)  # fmt: skip
     token = None
     try:

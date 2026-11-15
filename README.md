@@ -343,6 +343,15 @@ notes and scans. Restricted cases are invisible even to administrators.
 - Cases export as an evidence bundle anyone can verify
   ([`docs/explained/28-cases-and-evidence.md`](docs/explained/28-cases-and-evidence.md)).
 
+**Investigator safety**: the people you investigate can see every visit in their logs.
+
+- Captures and scans can go out through **Tor, a VPN or a proxy**, chosen per case, per capture
+  or per scan; a one-click test shows the address sites see and catches leaks.
+- **Anonymous cases** never touch their subjects directly: direct captures are refused and scans
+  are passive and routed.
+- Argus presents an ordinary browser, never its own name
+  ([`docs/explained/29-investigator-safety.md`](docs/explained/29-investigator-safety.md)).
+
 **Compliance mapping**: Argus's evidence mapped to **Cyber Essentials, ISO/IEC 27001:2022, NIST
 CSF 2.0 and DORA**.
 

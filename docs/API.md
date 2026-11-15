@@ -165,6 +165,24 @@ Other endpoints:
 
 Evidence files are served for download only (never rendered by Argus), except raster images.
 
+## Investigator safety (routes)
+
+```bash
+curl https://argus.example.com/api/opsec/routes -H "Authorization: Bearer $ARGUS_API_KEY"
+# {"routes": [{"name": "tor", "kind": "tor", "anonymous": true, "description": "Tor"}], ...}
+curl -X POST https://argus.example.com/api/opsec/routes/tor/check -H "Authorization: Bearer $ARGUS_API_KEY"
+# {"working": true, "exit_ip": "185.220.101.7", "is_tor": true, "direct_ip": "203.0.113.9",
+#  "hides_address": true, "error": null}
+```
+
+* Cases take `egress` (a route name, `""` for direct) and `opsec_mode` (`standard` or
+  `anonymous`). An anonymous case needs an anonymous route.
+* Captures take an optional `egress` (a route name or `direct`); by default the case's route.
+  In an anonymous case, a capture that would not hide the server is refused with `409`.
+* `POST /api/scan` takes `egress` and `case_id`. With a `case_id` the scan uses the case's route,
+  is linked to the case, and in an anonymous case is always passive. The reply says which
+  `route` was used and which modules were `skipped_for_route`.
+
 ## Compliance
 
 `GET /api/compliance` returns, for each framework (`cyber_essentials`, `iso27001`, `nist_csf`,

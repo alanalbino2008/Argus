@@ -35,7 +35,7 @@ import aiohttp
 
 from argus.core.events import Event, EventBus, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
-from argus.core.http import HttpClient
+from argus.core.http import NEUTRAL_USER_AGENT, HttpClient
 from argus.core.models import (
     Entity,
     Investigation,
@@ -44,6 +44,8 @@ from argus.core.models import (
     ScanConfig,
 )
 from argus.core.runctx import ModuleRunReport, current_run
+from argus.core.settings import EgressRoute
+from argus.evidence.guard_proxy import GuardProxy
 from argus.modules import get_default_modules
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.modules.base import BaseModule
@@ -90,7 +92,10 @@ class ArgusEngine:
         bus: EventBus | None = None,
         modules: dict[str, BaseModule] | None = None,
         session: aiohttp.ClientSession | None = None,
+        egress: EgressRoute | None = None,
     ):
+        """``egress``: an egress route (Tor, VPN or proxy) every request of this scan leaves through.
+        It is held here, never in ``config``, so its address and credentials are never stored."""
         self.investigation_id = investigation_id or f"inv_{uuid.uuid4().hex[:8]}"
         self.config = config
         self.bus = bus or event_bus
@@ -101,6 +106,11 @@ class ArgusEngine:
             self.modules = {name: mod for name, mod in self.modules.items() if name in config.enabled_modules}
         if config.passive_only:
             self.modules = {name: mod for name, mod in self.modules.items() if not mod.active}
+        self.egress = egress
+        self.skipped_for_route: list[str] = []
+        if egress is not None:  # raw-socket modules would bypass the route and reveal this server
+            self.skipped_for_route = sorted(n for n, m in self.modules.items() if m.direct_connections)
+            self.modules = {n: m for n, m in self.modules.items() if not m.direct_connections}
 
         self.investigation = Investigation(
             id=self.investigation_id,
@@ -160,8 +170,21 @@ class ArgusEngine:
         self._enqueue(seed)
 
         try:
+            for name in self.skipped_for_route:
+                self._add_warning(f"Module {name} was skipped: it connects directly, which the route cannot hide")
             if self._external_session is not None:
                 await self._run(self._external_session)
+            elif self.egress is not None:
+                # One guard proxy for the whole scan: it checks each destination and tunnels it
+                # through the route. Nothing is resolved or connected from here directly.
+                async with (
+                    GuardProxy(allow_private=self.config.allow_private_targets, upstream=self.egress) as proxy,
+                    aiohttp.ClientSession(
+                        connector=aiohttp.TCPConnector(limit=100, limit_per_host=self.config.per_host_concurrency),
+                        trust_env=False,
+                    ) as session,
+                ):
+                    await self._run(session, proxy=proxy.url)
             else:
                 resolver = (
                     None
@@ -203,7 +226,7 @@ class ArgusEngine:
         return self.graph
 
     # ---------------------------------------------------------------- internals
-    async def _run(self, session: aiohttp.ClientSession) -> None:
+    async def _run(self, session: aiohttp.ClientSession, proxy: str | None = None) -> None:
         self.http = HttpClient(
             session,
             max_retries=self.config.max_retries,
@@ -211,6 +234,8 @@ class ArgusEngine:
             per_host_concurrency=self.config.per_host_concurrency,
             global_concurrency=max(self.config.concurrency_limit * 4, 20),
             allow_private=self.config.allow_private_targets,
+            proxy=proxy,
+            user_agent=NEUTRAL_USER_AGENT if self.egress is not None else None,
         )
         for module in self.modules.values():  # third-party API quotas (e.g. VirusTotal: 4/minute)
             for host, interval in module.rate_limits.items():

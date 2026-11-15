@@ -88,6 +88,13 @@ secrets:
   smtpPassword: ""
   # If set, /metrics requires "Authorization: Bearer <token>" (the ServiceMonitor sends it).
   metricsToken: ""
+  # Investigator safety: routes that hide where captures and scans come from. Each is an HTTP
+  # CONNECT proxy, e.g. Tor's HTTPTunnelPort or a VPN provider's proxy. Kept in the Secret because
+  # a URL may carry credentials; investigators only ever see the name. If the route runs in the
+  # cluster, allow it under networkPolicy.internalEgress. See docs/DEPLOYMENT.md.
+  #   - {name: tor, kind: tor, url: "http://tor.argus.svc:9080", description: "Tor"}
+  #   - {name: vpn-de, kind: proxy, url: "http://user:pass@de.vpn.example:3128", anonymous: true}
+  egressRoutes: []
 
 # ---------------------------------------------------------------------------- application
 config:
@@ -98,6 +105,7 @@ config:
   # Breach and dark-web exposure: every replica runs the loop; each due check is claimed once.
   # Breached staff accounts and infostealer logs also need secrets.hibpApiKey (verified domains only).
   exposureMonitoring: true
+  egressCheckUrl: https://check.torproject.org/api/ip   # IP-echo service the route test asks
   ransomwareFeedUrl: https://api.ransomware.live/v2   # ransomware leak-site research feed; "" turns it off
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone

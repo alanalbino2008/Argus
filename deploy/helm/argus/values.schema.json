@@ -109,6 +109,43 @@
         },
         "smtpPassword": {
           "type": "string"
+        },
+        "egressRoutes": {
+          "type": "array",
+          "description": "Egress routes (Tor, VPN, proxy): HTTP CONNECT proxies",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "url"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+              },
+              "url": {
+                "type": "string",
+                "pattern": "^http://"
+              },
+              "kind": {
+                "enum": [
+                  "tor",
+                  "proxy"
+                ]
+              },
+              "anonymous": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     },
@@ -178,6 +215,9 @@
         "ransomwareFeedUrl": {
           "type": "string",
           "pattern": "^(https://.+)?$"
+        },
+        "egressCheckUrl": {
+          "type": "string"
         }
       }
     },

@@ -546,6 +546,8 @@ class CaseRow(Base):
     restricted: Mapped[bool] = mapped_column(Boolean, default=False)  # only the owner and members can open it
     members: Mapped[list[str]] = mapped_column(JSON)
     tags: Mapped[list[str]] = mapped_column(JSON)
+    egress: Mapped[str] = mapped_column(String(32), default="", server_default="")  # route name; "" is direct
+    opsec_mode: Mapped[str] = mapped_column(String(16), default="standard", server_default="standard")  # | anonymous
     created_by: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

@@ -10,6 +10,7 @@ let pendingLogo; // undefined = keep, "" = remove, "data:..." = replace
 let logoUrl = null;
 
 let root;
+const checks = {}; // route name -> result of its last test
 let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null, members: null };
 
 export function initSettings(el) {
@@ -21,6 +22,17 @@ export function initSettings(el) {
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     try {
+      if (act === "route-check") {
+        btn.disabled = true;
+        btn.textContent = "Testing…";
+        try {
+          checks[id] = await api.post(`/api/opsec/routes/${enc(id)}/check`);
+        } finally {
+          btn.disabled = false;
+        }
+        render();
+        return;
+      }
       if (act === "brand-logo-remove") {
         pendingLogo = "";
         setHTML($("#brand-logo-preview"), html`<span class="muted small">Logo will be removed when you save</span>`);
@@ -159,9 +171,10 @@ export async function refresh() {
     platform ? api.get("/api/users").catch(() => null) : null,
     wsAdmin && ws ? api.get(`/api/workspaces/${ws}/members`).catch(() => null) : null,
     wsAdmin ? api.get("/api/reports/branding").catch(() => null) : null,
+    api.get("/api/opsec/routes").catch(() => null),
   ];
-  const [health, keys, audit, plugins, users, members, branding] = await Promise.all(tasks);
-  data = { ...data, health, keys, audit, plugins, users, members, branding };
+  const [health, keys, audit, plugins, users, members, branding, opsec] = await Promise.all(tasks);
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -229,6 +242,32 @@ print(argus.rating(done["id"])["grade"])`;
       <div><div class="section-title">Python (clients/python)</div>${snippet(python, "the Python example")}</div>
     </div>
     <p class="muted small" style="margin-top:12px">${ico("info")} To open Jira issues or ServiceNow incidents for alerts, or stream events to Splunk or Microsoft Sentinel, add them as destinations under <a href="#" data-goto="monitoring">Monitoring → Notifications</a>.</p>
+  </div>`;
+}
+
+function checkResult(c) {
+  if (!c) return "";
+  if (!c.working) return html`<div class="callout warn" style="margin-top:6px">${ico("alert")}<span>${c.error}</span></div>`;
+  const facts = html`Sites see <b class="mono">${c.exit_ip}</b>${c.direct_ip ? html` instead of this server's <span class="mono">${c.direct_ip}</span>` : ""}${c.is_tor === true ? " · confirmed Tor exit" : ""}`;
+  return c.error ? html`<div class="callout warn" style="margin-top:6px">${ico("alert")}<span>${c.error}. ${facts}</span></div>`
+    : html`<div class="callout safe" style="margin-top:6px">${ico("check")}<span>Working and hiding this server. ${facts}</span></div>`;
+}
+
+function safetyCard() {
+  const o = data.opsec;
+  if (!o) return "";
+  const canTest = ["analyst", "admin"].includes(state.workspace?.role);
+  const kind = { tor: "Tor", proxy: "Proxy / VPN" };
+  return html`<div class="card card-pad" style="margin-top:16px" id="safety-card">
+    <div class="card-head"><div><h2>Investigator safety</h2><p class="muted small">The people you investigate can see every visit in their logs. Routes send captures and scans through Tor, a VPN or a proxy so they never see this server's address. Choose a route per case (or per capture and scan); make a case <b>anonymous</b> so nothing in it touches its subjects directly.</p></div></div>
+    ${o.routes.length ? html`<div class="list">${o.routes.map((r) => html`<div class="list-row" style="flex-wrap:wrap">
+        <span class="pill ${r.anonymous ? "ok" : ""}">${kind[r.kind] || r.kind}</span>
+        <div class="list-main"><div class="list-title">${r.name}${r.anonymous ? " · anonymous" : ""}</div><div class="list-sub">${r.description || (r.kind === "tor" ? "The Tor network: sites see a Tor exit, and neither they nor the exit learn who you are" : "A proxy or VPN: sites see its address; whoever runs it can see what is visited")}</div>
+          ${checkResult(checks[r.name])}</div>
+        ${canTest ? html`<button class="btn sm" data-act="route-check" data-id="${r.name}">${ico("check")}Test</button>` : ""}</div>`)}</div>
+      <p class="muted small" style="margin-top:10px">${ico("info")} Test asks <span class="mono">${o.check_url}</span> who is calling, through the route and directly, and warns if the route leaks this server's address.</p>`
+    : html`<p class="muted small">No routes are set up, so captures and scans connect directly. An administrator can add Tor or a VPN with <code>ARGUS_EGRESS_ROUTES</code> (see the deployment guide).</p>`}
+    <p class="muted small" style="margin-top:8px">Captures and routed scans always present an ordinary browser (Chrome on Windows, US English, UTC), never "Argus".</p>
   </div>`;
 }
 
@@ -368,6 +407,7 @@ function render() {
       </div>
     </div>
     ${workspacesCard()}
+    ${safetyCard()}
     ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}

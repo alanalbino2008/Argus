@@ -195,6 +195,33 @@ and the capture says so.
 * Evidence is stored in the database. Back it up like any other case material, and size the
   database for screenshots (typically 0.2–3 MB per capture).
 
+### Investigator safety (Tor, VPN, proxy routes)
+
+The people being investigated can see every request in their logs. Routes send captures and
+scans through Tor, a VPN or a proxy instead. A route is any **HTTP CONNECT proxy**:
+
+```bash
+ARGUS_EGRESS_ROUTES='[
+  {"name": "tor", "kind": "tor", "url": "http://127.0.0.1:9080", "description": "Tor"},
+  {"name": "vpn-de", "url": "http://user:pass@de.vpn.example:3128", "anonymous": true}
+]'
+```
+
+* **Tor**: run Tor next to Argus with `HTTPTunnelPort 9080` in its `torrc` (Tor 0.3.2 or newer),
+  for example as a sidecar container. Tor routes are anonymous by default, and host names are
+  passed to Tor unresolved.
+* **VPN or proxy** (`kind` `proxy`, the default): set `"anonymous": true` only if whoever runs it
+  is trusted not to reveal who uses it.
+* Route URLs may carry credentials: keep the variable in a secret. In Kubernetes set
+  `secrets.egressRoutes`; if the route runs in the cluster, allow it under
+  `networkPolicy.internalEgress`.
+* `ARGUS_EGRESS_CHECK_URL` (default `https://check.torproject.org/api/ip`) is the IP-echo service
+  the route test asks. Any service that answers with the caller's address, as JSON (`IP`, `ip`
+  or `origin`) or plain text, works.
+* Routes carry web traffic. DNS lookups by scan modules still use the server's normal resolver:
+  the subject's name servers see the **resolver's** address. Point the server at a shared public
+  resolver (not one running on the server itself) so that address says nothing about you.
+
 ### Remediation
 
 Remediation needs no setup. Its clock (overdue alerts, expiring risk acceptances) runs on every

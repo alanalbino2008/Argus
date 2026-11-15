@@ -154,6 +154,11 @@
           <label class="label" for="new-purpose">Purpose / engagement reference</label>
           <textarea id="new-purpose" class="textarea" maxlength="500" placeholder="e.g. Bug bounty programme ACME (report #1234) · CTF · our own infrastructure"></textarea>
         </div>
+        <div class="field" id="new-egress-field" hidden>
+          <label class="label" for="new-egress">Route <span class="tip-icon" tabindex="0" data-tip="Tor, a VPN or a proxy hides this server's address from the target. Direct connections can be seen in the target's logs.">?</span></label>
+          <select id="new-egress" class="select"></select>
+          <p class="muted small" id="new-egress-note" style="margin-top:6px"></p>
+        </div>
         <div class="field">
           <label class="check"><input type="checkbox" id="new-passive"> <span><b>Passive only</b> — never contact the target's own systems (use public sources only; required by some bug bounty programmes)</span></label>
         </div>
@@ -306,6 +311,8 @@
         <div class="field"><label class="label" for="case-tags">Tags <span class="muted small">optional</span></label><input id="case-tags" class="input" placeholder="fraud, charity"></div>
         <label class="check"><input type="checkbox" id="case-restricted"> <span>Restricted: only me and the people below can open it (not even admins)</span></label>
         <div class="field"><label class="label" for="case-members">Members <span class="muted small">for restricted cases</span></label><input id="case-members" class="input" placeholder="name of a colleague's key or account, comma-separated"></div>
+        <div class="field"><label class="label" for="case-egress">Route <span class="muted small">how its captures and scans reach the internet</span></label><select id="case-egress" class="select"></select></div>
+        <label class="check"><input type="checkbox" id="case-anonymous"> <span><b>Anonymous</b>: never touch the subjects directly. Captures must use an anonymous route and scans are passive.</span></label>
         <label class="check"><input type="checkbox" id="case-confirmed"> <span>There is a legitimate purpose for this investigation.</span></label>
         <div class="error-text" role="alert"></div>
       </div>
@@ -314,14 +321,29 @@
   </div>
   <div id="capture-modal" class="modal-root" aria-hidden="true">
     <form class="modal" role="dialog" aria-labelledby="capture-modal-h" id="capture-form" novalidate>
-      <div class="modal-head"><div><h2 id="capture-modal-h">Capture a page</h2><p>Argus fetches the page from its server, takes a full-page screenshot, keeps the response and the text, and fingerprints everything. The page cannot see who you are.</p></div>
+      <div class="modal-head"><div><h2 id="capture-modal-h">Capture a page</h2><p>Argus fetches the page from its server, takes a full-page screenshot, keeps the response and the text, and fingerprints everything. The page never sees your own device, and Argus identifies itself as an ordinary browser.</p></div>
         <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
       <div class="modal-body">
         <div class="field"><label class="label" for="capture-url">Address</label><input id="capture-url" class="input mono" type="url" placeholder="https://example.com/post/123" autocomplete="off" spellcheck="false"></div>
         <div class="field"><label class="label" for="capture-note">Note <span class="muted small">optional</span></label><input id="capture-note" class="input" maxlength="1000" placeholder="Why this page matters"></div>
+        <div class="field"><label class="label" for="capture-egress">Route</label><select id="capture-egress" class="select"></select></div>
+        <p class="callout warn small" id="capture-warning" hidden></p>
         <div class="error-text" role="alert"></div>
       </div>
       <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Capture now</button></div>
+    </form>
+  </div>
+  <div id="safety-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="safety-modal-h" id="safety-form" novalidate>
+      <div class="modal-head"><div><h2 id="safety-modal-h">Investigator safety</h2><p>How this case's captures and scans reach the internet. The people you investigate can see every visit in their logs: a route hides where it comes from.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="safety-egress">Route</label><select id="safety-egress" class="select"></select></div>
+        <label class="check"><input type="checkbox" id="safety-anonymous"> <span><b>Anonymous</b>: never touch the subjects directly. Captures must use an anonymous route (such as Tor), and scans for this case are passive and routed.</span></label>
+        <p class="callout warn small" id="safety-warning" hidden></p>
+        <div class="error-text" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Save</button></div>
     </form>
   </div>
   <div id="upload-modal" class="modal-root" aria-hidden="true">

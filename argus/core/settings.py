@@ -12,9 +12,37 @@ import os
 import socket
 from functools import lru_cache
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class EgressRoute(BaseModel):
+    """A way out to the internet that hides where an investigator is (Tor, a VPN or proxy).
+
+    ``url`` is an HTTP CONNECT proxy, e.g. Tor's ``HTTPTunnelPort`` (``http://127.0.0.1:9080``) or
+    ``http://user:password@vpn-gateway:3128``. Only the name, kind and description are ever shown
+    to users; the address and credentials stay with the operator.
+    """
+
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,31}$")
+    url: str
+    kind: Literal["tor", "proxy"] = "proxy"
+    anonymous: bool | None = None  # default: True for Tor, False for proxies (which may know who you are)
+    description: str = ""
+
+    @field_validator("url")
+    @classmethod
+    def _connect_proxy(cls, url: str) -> str:
+        parts = urlsplit(url)
+        if parts.scheme != "http" or not parts.hostname or not parts.port:
+            raise ValueError("an egress route is an HTTP CONNECT proxy: http://host:port")
+        return url
+
+    @property
+    def is_anonymous(self) -> bool:
+        return self.kind == "tor" if self.anonymous is None else self.anonymous
 
 
 class Settings(BaseSettings):
@@ -56,6 +84,15 @@ class Settings(BaseSettings):
     exposure_monitoring_enabled: bool = Field(default=True, description="Run the breach and dark-web exposure loop")
     exposure_poll_seconds: float = Field(
         default=300.0, gt=0, description="How often due exposure checks are looked for"
+    )
+    egress_routes: list[EgressRoute] = Field(
+        default_factory=list,
+        description='Routes that hide where investigations come from, e.g. [{"name": "tor", '
+        '"url": "http://127.0.0.1:9080", "kind": "tor"}]',
+    )
+    egress_check_url: str = Field(
+        default="https://check.torproject.org/api/ip",
+        description="Returns the caller's address (and whether it is Tor) to test a route",
     )
     capture_browser: str = Field(
         default="auto",

@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.29.0] — Phase 29: Investigator safety
+
+### Added
+- **Egress routes** (`ARGUS_EGRESS_ROUTES`): Tor, a VPN or any HTTP CONNECT proxy that captures
+  and scans leave through, so the people being investigated never see this server's address.
+  Investigators see only a route's name, kind and description, never its address or
+  credentials; a route is never stored with a scan.
+- **Per-case safety** (migration `0016`): each case has a route, and can be made **anonymous**:
+  - captures in an anonymous case must use an anonymous route (Tor, or one the operator marks
+    anonymous); a direct capture is refused with `409` before anything is sent;
+  - scans started for the case are routed, passive, and linked to the case automatically.
+- A route can be chosen per capture and per scan (`egress`), and is recorded in each capture's
+  manifest.
+- **Route test** (`POST /api/opsec/routes/{name}/check`): asks an IP-echo service who is calling,
+  through the route and directly, and warns if the route leaks this server's address or a Tor
+  route does not exit through Tor.
+- Settings → **Investigator safety**; route and anonymous badges on cases; a warning before any
+  direct capture; a route choice when starting a scan.
+- Python client: `routes()`, `check_route()`, and `egress` / `anonymous` on `create_case()` and
+  `capture()`.
+- Helm chart 0.19.0: `secrets.egressRoutes` (kept in the Secret) and `config.egressCheckUrl`.
+- `docs/explained/29-investigator-safety.md`.
+
+### Security
+- Captures no longer identify themselves: the page fetch and the browser present an ordinary
+  Chrome on Windows, US English, UTC timezone and locale (previously "Argus-Capture"). Routed
+  scans replace every User-Agent, including modules' own.
+- Tor routes never resolve names locally, so the local DNS resolver learns nothing about what
+  is visited. Private and internal destinations are still refused before reaching the route.
+- WebRTC is restricted to proxied connections and DNS prefetching is off in the capture browser,
+  so a page cannot discover the server's real address around the route.
+- Modules that open their own connections (TLS analysis) are skipped on routed scans, with a
+  warning, because they cannot go through the route.
+- A route that is down fails the capture or request; nothing falls back to a direct connection.
+
 ## [1.28.0] — Phase 28: Cases & evidence capture
 
 ### Added

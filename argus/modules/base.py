@@ -28,6 +28,9 @@ class BaseModule(ABC):
     # True if the module connects to the *target's own* infrastructure (not just third-party
     # databases). Matters for engagements that only permit passive reconnaissance.
     active: ClassVar[bool] = False
+    # True if the module opens its own network connections (raw sockets) instead of using the shared
+    # HTTP client. Such connections cannot go through an egress route, so routed scans skip it.
+    direct_connections: ClassVar[bool] = False
     # Settings (attributes of argus.core.settings.Settings, e.g. "virustotal_api_key") that must be
     # set for the module to run. Modules with missing settings are not loaded.
     requires_settings: ClassVar[tuple[str, ...]] = ()

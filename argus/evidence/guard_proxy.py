@@ -16,20 +16,28 @@ the proxy:
 
 It speaks the two forms browsers use: ``CONNECT host:443`` for HTTPS (the TLS stays end-to-end
 between browser and site) and absolute-URI requests for plain HTTP.
+
+**Routes.** With an ``upstream`` (Tor, a VPN or proxy: see :class:`EgressRoute`) every connection
+is tunnelled through it with ``CONNECT``, so the sites visited see the route's exit, never this
+server. For Tor the host name is passed through unresolved, so no DNS query leaves this server.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import logging
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
-from argus.security.network import BlockedDestinationError, resolve_public
+from argus.core.settings import EgressRoute
+from argus.security.network import BlockedDestinationError, assert_public_host, resolve_public
 
 logger = logging.getLogger("argus.evidence.proxy")
 IDLE_TIMEOUT = 30.0
+REFUSED_HEADER = "X-Argus-Refused"  # marks the guard's own refusals, so they are never mistaken for a site's
+ROUTE_FAILED_HEADER = "X-Argus-Route-Failed"
 MAX_HEADER = 64 * 1024
 
 
@@ -37,14 +45,47 @@ MAX_HEADER = 64 * 1024
 class ProxyLog:
     allowed: list[str] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+
+
+class UpstreamError(Exception):
+    """The egress route (Tor, VPN proxy) refused or failed the connection."""
+
+
+async def tunnel(route: EgressRoute, host: str, port: int) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """Open a CONNECT tunnel to ``host:port`` through ``route``. The host name travels unresolved."""
+    parts = urlsplit(route.url)
+    reader, writer = await asyncio.wait_for(asyncio.open_connection(parts.hostname, parts.port), IDLE_TIMEOUT)
+    target = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    lines = [f"CONNECT {target} HTTP/1.1", f"Host: {target}"]
+    if parts.username:
+        token = base64.b64encode(f"{unquote(parts.username)}:{unquote(parts.password or '')}".encode()).decode()
+        lines.append(f"Proxy-Authorization: Basic {token}")
+    writer.write(("\r\n".join(lines) + "\r\n\r\n").encode("latin-1"))
+    await writer.drain()
+    try:
+        head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), IDLE_TIMEOUT)
+    except (asyncio.IncompleteReadError, asyncio.LimitOverrunError) as exc:
+        writer.close()
+        raise UpstreamError(f"route {route.name} closed the connection") from exc
+    status = head.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+    if " 200" not in status[:13]:
+        writer.close()
+        raise UpstreamError(f"route {route.name} answered {status[:60]}")
+    return reader, writer
 
 
 class GuardProxy:
-    def __init__(self, *, allow_private: bool = False):
+    def __init__(self, *, allow_private: bool = False, upstream: EgressRoute | None = None):
         self.allow_private = allow_private
+        self.upstream = upstream
         self.log = ProxyLog()
         self._server: asyncio.base_events.Server | None = None
         self.port = 0
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
 
     async def __aenter__(self) -> GuardProxy:
         self._server = await asyncio.start_server(self._handle, "127.0.0.1", 0)
@@ -56,6 +97,31 @@ class GuardProxy:
             self._server.close()
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(self._server.wait_closed(), 2)
+
+    async def _connect(self, host: str, port: int) -> tuple[asyncio.StreamReader, asyncio.StreamWriter] | None:
+        """A connection to ``host:port`` by the allowed route, or None if the destination is refused.
+
+        * **Direct**: resolve here, keep public addresses only, connect to the address checked.
+        * **Tor**: never resolve here (that would leak which sites are visited to the local DNS
+          resolver); refuse private IP literals and internal names, and let the exit resolve. The
+          exit is outside this network, so it cannot reach internal services anyway.
+        * **Other proxies**: may sit *inside* the network, so the destination is checked here
+          first, then reached through the proxy by name.
+        """
+        if self.upstream is None:
+            address = await self._address(host, port)
+            if address is None:
+                return None
+            return await asyncio.wait_for(asyncio.open_connection(address, port), IDLE_TIMEOUT)
+        if not self.allow_private:
+            try:
+                if self.upstream.kind == "tor":
+                    assert_public_host(host)
+                else:
+                    await resolve_public(host, port)
+            except (BlockedDestinationError, OSError):
+                return None
+        return await tunnel(self.upstream, host, port)
 
     async def _address(self, host: str, port: int) -> str | None:
         if self.allow_private:
@@ -97,16 +163,18 @@ class GuardProxy:
             headers = [h for h in rest.split(b"\r\n") if h and not h.lower().startswith((b"proxy-", b"connection:"))]
             preface = f"{method} {path} {version}\r\n".encode("latin-1") + b"\r\n".join(
                 [*headers, b"Connection: close"]) + b"\r\n\r\n"  # fmt: skip
-        address = await self._address(host, port)
-        if address is None:
+        try:
+            connection = await self._connect(host, port)
+        except (OSError, asyncio.TimeoutError, UpstreamError) as exc:
+            self.log.failed.append(f"{host}:{port}: {exc}"[:200])
+            await self._reply(writer, b"HTTP/1.1 502 Bad Gateway\r\n" + ROUTE_FAILED_HEADER.encode() + b": 1\r\n"
+                              b"Content-Length: 0\r\nConnection: close\r\n\r\n")  # fmt: skip
+            return
+        if connection is None:
             self.log.blocked.append(f"{host}:{port}")
             await self._refuse(writer, f"{host}:{port}")
             return
-        try:
-            up_reader, up_writer = await asyncio.wait_for(asyncio.open_connection(address, port), IDLE_TIMEOUT)
-        except (OSError, asyncio.TimeoutError):
-            await self._reply(writer, b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
-            return
+        up_reader, up_writer = connection
         self.log.allowed.append(f"{host}:{port}")
         if method.upper() == "CONNECT":
             writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
@@ -132,7 +200,8 @@ class GuardProxy:
 
     async def _refuse(self, writer: asyncio.StreamWriter, what: str) -> None:
         logger.info("Capture proxy refused %s", what)
-        await self._reply(writer, b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        await self._reply(writer, b"HTTP/1.1 403 Forbidden\r\n" + REFUSED_HEADER.encode() + b": 1\r\n"
+                          b"Content-Length: 0\r\nConnection: close\r\n\r\n")  # fmt: skip
 
     async def _reply(self, writer: asyncio.StreamWriter, data: bytes) -> None:
         with contextlib.suppress(Exception):
