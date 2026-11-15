@@ -39,9 +39,9 @@ REFRESH_EVERY = timedelta(days=1)
 FULL_STATUSES = {"trialing", "active", "past_due"}  # past_due: the payment is being retried; keep working
 
 PLANS: dict[str, dict[str, Any]] = {
-    "trial": {"label": "Free trial", "max_devices": 1},
-    "personal": {"label": "Personal", "max_devices": 2},
-    "professional": {"label": "Professional", "max_devices": 3},
+    "trial": {"label": "Free trial", "max_devices": 1, "monthly_credits": 50},
+    "personal": {"label": "Personal", "max_devices": 2, "monthly_credits": 500},
+    "professional": {"label": "Professional", "max_devices": 3, "monthly_credits": 2000},
 }
 STATUSES = ("trialing", "active", "past_due", "cancelled", "suspended")
 

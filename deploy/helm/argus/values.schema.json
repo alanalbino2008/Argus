@@ -149,6 +149,9 @@
         },
         "licenceSigningKey": {
           "type": "string"
+        },
+        "companiesHouseApiKey": {
+          "type": "string"
         }
       }
     },
@@ -256,6 +259,15 @@
           }
         },
         "sanctionsSdnUrl": {
+          "type": "string"
+        },
+        "ukSanctionsUrl": {
+          "type": "string"
+        },
+        "unSanctionsUrl": {
+          "type": "string"
+        },
+        "secUserAgent": {
           "type": "string"
         }
       }

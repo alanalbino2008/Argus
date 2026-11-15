@@ -28,13 +28,19 @@ def _no_live_username_catalog(monkeypatch):
     from argus.modules.identity import catalog
 
     monkeypatch.setenv("ARGUS_USERNAME_CATALOG_URL", "")
-    monkeypatch.setenv("ARGUS_SANCTIONS_SDN_URL", "")  # nor the sanctions list
+    monkeypatch.setenv("ARGUS_SANCTIONS_SDN_URL", "")  # nor the sanctions lists
+    monkeypatch.setenv("ARGUS_UK_SANCTIONS_URL", "")
+    monkeypatch.setenv("ARGUS_UN_SANCTIONS_URL", "")
     get_settings.cache_clear()
     catalog.reset()
+    from argus.intel import watchlists
+
     sanctions.reset()
+    watchlists.reset()
     yield
     catalog.reset()
     sanctions.reset()
+    watchlists.reset()
     get_settings.cache_clear()
 
 

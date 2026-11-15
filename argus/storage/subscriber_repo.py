@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from argus.accounts.licence import PLANS
-from argus.storage.db import AppStateRow, Database, SubscriberAccountRow, SubscriberDeviceRow
+from argus.storage.db import AppStateRow, CreditLedgerRow, Database, SubscriberAccountRow, SubscriberDeviceRow
 
 LOCK_AFTER = 5  # failed sign-ins in a row
 LOCK_FOR = timedelta(minutes=15)
@@ -163,6 +163,96 @@ class SubscriberRepository:
                 return False
             row.revoked = True
         return True
+
+
+def _month(now: datetime | None = None) -> str:
+    return (now or _now()).strftime("%Y-%m")
+
+
+def monthly_allowance(plan: str) -> int:
+    return int(PLANS.get(plan, {}).get("monthly_credits", 0))
+
+
+def _roll(row: SubscriberAccountRow, s: Any, now: datetime | None = None) -> None:
+    """A new month: the plan's allowance is renewed (unused allowance does not carry over)."""
+    month = _month(now)
+    if row.allowance_month != month:
+        row.allowance_month, row.allowance_remaining = month, monthly_allowance(row.plan)
+        s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=row.id, kind="allowance",
+                              delta=row.allowance_remaining, balance_after=row.allowance_remaining + row.purchased_credits,
+                              detail=f"monthly allowance {month}", created_at=_now()))  # fmt: skip
+
+
+def _balance(row: SubscriberAccountRow) -> dict[str, Any]:
+    return {"allowance": monthly_allowance(row.plan), "allowance_remaining": row.allowance_remaining,
+            "purchased": row.purchased_credits, "available": row.allowance_remaining + row.purchased_credits,
+            "month": row.allowance_month}  # fmt: skip
+
+
+class CreditRepository:
+    """Argus credits: spend the monthly allowance first, then purchased credits (which never expire)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def balance(self, account_id: str, now: datetime | None = None) -> dict[str, Any] | None:
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id, with_for_update=True)
+            if row is None:
+                return None
+            _roll(row, s, now)
+            return _balance(row)
+
+    async def charge(
+        self, account_id: str, amount: int, detail: str, now: datetime | None = None
+    ) -> dict[str, Any] | None:
+        """Take ``amount`` credits, atomically; None (nothing taken) if there are not enough."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id, with_for_update=True)  # one charge at a time
+            if row is None:
+                return None
+            _roll(row, s, now)
+            if row.allowance_remaining + row.purchased_credits < amount:
+                return None
+            from_allowance = min(amount, row.allowance_remaining)
+            row.allowance_remaining -= from_allowance
+            row.purchased_credits -= amount - from_allowance
+            s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="usage", delta=-amount,
+                                  balance_after=row.allowance_remaining + row.purchased_credits, detail=detail[:255],
+                                  created_at=_now()))  # fmt: skip
+            return {**_balance(row), "charged": amount, "from_allowance": from_allowance}
+
+    async def refund(self, account_id: str, charge: dict[str, Any], detail: str) -> None:
+        """Give back a charge whose lookup failed, to where it came from."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id, with_for_update=True)
+            if row is None:
+                return
+            row.allowance_remaining += charge["from_allowance"]
+            row.purchased_credits += charge["charged"] - charge["from_allowance"]
+            s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="refund",
+                                  delta=charge["charged"], balance_after=row.allowance_remaining + row.purchased_credits,
+                                  detail=detail[:255], created_at=_now()))  # fmt: skip
+
+    async def add(self, account_id: str, amount: int, *, kind: str, detail: str) -> dict[str, Any] | None:
+        """Purchased credits (or an adjustment, which may be negative but never below zero)."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id, with_for_update=True)
+            if row is None:
+                return None
+            _roll(row, s)
+            row.purchased_credits = max(0, row.purchased_credits + amount)
+            s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind=kind, delta=amount,
+                                  balance_after=row.allowance_remaining + row.purchased_credits, detail=detail[:255],
+                                  created_at=_now()))  # fmt: skip
+            return _balance(row)
+
+    async def ledger(self, account_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(CreditLedgerRow).where(CreditLedgerRow.account_id == account_id)
+                                    .order_by(CreditLedgerRow.created_at.desc()).limit(limit))).all()  # fmt: skip
+        return [{"kind": r.kind, "delta": r.delta, "balance_after": r.balance_after, "detail": r.detail,
+                 "at": _iso(r.created_at)} for r in rows]  # fmt: skip
 
 
 class AppStateRepository:

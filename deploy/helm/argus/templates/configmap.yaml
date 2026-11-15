@@ -19,6 +19,9 @@ data:
   ARGUS_BITCOIN_API_URL: {{ .Values.config.bitcoinApiUrl | quote }}
   ARGUS_EVM_CHAINS: {{ .Values.config.evmChains | toJson | quote }}
   ARGUS_SANCTIONS_SDN_URL: {{ .Values.config.sanctionsSdnUrl | quote }}
+  ARGUS_UK_SANCTIONS_URL: {{ .Values.config.ukSanctionsUrl | quote }}
+  ARGUS_UN_SANCTIONS_URL: {{ .Values.config.unSanctionsUrl | quote }}
+  ARGUS_SEC_USER_AGENT: {{ .Values.config.secUserAgent | quote }}
   ARGUS_ACCOUNT_SERVICE_ENABLED: {{ .Values.config.accountService | quote }}
   ARGUS_ACCOUNT_SIGNUP_ENABLED: {{ .Values.config.accountSignup | quote }}
   ARGUS_TRIAL_DAYS: {{ .Values.config.trialDays | quote }}

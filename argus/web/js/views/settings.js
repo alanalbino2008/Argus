@@ -181,7 +181,8 @@ export async function refresh() {
     fetch("/api/personal/status").then((r) => (r.ok ? r.json() : null)).catch(() => null),
   ];
   const [health, keys, audit, plugins, users, members, branding, opsec, personal] = await Promise.all(tasks);
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal };
+  const credits = personal?.signed_in ? await api.get("/api/personal/credits").catch(() => null) : null;
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -322,6 +323,11 @@ function subscriptionCard() {
       <dt>Last renewed</dt><dd>${p.renewed_at ? timeAgo(p.renewed_at) : "—"}${p.renewal_problem ? html` <span class="muted small">(${p.renewal_problem})</span>` : ""}</dd>
       <dt>Works offline until</dt><dd>${p.offline_until ? formatDate(p.offline_until) : "—"}</dd>
       <dt>Account service</dt><dd class="mono small">${p.account_service || "not configured"}</dd></dl>
+    ${data.credits ? html`<div class="section-title" style="margin-top:14px">Argus credits</div>
+      <p class="muted small">Premium sources (such as UK Companies House) are included through Argus Connect: no accounts or API keys of your own needed. Each lookup uses credits; this month's allowance renews on the 1st, and purchased credits never expire.</p>
+      <dl class="kv"><dt>Available</dt><dd><b>${data.credits.credits.available}</b> credits</dd><dt>This month</dt><dd>${data.credits.credits.allowance_remaining} of ${data.credits.credits.allowance} left</dd><dt>Purchased</dt><dd>${data.credits.credits.purchased}</dd>
+        ${Object.values(data.credits.prices).map((p) => html`<dt>${p.label}</dt><dd>${Object.values(p.lookups)[0]} credit per lookup</dd>`)}</dl>
+      <p class="muted small" style="margin-top:6px">A brokered lookup tells the Argus account service what was looked up (a company number or name). To keep even that private, set your own key for the source; lookups then go directly and cost no credits.</p>` : ""}
     <p class="muted small" style="margin-top:10px">If a subscription ends, nothing is lost: your cases stay readable, verifiable and exportable, and only new work waits until it is renewed.</p>
   </div>`;
 }

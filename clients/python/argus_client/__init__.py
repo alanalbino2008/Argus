@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.34.0"
+__version__ = "1.35.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -344,6 +344,12 @@ class ArgusClient:
     def set_subscription(self, account_id: str, **changes: Any) -> dict[str, Any]:
         """Account service: change plan, status or valid_until, e.g. from a payment provider's webhook handler."""
         return self.patch(f"/api/accounts/{account_id}", changes)
+
+    def add_credits(self, account_id: str, amount: int, *, detail: str = "") -> dict[str, Any]:
+        """Account service: add purchased Argus credits (e.g. from a payment provider's webhook handler)."""
+        return self.post(
+            f"/api/accounts/{account_id}/credits", {"amount": amount, "kind": "purchase", "detail": detail}
+        )
 
     def verify_evidence(self, capture_id: str) -> dict[str, Any]:
         return self.post(f"/api/evidence/{capture_id}/verify")

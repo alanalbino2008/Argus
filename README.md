@@ -386,6 +386,18 @@ the addresses published on a website) and it follows the money.
   data, no API keys
   ([`docs/explained/34-crypto-investigations.md`](docs/explained/34-crypto-investigations.md)).
 
+**Companies, sanctions and leaks**: investigate a company or a person by name.
+
+- **UK Companies House**: directors, the people who really control a company, and every other
+  company each director runs.
+- **The global LEI register**: legal identity and parent companies up to the ultimate owner.
+- **SEC filings** for US-listed companies.
+- **US, UK and UN sanctions lists**, matched by name with a score. Argus points out when the date
+  of birth or nationality shows it is probably a different person.
+- **ICIJ Offshore Leaks** (Panama, Paradise and Pandora Papers).
+- Premium sources come through **Argus Connect**: no keys needed, paid for in **Argus credits**
+  ([`docs/explained/35-companies-sanctions-and-credits.md`](docs/explained/35-companies-sanctions-and-credits.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

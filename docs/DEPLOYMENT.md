@@ -220,6 +220,31 @@ All sources are free and need no keys:
   for offline installs.
 * `ARGUS_CRYPTO_COUNTERPARTIES` (default 12): counterparties kept per wallet.
 
+### Companies, sanctions and leaks
+
+Free sources, no keys:
+* GLEIF (`ARGUS_GLEIF_URL`) and the ICIJ Offshore Leaks Database (`ARGUS_OFFSHORE_LEAKS_URL`).
+  Offshore Leaks data is under the Open Database Licence: results credit ICIJ.
+* Sanctions lists: `ARGUS_SANCTIONS_SDN_URL` and `ARGUS_SANCTIONS_ALT_URL` (US),
+  `ARGUS_UK_SANCTIONS_URL` and `ARGUS_UN_SANCTIONS_URL`, cached daily. For offline installs, a
+  saved-copy folder `ARGUS_SANCTIONS_FILE` holding `sdn.csv`, `alt.csv`,
+  `UK-Sanctions-List.csv` and `consolidated.xml`. Each list loads on its own; one failing never
+  stops the others.
+* SEC EDGAR: set `ARGUS_SEC_USER_AGENT` to `"Your Organisation contact@example.com"`, as the SEC
+  requires.
+
+**UK Companies House** needs a free key (from developer.company-information.service.gov.uk):
+* on the **account service**, `ARGUS_COMPANIES_HOUSE_API_KEY` is the key Argus Connect uses for
+  every subscriber's lookups, paid for in credits;
+* on any **other** Argus (or Argus Personal), setting it makes lookups go directly, privately and
+  without credits.
+* `ARGUS_COMPANIES_HOUSE_OFFICER_LIMIT` (default 8): directors whose other companies are looked up
+  per company.
+
+**Argus credits**: each plan's monthly allowance (trial 50, personal 500, professional 2,000)
+renews on the 1st; purchased credits never expire. A payment provider's webhook handler adds
+purchased credits with `POST /api/accounts/{id}/credits` (`kind: purchase`).
+
 ### Argus accounts and Argus Personal
 
 **The account service** (your central server) creates accounts and signs licences:

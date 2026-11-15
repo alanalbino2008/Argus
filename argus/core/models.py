@@ -58,7 +58,11 @@ class RelationType(str, Enum):
     ASSOCIATED_WITH = "ASSOCIATED_WITH"
     EXTRACTED_FROM = "EXTRACTED_FROM"
     SENT_FUNDS = "SENT_FUNDS"  # wallet -> wallet, with amounts and times in the relation's metadata
-    SAME_WALLET = "SAME_WALLET"  # spent together in one Bitcoin transaction: most likely one owner
+    SAME_WALLET = "SAME_WALLET"
+    OFFICER_OF = "OFFICER_OF"  # person -> company: director, secretary... with dates in the metadata
+    CONTROLS = "CONTROLS"  # person or company -> company: significant control / ownership
+    SUBSIDIARY_OF = "SUBSIDIARY_OF"  # company -> parent company
+    NAMED_IN = "NAMED_IN"  # person or company -> leak or register record  # spent together in one Bitcoin transaction: most likely one owner
 
 
 def generate_entity_id(entity_type: EntityType, value: str) -> str:

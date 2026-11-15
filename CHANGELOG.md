@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.35.0] — Phase 35: Companies, sanctions & leaks, and Argus credits
+
+### Added
+- **Company and person targets**: a company name ("Acme Holdings Ltd") or a full name ("Jane
+  Roe") is detected automatically.
+- **Name matching**:
+  - accents, punctuation, "SURNAME, Given" order, initials, middle names and legal forms
+    (Ltd, LLC, PJSC, GmbH…) are handled;
+  - for people, every word must match: "John Smith" never matches "Johnson Smithers", and one word
+    never identifies a person;
+  - each match carries a 0–1 score.
+- **Sanctions screening by name**:
+  - the US OFAC SDN list with aliases, the UK Sanctions List (current FCDO and previous OFSI
+    layouts) and the UN Consolidated List, each loaded independently and cached daily;
+  - matches show the list, programmes, date of birth and nationality;
+  - **contradicting details are flagged** ("Born 1980, but the listed person was born 1975").
+- **UK Companies House** (`companies_house`):
+  - company details, officers with roles and dates;
+  - persons with significant control, with the nature of control;
+  - each director's other companies (capped per company);
+  - a typed-in name gives possible director matches, with month and year of birth;
+  - near misses become `registry_candidates` instead of a guess.
+- **GLEIF**: LEI, legal and head-office addresses, jurisdiction, direct and ultimate parents.
+- **SEC EDGAR**: CIK, ticker, state of incorporation, industry, former names, recent filings
+  (`ARGUS_SEC_USER_AGENT`).
+- **ICIJ Offshore Leaks**: people and companies named, with links, credited under the ODbL.
+- **Argus Connect and Argus credits** (migration `0019`):
+  - the account service holds premium-source keys and runs a **fixed menu of lookups**
+    (validated parameters, fixed URLs: never an open proxy);
+  - it charges credits atomically: a monthly allowance per plan first, then purchased credits;
+  - failures, invalid requests and "not found" cost nothing;
+  - a ledger records each change without the query text;
+  - admin top-up endpoint for payment webhooks.
+  - Argus Personal uses it automatically when no own key is set, and shows credits on the
+    subscription card.
+- Graph panels for companies (register, LEI, SEC), people (role, dates, birth month, other
+  companies), sanctions matches and Offshore Leaks hits. Helm 0.25.0 values, Python client
+  `add_credits()`.
+- `docs/explained/35-companies-sanctions-and-credits.md`.
+
 ## [1.34.0] — Phase 34: Crypto investigations
 
 ### Added

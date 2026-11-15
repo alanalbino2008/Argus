@@ -227,6 +227,30 @@ automatically). An address whose checksum does not match answers `422`. Wallet e
 `SENT_FUNDS` relations go from payer to payee with `amount`, `asset`, `chain`, `transactions`,
 `first` and `last`. `SAME_WALLET` links Bitcoin addresses spent together.
 
+## Companies, people, sanctions and leaks
+
+Scan targets `organization` (a company name) and `person` (a full name) are detected
+automatically. Results:
+* companies carry `company_number`, `company_status`, `incorporated`, `registered_address` and
+  `register_url` (Companies House), `lei` with addresses and parents (GLEIF), `sec_cik`, `ticker`
+  and `recent_filings` (SEC), or `registry_candidates` when no exact register match was found;
+* people carry `role`, `appointed`, `resigned`, `born` (month), `nationality`, `officer_matches`;
+* both carry `sanction_matches` (`list`, `name`, `matched_name`, `score`, `programs`, `details`,
+  and `conflicts` when known details contradict the listing) and `offshore_leaks`;
+* relations: `OFFICER_OF`, `CONTROLS` (with `nature`), `SUBSIDIARY_OF`.
+
+## Argus Connect and credits (account service)
+
+* `POST /api/connect/balance` (`licence`): credits (`allowance`, `allowance_remaining`,
+  `purchased`, `available`, `month`) and the price of each lookup.
+* `POST /api/connect/{provider}` (`licence`, `operation`, `params`): one lookup from a fixed
+  menu (Companies House: `search_companies`, `company`, `officers`, `psc`, `search_officers`,
+  `appointments`). It returns `result` and the new `credits`. Not enough credits gives `402`;
+  invalid details give `422` and take no credits; failures and "not found" are refunded.
+* Platform admins: `GET /api/accounts/{id}/credits` (balance and ledger) and
+  `POST /api/accounts/{id}/credits` (`amount`, `kind`: `purchase` or `adjustment`).
+* Argus Personal: `GET /api/personal/credits`.
+
 ## Argus accounts (account service)
 
 Public (rate-limited):

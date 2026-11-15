@@ -25,6 +25,7 @@ from argus.core.settings import Settings
 
 logger = logging.getLogger("argus.personal")
 DEVICE_KEY = "device"
+CURRENT: PersonalLicence | None = None  # this installation's licence, for modules that use Argus Connect
 LICENCE_KEY = "licence"
 
 
@@ -45,7 +46,7 @@ class AccountClient:
             raise AccountServiceError(503, "No Argus account service is configured for this installation")
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as http, http.post(
-                f"{self.base}/api/accounts/{path}", json=body, allow_redirects=False
+                self.base + (path if path.startswith("/") else f"/api/accounts/{path}"), json=body, allow_redirects=False
             ) as resp:  # fmt: skip
                 data = await resp.json(content_type=None) if resp.content_length != 0 else {}
                 if resp.status >= 400:
@@ -72,8 +73,11 @@ class PersonalLicence:
         self.last_refresh_error: str | None = None
         self._public = load_public_key(settings.licence_public_key) if settings.licence_public_key else None
         self.issuer = settings.account_server_url.rstrip("/") or None
+        self.last_credits: dict[str, Any] | None = None  # balance after the latest Argus Connect lookup
 
     async def load(self) -> None:
+        global CURRENT
+        CURRENT = self
         device = await self.state.get(DEVICE_KEY)
         if not device:
             device = {"id": secrets.token_urlsafe(24), "name": platform.node()[:100] or "My computer"}
@@ -128,6 +132,12 @@ class PersonalLicence:
             return await self._store(str(result.get("licence") or ""))
         except LicenceError as exc:
             raise AccountServiceError(502, f"The account service sent a licence Argus cannot trust: {exc}") from exc
+
+    async def credits(self) -> dict[str, Any]:
+        """The account's Argus credits and what each lookup costs."""
+        if not self.token:
+            raise AccountServiceError(401, "Sign in to see your credits")
+        return await self.client.call("/api/connect/balance", {"licence": self.token})
 
     async def sign_up(self, email: str, password: str, name: str) -> dict[str, Any]:
         return await self.client.call("signup", {"email": email, "password": password, "name": name})

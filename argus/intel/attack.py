@@ -108,6 +108,11 @@ TECHNIQUES: dict[str, Technique] = {
             "Encourage staff to avoid publishing precise locations; review what profiles reveal about offices and homes.",
         ),
         _T(
+            "T1591.002",
+            "Business Relationships",
+            "Know what company registers and filings reveal about your owners, directors and suppliers.",
+        ),
+        _T(
             "T1592",
             "Gather Victim Host Information",
             "Patch exposed hosts promptly; reduce information leaked in banners and headers.",

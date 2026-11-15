@@ -164,6 +164,9 @@ class SubscriberAccountRow(Base):
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     billing_reference: Mapped[str] = mapped_column(String(255), default="")  # e.g. a payment provider's customer id
+    allowance_month: Mapped[str] = mapped_column(String(7), default="", server_default="")  # "2026-11"
+    allowance_remaining: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    purchased_credits: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # never expire
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -181,6 +184,21 @@ class SubscriberDeviceRow(Base):
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class CreditLedgerRow(Base):
+    """Every change to an account's Argus credits: allowance, purchase, use, refund, adjustment."""
+
+    __tablename__ = "credit_ledger"
+    __table_args__ = (Index("ix_credit_ledger_account", "account_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(32), ForeignKey("subscriber_accounts.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(16))  # allowance | purchase | usage | refund | adjustment
+    delta: Mapped[int] = mapped_column(Integer)
+    balance_after: Mapped[int] = mapped_column(Integer)
+    detail: Mapped[str] = mapped_column(String(255), default="")  # e.g. "companies_house/officers"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class AppStateRow(Base):

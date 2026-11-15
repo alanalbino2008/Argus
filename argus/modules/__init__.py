@@ -1,6 +1,8 @@
 """Module loader and registry for Argus OSINT framework."""
 
 from argus.modules.base import BaseModule
+from argus.modules.corporate.companies_house import CompaniesHouseModule
+from argus.modules.corporate.registers import GleifModule, OffshoreLeaksModule, SanctionsScreenModule, SecEdgarModule
 from argus.modules.crypto.bitcoin import BitcoinWalletModule
 from argus.modules.crypto.evm import EvmWalletModule
 from argus.modules.discovery.cloud_storage import CloudStorageModule
@@ -32,6 +34,11 @@ from argus.modules.threat_intel.shodan_host import ShodanHostModule
 from argus.modules.threat_intel.virustotal import VirusTotalModule
 
 ALL_MODULE_CLASSES: list[type[BaseModule]] = [
+    CompaniesHouseModule,
+    GleifModule,
+    SecEdgarModule,
+    OffshoreLeaksModule,
+    SanctionsScreenModule,
     BitcoinWalletModule,
     EvmWalletModule,
     UsernameHunterModule,

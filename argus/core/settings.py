@@ -114,6 +114,21 @@ class Settings(BaseSettings):
     exposure_retention_days: int = Field(
         default=365, ge=30, description="Resolved exposure findings are deleted after this many days"
     )
+    companies_house_api_key: SecretStr | None = Field(
+        default=None,
+        description="UK Companies House API key: your own (lookups stay private, no credits), or the account "
+        "service's key that it uses for Argus Connect",
+    )
+    companies_house_officer_limit: int = Field(
+        default=8, ge=0, le=35, description="Directors whose other companies are looked up per company (1 credit each)"
+    )
+    sec_user_agent: str = Field(
+        default="", description="SEC EDGAR asks for 'Organisation contact@email' in every request; '' = EDGAR off"
+    )
+    offshore_leaks_url: str = Field(
+        default="https://offshoreleaks.icij.org", description="ICIJ Offshore Leaks Database; '' = off"
+    )
+    gleif_url: str = Field(default="https://api.gleif.org/api/v1", description="Global LEI register (GLEIF); '' = off")
     shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
     github_token: SecretStr | None = Field(
         default=None, description="GitHub token: enables public code-leak search (GitHub requires auth for code search)"
@@ -170,8 +185,21 @@ class Settings(BaseSettings):
         default="https://www.treasury.gov/ofac/downloads/sdn_comments.csv",
         description="OFAC SDN remarks continued (CSV), where long entries list more addresses",
     )
+    sanctions_alt_url: str = Field(
+        default="https://www.treasury.gov/ofac/downloads/alt.csv", description="OFAC SDN aliases (CSV)"
+    )
+    uk_sanctions_url: str = Field(
+        default="https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv",
+        description="UK Sanctions List (CSV); '' = off",
+    )
+    un_sanctions_url: str = Field(
+        default="https://scsanctions.un.org/resources/xml/en/consolidated.xml",
+        description="UN Security Council Consolidated List (XML); '' = off",
+    )
     sanctions_file: str | None = Field(
-        default=None, description="A folder holding saved copies of sdn.csv (and sdn_comments.csv), for offline use"
+        default=None,
+        description="A folder of saved sanctions files for offline use: sdn.csv, sdn_comments.csv, alt.csv, "
+        "UK-Sanctions-List.csv, consolidated.xml",
     )
     map_tile_url: str = Field(
         default="https://tile.openstreetmap.org/{z}/{x}/{y}.png",

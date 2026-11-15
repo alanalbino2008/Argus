@@ -114,6 +114,17 @@ async def personal_sign_up(body: SignUpRequest, request: Request, response: Resp
     return await _start_session(request, response, payload)
 
 
+@router.get("/credits")
+async def personal_credits(request: Request):
+    """This account's Argus credits (monthly allowance and purchased) and the price of each lookup."""
+    personal = _personal(request)
+    await get_principal(request)
+    try:
+        return await personal.credits()
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+
+
 @router.post("/refresh")
 async def personal_refresh(request: Request):
     """Check the subscription now (after renewing it, for example)."""

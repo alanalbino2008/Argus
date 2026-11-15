@@ -17,6 +17,10 @@ export function detectType(value) {
   if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) return "email";
   if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(t)) return "domain";
   if (/^\+?[0-9\s().-]{7,20}$/.test(t) && (t.match(/\d/g) || []).length >= 7) return "phone";
+  const words = t.split(/\s+/);
+  if (words.length >= 2 && words.every((w) => /^[\p{L}][\p{L}.'&,-]*$/u.test(w))) {
+    return /^(ltd|limited|llc|inc|plc|llp|corp|corporation|gmbh|ag|sa|bv|nv|pjsc|jsc|ooo|co|company)\.?$/i.test(words.at(-1)) ? "organization" : "person";
+  }
   return t ? "username" : "";
 }
 
@@ -61,7 +65,7 @@ export async function openNewInvestigation({ target = "", type = "", watch = fal
     ? `For the case "${caseTitle}": the scan is linked to it${anonymous ? ". The case is anonymous, so the scan is passive and routed." : "."}`
     : "";
   $("#new-target").value = target;
-  $("#new-type").value = ["domain", "ip_address", "email", "username", "phone", "crypto_wallet"].includes(type) ? type : "";
+  $("#new-type").value = ["domain", "ip_address", "email", "username", "phone", "crypto_wallet", "organization", "person"].includes(type) ? type : "";
   try { $("#new-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch { /* ignore */ }
   $("#new-authorized").checked = false;
   $("#new-variants").checked = false;

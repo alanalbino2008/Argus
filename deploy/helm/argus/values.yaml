@@ -99,6 +99,9 @@ secrets:
   # (argus --generate-licence-keys). Keep it secret and back it up: a new key means every
   # Argus Personal installation must be given the new public key.
   licenceSigningKey: ""
+  # UK Companies House API key: on the account service it pays for Argus Connect lookups; on any
+  # other deployment it makes lookups direct (private, no credits).
+  companiesHouseApiKey: ""
 
 # ---------------------------------------------------------------------------- application
 config:
@@ -117,6 +120,9 @@ config:
   bitcoinApiUrl: https://mempool.space/api   # Esplora-compatible (mempool.space, Blockstream, your own node)
   evmChains: {ethereum: "https://eth.blockscout.com"}   # Blockscout instances, e.g. add base, polygon
   sanctionsSdnUrl: https://www.treasury.gov/ofac/downloads/sdn.csv   # OFAC list; "" = off
+  ukSanctionsUrl: https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.csv   # "" = off
+  unSanctionsUrl: https://scsanctions.un.org/resources/xml/en/consolidated.xml   # "" = off
+  secUserAgent: ""               # "Organisation contact@email": the SEC requires it; "" = EDGAR off
   accountService: false          # run the Argus account service (subscriptions for Argus Personal) here
   accountSignup: false           # anyone may create a trial account
   trialDays: 14

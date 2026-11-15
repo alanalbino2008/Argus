@@ -24,6 +24,12 @@ const HIDDEN_META = new Set([
   "chain", "chains", "address_kind", "checksum", "asset", "balance", "total_received", "total_sent", "transactions",
   "explorer_url", "sanctions", "sanctioned_counterparties", "service", "coinjoins", "transactions_examined",
   "first_seen", "last_seen", "label", "ens", "traceable",
+  "registry", "company_number", "legal_name", "company_status", "incorporated", "dissolved", "company_type", "sic_codes",
+  "registered_address", "register_url", "registry_candidates", "lei", "jurisdiction", "entity_status", "head_office",
+  "registered_as", "lei_status", "lei_url", "sec_cik", "ticker", "sec_name", "sic", "state_of_incorporation",
+  "business_address", "former_names", "recent_filings", "sec_url", "sanction_matches", "offshore_leaks",
+  "offshore_leaks_credit", "source_registry", "role", "appointed", "resigned", "nationality", "occupation", "born",
+  "country_of_residence", "ch_officer_id", "ch_company", "officer_matches", "appointments_total", "via_possible_match",
 ]);
 
 const CATEGORY_LABEL = {
@@ -231,9 +237,76 @@ function walletBlock(entity) {
   </div>`;
 }
 
+const ext = (url, text) => html`<a href="${url}" target="_blank" rel="noopener noreferrer nofollow" referrerpolicy="no-referrer">${text} ↗</a>`;
+const kvRows = (rows) => html`<dl class="kv">${rows.filter(([, v]) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && !v.length)).map(([k, v]) => html`<dt>${k}</dt><dd>${Array.isArray(v) ? v.join(", ") : v}</dd>`)}</dl>`;
+
+/** Sanctions name matches and Offshore Leaks hits: shown on people and companies alike. */
+function screeningBlock(md) {
+  const out = [];
+  if (md.sanction_matches?.length) {
+    out.push(html`<div class="section"><div class="section-title">Sanctions lists</div>
+      <div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>A similar name appears on a sanctions list. A similar name is not the same person: compare the dates of birth, nationality and other details before relying on it.</span></div>
+      ${md.sanction_matches.map((m) => html`<div class="list-row"><span class="pill ${m.score >= 0.97 ? "critical" : "warn"}">${Math.round(m.score * 100)}%</span>
+        <div class="list-main"><div class="list-title">${m.matched_name}${m.matched_name !== m.name ? html` <span class="muted">(alias of ${m.name})</span>` : ""}</div>
+        <div class="list-sub">${m.list}${m.programs?.length ? ` · ${m.programs.join(", ")}` : ""}${Object.entries(m.details || {}).map(([k, v]) => ` · ${k}: ${v}`).join("")}</div>
+        ${m.conflicts?.length ? html`<div class="small" style="margin-top:4px;color:var(--ok)">${ico("check")} Probably a different person: ${m.conflicts.join("; ")}</div>` : ""}</div></div>`)}</div>`);
+  }
+  if (md.offshore_leaks?.length) {
+    out.push(html`<div class="section"><div class="section-title">Offshore Leaks</div>
+      ${md.offshore_leaks.map((h) => html`<div class="list-row"><span class="pill accent">${Math.round(h.score * 100)}%</span><div class="list-main"><div class="list-title">${h.name}</div><div class="list-sub">${ext(h.url, "Open the record")}</div></div></div>`)}
+      <p class="muted small" style="margin-top:6px">Named in the ICIJ Offshore Leaks Database (Panama, Paradise, Pandora Papers…). Many offshore structures are legal: this is a lead, not evidence of wrongdoing. Data: ICIJ, Open Database Licence.</p></div>`);
+  }
+  return out;
+}
+
+function companyBlock(md) {
+  const out = [];
+  if (md.company_number) {
+    out.push(html`<div class="section"><div class="section-title">${md.registry || "Company register"}</div>
+      ${kvRows([["Registered name", md.legal_name], ["Number", md.company_number], ["Status", md.company_status], ["Incorporated", md.incorporated && formatDay(md.incorporated)],
+        ["Dissolved", md.dissolved && formatDay(md.dissolved)], ["Type", md.company_type], ["Business (SIC)", md.sic_codes], ["Registered office", md.registered_address]])}
+      ${md.register_url ? html`<p class="small" style="margin-top:6px">${ext(md.register_url, "Open on the register")}</p>` : ""}</div>`);
+  } else if (md.registry_candidates?.length) {
+    out.push(html`<div class="section"><div class="section-title">Possible register matches</div>
+      <p class="muted small">No exact match in the company register; the closest names are below. Investigate one by its exact name.</p>
+      ${md.registry_candidates.map((c) => html`<div class="list-row"><span class="pill">${Math.round(c.score * 100)}%</span><div class="list-main"><div class="list-title">${c.name}</div><div class="list-sub">${c.number} · ${c.status || ""}</div></div></div>`)}</div>`);
+  }
+  if (md.lei) {
+    out.push(html`<div class="section"><div class="section-title">Legal Entity Identifier (GLEIF)</div>
+      ${kvRows([["LEI", md.lei], ["Legal name", md.legal_name], ["Jurisdiction", md.jurisdiction], ["Status", md.entity_status], ["Registered address", md.registered_address], ["Head office", md.head_office], ["Local register ID", md.registered_as]])}
+      ${md.lei_url ? html`<p class="small" style="margin-top:6px">${ext(md.lei_url, "Open in the LEI search")}</p>` : ""}</div>`);
+  }
+  if (md.sec_cik) {
+    out.push(html`<div class="section"><div class="section-title">SEC filings (United States)</div>
+      ${kvRows([["Name", md.sec_name], ["Ticker", md.ticker], ["CIK", md.sec_cik], ["Industry", md.sic], ["Incorporated in", md.state_of_incorporation], ["Business address", md.business_address], ["Former names", md.former_names],
+        ["Recent filings", (md.recent_filings || []).slice(0, 6).map((f) => `${f.form} (${f.date})`)]])}
+      <p class="small" style="margin-top:6px">${ext(md.sec_url, "Open on EDGAR")}</p></div>`);
+  }
+  return out;
+}
+
+function officerBlock(md) {
+  const out = [];
+  if (md.source_registry || md.born || md.appointments_total) {
+    out.push(html`<div class="section"><div class="section-title">${md.source_registry || "Register"}</div>
+      ${kvRows([["Role", md.role && md.role.replace(/-/g, " ")], ["Appointed", md.appointed && formatDay(md.appointed)], ["Resigned", md.resigned && formatDay(md.resigned)],
+        ["Born (month)", md.born], ["Nationality", md.nationality], ["Occupation", md.occupation], ["Lives in", md.country_of_residence], ["Companies (all time)", md.appointments_total]])}</div>`);
+  }
+  if (md.officer_matches?.length) {
+    out.push(html`<div class="section"><div class="section-title">Directors with this name</div>
+      <p class="muted small">People on the register with this name. Several people can share a name: the month and year of birth help tell them apart. Their companies are shown as possible links.</p>
+      ${md.officer_matches.map((m) => html`<div class="list-row"><span class="pill">${Math.round(m.score * 100)}%</span><div class="list-main"><div class="list-title">${m.name}</div><div class="list-sub">born ${m.born || "?"} · ${m.appointments ?? "?"} appointment(s) · ${m.address || ""}</div></div></div>`)}</div>`);
+  }
+  if (md.via_possible_match) out.push(html`<p class="small muted" style="margin:8px 0">${ico("info")} Linked through a possible match: ${md.via_possible_match}</p>`);
+  return out;
+}
+
 function intelBlocks(entity) {
   const md = entity.metadata || {};
   const blocks = [];
+  if (entity.type === "organization") blocks.push(...companyBlock(md));
+  if (entity.type === "person") blocks.push(...officerBlock(md));
+  if (entity.type === "organization" || entity.type === "person") blocks.push(...screeningBlock(md));
   if (entity.type === "crypto_wallet") blocks.push(walletBlock(entity));
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;

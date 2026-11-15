@@ -53,6 +53,7 @@ from argus.api.account_routes import router as account_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
+from argus.api.connect_routes import router as connect_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
@@ -120,7 +121,7 @@ from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.schedule_repo import ScheduleRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
-from argus.storage.subscriber_repo import AppStateRepository, SubscriberRepository
+from argus.storage.subscriber_repo import AppStateRepository, CreditRepository, SubscriberRepository
 from argus.storage.supplier_repo import SupplierRepository
 from argus.storage.user_repo import UserRepository
 from argus.storage.watch_repo import AccountWatchRepository
@@ -215,6 +216,7 @@ async def lifespan(app: FastAPI):
     app.state.cases = CaseRepository(db)
     app.state.account_watches = AccountWatchRepository(db)
     app.state.subscribers = SubscriberRepository(db)
+    app.state.credits = CreditRepository(db)
     app.state.app_state = AppStateRepository(db)
     app.state.personal = PersonalLicence(settings, app.state.app_state)
     if settings.edition == "personal":
@@ -467,6 +469,7 @@ app.include_router(watch_router)
 app.include_router(inspect_router)
 app.include_router(map_router)
 app.include_router(account_router)
+app.include_router(connect_router)
 app.include_router(personal_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.

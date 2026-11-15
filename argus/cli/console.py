@@ -61,6 +61,15 @@ def detect_target_type(target: str) -> EntityType:
     if re.match(r"^\+?[0-9\s().-]{7,20}$", target_clean) and sum(c.isdigit() for c in target_clean) >= 7:
         return EntityType.PHONE
 
+    # 5. A company name ("Acme Holdings Ltd") or a person's full name ("Jane Roe")
+    from argus.intel.names import LEGAL_FORMS
+
+    words = target_clean.split()
+    if len(words) >= 2 and all(re.fullmatch(r"[^\W\d_][\w.'&,-]*", w) for w in words):
+        if words[-1].lower().strip(".,") in LEGAL_FORMS - {"the", "and", "group"}:
+            return EntityType.ORGANIZATION
+        return EntityType.PERSON
+
     # 5. Default to Username
     return EntityType.USERNAME
 
