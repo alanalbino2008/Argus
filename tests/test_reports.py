@@ -48,7 +48,7 @@ def test_report_content_is_prioritised_and_compared_with_the_last_scan():
     assert data.paths[0]["score"] == max(p["score"] for p in data.paths)
     actions = [r["action"] for r in data.recommendations]
     assert len(actions) == len(set(actions)) and data.recommendations[0]["severity"] == "critical"
-    assert data.trend and data.trend["new_paths"] == 6 and data.trend["risk_delta"] > 0
+    assert data.trend and data.trend["new_paths"] == 8 and data.trend["risk_delta"] > 0
     assert any("increased" in line for line in data.summary)
 
 

@@ -267,6 +267,17 @@ registered impostor triggers a monitoring alert. Lookalikes are out of scope by 
 the engine never investigates a third party's domain
 ([`docs/explained/19-brand-impersonation.md`](docs/explained/19-brand-impersonation.md)).
 
+**Infrastructure pivoting**: from one domain to the rest of the organisation's estate.
+
+- Pivots, all passive: shared analytics, ad and tag IDs (from the archived homepage), the
+  certificate organisation on OV/EV certificates, dedicated name servers, and co-hosting.
+- Each related domain gets a probabilistic confidence (weighted noisy-OR, with generic
+  infrastructure excluded), and the shared things appear as graph nodes.
+- Related domains are recorded out of scope until someone authorises them.
+- Impostors on the same server are mapped into one attacker-campaign finding.
+
+([`docs/explained/20-infrastructure-pivoting.md`](docs/explained/20-infrastructure-pivoting.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

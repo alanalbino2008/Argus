@@ -28,7 +28,7 @@ def test_demo_drift_is_detected_precisely():
     _, new = build_demo()
     d = compare(old, new)
     s = d["summary"]
-    assert (s["added"], s["removed"], s["changed"]) == (8, 1, 2)
+    assert (s["added"], s["removed"], s["changed"]) == (9, 1, 2)
     new_titles = {p["title"] for p in d["new_paths"]}
     # A phishing domain registered since last month is exactly the drift monitoring exists for.
     assert (

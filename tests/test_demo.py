@@ -55,6 +55,7 @@ def test_demo_triggers_every_attack_path_rule():
         "staff_enumeration",
         "lookalike_domain",
         "lookalike_domain_watchlist",
+        "impostor_campaign",
     }
     # One rule function can emit two kinds of path (lookalikes: individual findings + a watchlist).
     assert fired == names and len(expected) == len(names) - 1

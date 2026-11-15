@@ -244,14 +244,16 @@ class ArgusEngine:
             return
         self._processed_ids.add(entity.id)
 
-        if entity.metadata.get("out_of_scope"):
-            return  # a third party's asset (e.g. a lookalike domain): recorded, never investigated
+        # A third party's asset (e.g. an impostor domain) is recorded, never investigated - except by
+        # modules declared third-party-safe, which only consult public databases *about* it.
+        third_party = bool(entity.metadata.get("out_of_scope"))
         # The seed is always fully processed; the limit applies to what is discovered from it.
         at_limit = entity.depth > 0 and entity.depth >= self.config.max_depth
         eligible = [
             m
             for m in self.modules.values()
-            if not self.module_stats[m.name].disabled
+            if (not third_party or m.third_party_safe)
+            and not self.module_stats[m.name].disabled
             and m.can_handle(entity)
             and (m.enrichment or not at_limit)  # at the depth limit only enrichers run
         ]

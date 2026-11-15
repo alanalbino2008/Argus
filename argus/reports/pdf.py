@@ -547,6 +547,18 @@ def _exposure(d: ReportData, s: dict[str, ParagraphStyle]) -> list[Flowable]:
                   Paragraph("Yes" if x["mx"] else "No", s["cell"]), Paragraph(str(x["risk"]), s["cellb"])]
                  for x in d.lookalikes]  # fmt: skip
         out.append(_table(rows, [52 * mm, 52 * mm, 22 * mm, 16 * mm, 16 * mm]))
+    if d.related:
+        out += [Spacer(1, 4 * mm), Paragraph("Related infrastructure", s["H2"])]
+        out.append(Paragraph(
+            "Domains that share an analytics ID, certificate organisation, name servers or hosting with the target. "
+            "They were not assessed: confirm whether they are yours and in scope, and include them in a future "
+            "assessment if so. Forgotten assets are a common way in.", s["muted"]))  # fmt: skip
+        rel_rows: list[list[Any]] = [["Domain", "Linked by", "Confidence"]]
+        rel_rows += [[Paragraph(f"<b>{esc(x['domain'])}</b><br/><font color=\"#6b7280\" size=\"7\">{esc(x['attribution'])}</font>",
+                                s["cell"]),
+                      Paragraph("<br/>".join(esc(v) for v in x["evidence"]), s["cell"]),
+                      Paragraph(f"{round(x['confidence'] * 100)}%", s["cellb"])] for x in d.related]  # fmt: skip
+        out.append(_table(rel_rows, [55 * mm, 95 * mm, 24 * mm]))
     return out
 
 

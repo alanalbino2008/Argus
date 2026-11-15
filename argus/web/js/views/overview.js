@@ -166,6 +166,40 @@ function lookalikePanel() {
   </div>`;
 }
 
+const EVIDENCE_LABEL = {
+  analytics: "Same analytics ID",
+  certificate_org: "Same certificate organisation",
+  own_nameserver: "Your name server",
+  nameserver: "Same name servers",
+  shared_ip: "Same IP",
+  shared_ip_small: "Same IP",
+};
+
+function relatedPanel() {
+  const seed = [...state.entities.values()].find((e) => e.depth === 0);
+  const related = [...state.entities.values()].filter((e) => e.metadata?.pivot)
+    .sort((a, b) => b.metadata.pivot.confidence - a.metadata.pivot.confidence);
+  const summary = seed?.metadata?.pivot_summary;
+  if (!summary && !related.length) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Related infrastructure</h2>
+      <p class="muted small">Other domains that share something with ${seed?.value || "the target"} — an analytics ID${summary?.certificate_org ? html`, the certificate organisation <b>${summary.certificate_org}</b>` : ""}, name servers or hosting. They were <b>not scanned</b>: confirm they're in scope, then investigate them.</p></div></div>
+    ${related.length ? html`<table class="table"><thead><tr><th>Domain</th><th>Linked by</th><th>Confidence</th><th></th></tr></thead><tbody>
+      ${related.slice(0, 15).map((e) => {
+        const p = e.metadata.pivot;
+        const kinds = [...new Set(p.evidence.map((x) => EVIDENCE_LABEL[x.kind] || x.kind))];
+        return html`<tr>
+          <td><b>${e.value}</b><div class="muted small">${p.attribution}</div></td>
+          <td>${kinds.map((k) => html`<span class="pill" style="margin:0 4px 4px 0">${k}</span>`)}
+            <div class="muted small">${p.evidence.slice(0, 2).map((x) => x.detail).join(" · ")}</div></td>
+          <td style="min-width:120px"><div class="progress" title="${Math.round(p.confidence * 100)}%"><span style="width:${Math.round(p.confidence * 100)}%;background:${p.confidence >= 0.8 ? "var(--ok)" : "var(--sev-medium)"}"></span></div>
+            <span class="muted small">${Math.round(p.confidence * 100)}%</span></td>
+          <td class="actions"><button class="btn sm" data-action="guide" data-target="${e.value}" title="Start a guided, authorised scan of this domain">Investigate</button></td></tr>`;
+      })}</tbody></table>`
+      : html`<p class="muted small">No related domains found${summary?.trackers?.length ? ` (tracking IDs checked: ${summary.trackers.join(", ")})` : ""}.</p>`}
+  </div>`;
+}
+
 function dashboard(inv) {
   const paths = state.paths?.paths || [];
   const flags = state.analytics?.risk_flags || [];
@@ -208,6 +242,7 @@ function dashboard(inv) {
         </div>
       </div>
     </div>
+    ${relatedPanel()}
     ${lookalikePanel()}
   </div>`;
 }

@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.20.0] — Phase 20: Infrastructure pivoting
+
+### Added
+- **`infrastructure_pivot` module**, passive and seed domain only. It finds related domains
+  through:
+  - analytics, ad and tag IDs (GA, GA4, GTM, AdSense, Meta pixel) read from the Internet
+    Archive's copy of the homepage and reverse-looked-up;
+  - the OV/EV certificate organisation (crt.sh certificate, then all certificates for that
+    organisation);
+  - dedicated name servers;
+  - IPs shared with at most 15 domains.
+
+  Optional `ARGUS_HACKERTARGET_API_KEY`.
+- **Attribution model** (`argus/intel/pivots.py`): weighted evidence combined by noisy-OR (each
+  kind counted once). Generic DNS providers, hosting companies' certificate organisations and
+  crowded IPs are excluded. A shared IP alone never attributes a domain. Labels are "likely the
+  same organisation" (≥ 80%) or "possibly related" (≥ 50%).
+- Shared things (tracking IDs, the certificate organisation, name servers, IPs) become graph
+  nodes, so the graph shows why domains are linked.
+- **Impostor campaign mapping**: for suspicious lookalikes, the module finds other brand
+  look-alikes on the same server (comparison undoes rn/m, 0/o, 1/l… substitutions), and the new
+  `impostor_campaign` attack path (T1583.001/T1583.003 → T1566) recommends reporting the cluster
+  together.
+- *Related infrastructure* panel (confidence, evidence, **Investigate**, which opens the guided,
+  authorised scan) and a report section. Demo: related careers and labs domains, and a second
+  impostor on the phishing server.
+- `docs/explained/20-infrastructure-pivoting.md`.
+
+### Security
+- Related domains are recorded **out of scope**: discovery is not authorisation.
+- The engine's out-of-scope rule gains a narrow exception: only modules declared
+  `third_party_safe` (never contacting the asset, only querying public databases about it) may
+  examine third-party assets. Tests check both directions.
+
 ## [1.19.0] — Phase 19: Brand impersonation (lookalike domains)
 
 ### Added

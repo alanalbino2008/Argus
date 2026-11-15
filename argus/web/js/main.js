@@ -53,7 +53,7 @@ const actions = {
     go("overview");
   },
   newInvestigation: (opts) => openNewInvestigation(opts),
-  guide: (target) => openGuide(actions, typeof target === "string" ? target : ""),
+  guide: (target) => openGuide(actions, typeof target === "string" ? target : target?.target || ""),
   goMonitoring: () => go("monitoring"),
   async loadDemo() {
     try {

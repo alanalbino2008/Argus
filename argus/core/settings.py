@@ -57,6 +57,9 @@ class Settings(BaseSettings):
         default_factory=list,
         description='Entry-point names of third-party plugin modules to load, e.g. ["crtsh_plus"]. Empty = none.',
     )
+    hackertarget_api_key: SecretStr | None = Field(
+        default=None, description="HackerTarget API key: raises the free daily limit of reverse-IP/DNS pivots"
+    )
     lookalike_max_candidates: int = Field(
         default=1500, ge=0, le=20000, description="Lookalike domains checked per scan (0 disables the check)"
     )

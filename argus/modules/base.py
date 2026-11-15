@@ -36,6 +36,9 @@ class BaseModule(ABC):
     # Enrichment modules add facts to an entity rather than discovering new targets. They also run on
     # entities *at* the depth limit (whatever they yield is recorded but never expanded further).
     enrichment: ClassVar[bool] = False
+    # May examine third parties' assets (``out_of_scope`` entities such as impostor domains). Only for
+    # modules that never contact the entity itself and only query public third-party databases about it.
+    third_party_safe: ClassVar[bool] = False
     # "builtin", or "plugin:<package:object>" for third-party modules (see argus/modules/plugins.py).
     origin: ClassVar[str] = "builtin"
 

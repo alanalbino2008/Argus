@@ -109,6 +109,7 @@ class ReportData:
     sources: list[dict[str, Any]]
     generator: str = ""
     lookalikes: list[dict[str, Any]] = field(default_factory=list)
+    related: list[dict[str, Any]] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -330,6 +331,18 @@ def build_report_data(
             }
             for e in sorted(
                 (e for e in entities if e.metadata.get("lookalike")), key=lambda e: -e.metadata["lookalike"]["risk"]
+            )
+        ][:15],
+        related=[
+            {
+                "domain": e.value,
+                "confidence": float(e.metadata["pivot"].get("confidence", 0)),
+                "attribution": e.metadata["pivot"].get("attribution", ""),
+                "evidence": [redact(str(x.get("detail", ""))) for x in e.metadata["pivot"].get("evidence", [])][:3],
+            }
+            for e in sorted(
+                (e for e in entities if e.metadata.get("pivot")),
+                key=lambda e: -e.metadata["pivot"].get("confidence", 0),
             )
         ][:15],
     )

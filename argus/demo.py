@@ -65,6 +65,12 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
             "cloud_storage": {"names_checked": 48, "found": 1},
             "lookalikes_checked": 291,
             "lookalikes_registered": 4,
+            "pivot_summary": {
+                "trackers": ["G-ACME2026X1"],
+                "certificate_org": "Acme Corporation Ltd",
+                "related": 2,
+                "likely": 1,
+            },
         },
     ),
     "www": (E.SUBDOMAIN, f"www.{DEMO_TARGET}", f"www.{DEMO_TARGET}", 1, "subdomain_finder", {}),
@@ -543,8 +549,46 @@ _RELATIONS.extend(
     for key in ("lk_login", "lk_homoglyph", "lk_support", "lk_own")
 )
 
+
+# Infrastructure pivoting (Phase 20): related domains found through shared things (an analytics ID, the
+# certificate organisation, Acme's own name server), and a second impostor on the phishing domain's server.
+def _related(confidence: float, attribution: str, evidence: list[tuple[str, str, str]]) -> dict:
+    return {"out_of_scope": True, "pivot": {"of": DEMO_TARGET, "confidence": confidence, "attribution": attribution,
+            "brand_like": True, "evidence": [{"kind": k, "value": v, "detail": d} for k, v, d in evidence]}}  # fmt: skip
+
+
+_ENTITIES["lk_login"][5]["lookalike"]["cluster_size"] = 1
+_ENTITIES.update(
+    {
+        "hub_ga": (E.GENERIC, "G-ACME2026X1", "Google Analytics 4 G-ACME2026X1", 1, "infrastructure_pivot",
+                   {"category": "tracking_id", "product": "Google Analytics 4", "out_of_scope": True, "pivot_hub": True}),
+        "hub_org": (E.ORGANIZATION, "Acme Corporation Ltd", "Acme Corporation Ltd", 1, "infrastructure_pivot",
+                    {"origin": "certificate subject (O=)", "out_of_scope": True, "pivot_hub": True}),
+        "rel_careers": (E.DOMAIN, "acme-corp-careers.example", "acme-corp-careers.example", 1, "infrastructure_pivot",
+                        _related(0.98, "likely the same organisation", [
+                            ("analytics", "G-ACME2026X1", "same Google Analytics 4 ID G-ACME2026X1"),
+                            ("own_nameserver", "ns1.acme-corp.example", "served by name server ns1.acme-corp.example")])),
+        "rel_labs": (E.DOMAIN, "acmelabs.example", "acmelabs.example", 1, "infrastructure_pivot",
+                     _related(0.75, "possibly related", [
+                         ("certificate_org", "Acme Corporation Ltd", "certificate issued to “Acme Corporation Ltd”")])),
+        "lk_payroll": (E.DOMAIN, "acme-corp-payroll.example", "acme-corp-payroll.example", 2, "infrastructure_pivot",
+                       _lookalike("co-hosted", "on the same server as acme-corp-login.example (192.0.2.66)",
+                                  "suspicious", 72, ["mx.acme-corp-payroll.example"], [],
+                                  display="acme-corp-payroll.example", cluster_of="acme-corp-login.example")),
+    }
+)  # fmt: skip
+_RELATIONS.extend(
+    [
+        ("seed", "hub_ga", R.ASSOCIATED_WITH, "same Google Analytics 4 ID G-ACME2026X1"),
+        ("rel_careers", "hub_ga", R.ASSOCIATED_WITH, "same Google Analytics 4 ID G-ACME2026X1"),
+        ("seed", "hub_org", R.ASSOCIATED_WITH, "certificate issued to “Acme Corporation Ltd”"),
+        ("rel_labs", "hub_org", R.ASSOCIATED_WITH, "certificate issued to “Acme Corporation Ltd”"),
+        ("lk_payroll", "lk_login", R.ASSOCIATED_WITH, "Same server (impostor cluster)"),
+    ]
+)
+
 # A month earlier the surface looked different - used to demonstrate drift detection.
-_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket", "lk_login"}
+_ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket", "lk_login", "lk_payroll"}
 _ONLY_PREVIOUSLY: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
     "p21": (E.PORT, "203.0.113.30:21", "Port 21 (FTP)", 3, "shodan_internetdb", {"port_number": 21}),
 }

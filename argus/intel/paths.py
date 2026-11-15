@@ -49,6 +49,7 @@ FOLLOW_ON: dict[str, tuple[str, str]] = {
     "T1110.003": ("Brute Force: Password Spraying", "Credential Access"),
     "T1213": ("Data from Information Repositories", "Collection"),
     "T1583.001": ("Acquire Infrastructure: Domains", "Resource Development"),
+    "T1583.003": ("Acquire Infrastructure: Virtual Private Server", "Resource Development"),
 }
 
 RISKY_PORTS: dict[int, tuple[str, int, str]] = {
@@ -781,6 +782,44 @@ def _lookalike_domains(view: _GraphView, seed: Entity | None) -> Iterable[_Draft
         )
 
 
+def _impostor_campaign(view: _GraphView, seed: Entity | None) -> Iterable[_Draft]:
+    """An impostor's server hosts more lookalikes: one campaign, several lures."""
+    for hub in view.of_type(EntityType.DOMAIN):
+        facts = hub.metadata.get("lookalike") or {}
+        if not facts.get("cluster_size"):
+            continue
+        siblings = [d for d in view.neighbors(hub, EntityType.DOMAIN) if (d.metadata.get("lookalike") or {}).get(
+            "cluster_of") == hub.value]  # fmt: skip
+        if not siblings:
+            continue
+        names = ", ".join(s.value for s in siblings[:5])
+        yield _Draft(
+            rule="impostor_campaign",
+            anchor=hub,
+            title=f"Impostor infrastructure: the server behind {facts['display']} hosts {len(siblings)} more lookalike(s)",
+            likelihood=0.85,
+            impact=4,
+            narrative=(
+                f"{facts['display']} shares a server with {names}"
+                + (" and others" if len(siblings) > 5 else "")
+                + f", all imitating {facts['of']}. Several lures on one server is the signature of an organised "
+                "campaign rather than a one-off registration, and taking down one domain leaves the others."
+            ),
+            steps=[
+                *((s, "lookalike on the same server") for s in siblings[:3]),
+                (hub, "impostor domain"),
+                *(((seed, "impersonated brand"),) if seed else ()),
+            ],
+            techniques=["T1583.001", "T1583.003", "T1566"],
+            evidence=[f"{s.value}: {s.metadata['lookalike']['detail']}" for s in siblings[:8]],
+            remediation=[
+                "Report the whole cluster (every domain and the hosting provider) in one abuse report: providers act "
+                "faster on clear campaigns.",
+                *LOOKALIKE_REMEDIATION[1:3],
+            ],
+        )
+
+
 RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _credential_exposure,
     _spoofable_domain,
@@ -797,6 +836,7 @@ RULES: list[Callable[[_GraphView, Entity | None], Iterable[_Draft]]] = [
     _public_cloud_storage,
     _staff_enumeration,
     _lookalike_domains,
+    _impostor_campaign,
 ]
 
 
