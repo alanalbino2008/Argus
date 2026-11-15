@@ -61,6 +61,11 @@ class Settings(BaseSettings):
         default="auto",
         description="Headless Chromium/Chrome for evidence screenshots: 'auto' (find one), 'off', or a path",
     )
+    capture_browser_sandbox: bool = Field(
+        default=True,
+        description="Chrome's own sandbox for the capture browser; turn off only where the kernel cannot provide "
+        "it (some containers, Ubuntu 24.04 without user namespaces), at a security cost",
+    )
     evidence_timestamp_url: str | None = Field(
         default=None,
         description="RFC 3161 timestamp authority for evidence (e.g. https://freetsa.org/tsr); only digests are sent",

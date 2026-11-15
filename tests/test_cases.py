@@ -156,12 +156,13 @@ async def test_the_browser_screenshot_goes_through_the_guard(monkeypatch):
         raise BlockedDestinationError(host)
 
     monkeypatch.setattr(guard_proxy, "resolve_public", fake_resolve)
-    settings = Settings()
+    settings = Settings(capture_browser_sandbox=False)  # CI runners lack the user namespaces Chrome's sandbox needs
     try:
         rendered = await cap.render(f"http://public.test:{port}/", cap.find_browser(settings), settings)
     finally:
         await runner.cleanup()
-    assert rendered["screenshot"] and rendered["screenshot"].startswith(b"\x89PNG")
+    assert rendered["screenshot"], rendered["notes"]
+    assert rendered["screenshot"].startswith(b"\x89PNG")
     assert b"Board memo" in rendered["dom"] and "169.254.169.254:80" in rendered["blocked"]
 
 

@@ -240,14 +240,23 @@ class _DevTools:
             await self.ws.close()
 
 
+SANDBOX_HINT = ("if Argus runs in a container without user namespaces, set ARGUS_CAPTURE_BROWSER_SANDBOX=false "
+                "(a security trade-off) or install chrome-headless-shell")  # fmt: skip
+
+
 async def _devtools_url(proc: asyncio.subprocess.Process) -> str:
     if proc.stderr is None:
         raise CaptureError("The browser did not start")
+    seen: list[str] = []
     while True:
         line = await asyncio.wait_for(proc.stderr.readline(), 15)
         if not line:
-            raise CaptureError("The browser did not start")
+            reason = next(
+                (t for t in reversed(seen) if "sandbox" in t.lower() or "FATAL" in t), seen[-1] if seen else ""
+            )
+            raise CaptureError(f"The browser did not start ({reason[-160:].strip() or 'no output'}); {SANDBOX_HINT}")
         text = line.decode(errors="replace")
+        seen = [*seen[-20:], text]
         if "DevTools listening on " in text:
             return text.split("DevTools listening on ", 1)[1].strip()
 
@@ -288,7 +297,7 @@ async def render(url: str, browser: str, settings: Settings) -> dict[str, Any]:
                 "--proxy-bypass-list=<-loopback>", f"--user-data-dir={tmp}/profile", "--remote-debugging-port=0",
                 "--remote-allow-origins=*", "about:blank",
             ]  # fmt: skip
-            if os.geteuid() == 0:  # Chrome refuses to run as root with its sandbox
+            if os.geteuid() == 0 or not settings.capture_browser_sandbox:  # Chrome refuses its sandbox as root
                 argv.insert(1, "--no-sandbox")
             proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.DEVNULL,
                                                         stderr=asyncio.subprocess.PIPE)  # fmt: skip
@@ -301,14 +310,18 @@ async def render(url: str, browser: str, settings: Settings) -> dict[str, Any]:
                     dt = _DevTools(ws)
                     try:
                         version = (await dt.call("Browser.getVersion", page=False)).get("product", version)
-                        await dt.call("Browser.setDownloadBehavior", {"behavior": "deny"}, page=False)
+                        try:
+                            await dt.call("Browser.setDownloadBehavior", {"behavior": "deny"}, page=False)
+                        except CaptureError:
+                            notes.append("This browser cannot block downloads; none are kept in any case")
                         target = await dt.call("Target.createTarget", {"url": "about:blank"}, page=False)
                         attached = await dt.call("Target.attachToTarget", {"targetId": target["targetId"],
                                                                            "flatten": True}, page=False)  # fmt: skip
                         dt.session = attached["sessionId"]
                         await dt.call("Page.enable")
-                        await dt.call("Emulation.setDeviceMetricsOverride",
-                                      {"width": 1366, "height": 900, "deviceScaleFactor": 1, "mobile": False})  # fmt: skip
+                        with contextlib.suppress(CaptureError):  # the default window size is an acceptable fallback
+                            await dt.call("Emulation.setDeviceMetricsOverride",
+                                          {"width": 1366, "height": 900, "deviceScaleFactor": 1, "mobile": False})  # fmt: skip
                         await asyncio.wait_for(_load(dt, url, notes), BROWSER_TIMEOUT)
                         metrics = await dt.call("Page.getLayoutMetrics")
                         size = metrics.get("cssContentSize") or metrics.get("contentSize") or {}
