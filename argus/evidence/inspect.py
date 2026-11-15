@@ -332,6 +332,25 @@ def _image(data: bytes, media: str, report: Report) -> None:
     _ai_and_credentials(data, text, report)
 
 
+def photo_facts(data: bytes) -> dict[str, Any]:
+    """Only where and when a photo was taken (for the case map and timeline). Never raises."""
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            values = _exif_values(img)
+    except (UnidentifiedImageError, OSError, ValueError, SyntaxError, struct.error, Image.DecompressionBombError):
+        return {}
+    facts: dict[str, Any] = {}
+    gps = _gps(values.get("_gps") or {})
+    if gps:
+        facts.update(lat=gps["latitude"], lon=gps["longitude"])
+    taken, zoned = _taken(values)
+    if taken is None and gps and gps.get("time_utc"):
+        taken, zoned = datetime.fromisoformat(gps["time_utc"]), True
+    if taken is not None:
+        facts.update(taken_at=taken.isoformat(), time_zone_known=zoned)
+    return facts
+
+
 def _image_text(img: Image.Image, data: bytes) -> dict[str, str]:
     """PNG text chunks, and the few XMP fields worth showing."""
     info = getattr(img, "text", None) or {}

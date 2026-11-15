@@ -207,6 +207,17 @@ and the capture says so.
   when `ARGUS_MONITORS_ENABLED` is false. `ARGUS_ACCOUNT_WATCH_POLL_SECONDS` (default 60) is how
   often due watches are looked for.
 
+### Maps
+
+* `ARGUS_MAP_TILE_URL` (default OpenStreetMap's tile server): map images. The **server** fetches
+  them and serves them to the browser, caching 2,000 tiles per replica. For heavy use, point it at
+  your own tile server or a commercial provider, as the OpenStreetMap tile policy asks. Set it to
+  `""` to draw maps without a background.
+* `ARGUS_MAP_ATTRIBUTION`: the credit shown on maps (keep the provider's required attribution).
+* `ARGUS_GEOCODER_URL` (default OpenStreetMap's Nominatim): address look-up, used only when an
+  investigator presses **Find on map**, at most once a second. Point it at your own Nominatim to
+  keep addresses in-house, or set it to `""` to switch look-ups off.
+
 ### Investigator safety (Tor, VPN, proxy routes)
 
 The people being investigated can see every request in their logs. Routes send captures and

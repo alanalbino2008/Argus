@@ -224,6 +224,12 @@
         },
         "accountWatching": {
           "type": "boolean"
+        },
+        "mapTileUrl": {
+          "type": "string"
+        },
+        "geocoderUrl": {
+          "type": "string"
         }
       }
     },

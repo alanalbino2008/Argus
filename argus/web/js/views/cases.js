@@ -3,6 +3,7 @@
 
 import { api, download, enc, request } from "../api.js";
 import { initInspector, inspectable, openInspector } from "./inspector.js";
+import { initCaseViews, renderMap, renderTimeline, teardownMap } from "./casemap.js";
 import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
@@ -13,6 +14,7 @@ let cases = null;
 let current = null; // the open case (with items and captures)
 let routes = []; // egress routes (names only), loaded with the case
 let watches = []; // accounts this case watches
+let caseTab = "overview"; // overview | timeline | map
 let watchable = null; // platforms that can be watched
 let actionsRef = null;
 let pendingEntity = null; // an entity sent from the graph, waiting for a case to be chosen
@@ -146,6 +148,8 @@ function renderCase() {
           <select class="select" data-act-select="status" aria-label="Case status" style="max-width:130px">${["open", "closed", "archived"].map((s) => html`<option value="${s}" ${c.status === s ? "selected" : ""}>${s}</option>`)}</select>` : ""}
       </div>
     </div>
+    <div class="segmented" role="tablist" aria-label="Case views" style="margin-bottom:16px">${[["overview", "Overview"], ["timeline", "Timeline"], ["map", "Map"]].map(([k, label]) => html`<button class="${caseTab === k ? "active" : ""}" role="tab" aria-selected="${caseTab === k}" data-case-tab="${k}">${label}</button>`)}</div>
+    ${caseTab !== "overview" ? html`<div id="case-view"><p class="muted">Loading…</p></div>` : html`
     <div class="grid" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start" id="case-layout">
       <div>
         <div class="card card-pad"><div class="card-head"><h2>Evidence</h2><span class="muted small">${c.captures.length}</span></div>
@@ -162,9 +166,11 @@ function renderCase() {
         <div class="card card-pad" style="margin-top:16px" id="watch-card"><div class="card-head"><h2>Watched accounts</h2>${canEdit() ? html`<button class="btn sm ghost" data-act="watch">${ico("eye")}Watch</button>` : ""}</div>
           ${watches.length ? html`<div class="list">${watches.map(watchRow)}</div>` : html`<p class="muted small">Watch the subject's accounts: every change to their name, bio, links or picture lands on the timeline, and the profile can be captured as evidence each time.</p>`}</div>
       </div>
-    </div>
+    </div>`}
   </div>`);
-  loadThumbs();
+  if (caseTab === "overview") { teardownMap(); loadThumbs(); return; }
+  const view = $("#case-view");
+  (caseTab === "timeline" ? renderTimeline(view, c) : renderMap(view, c)).catch((err) => setHTML(view, html`<p class="error-text">${err.message}</p>`));
 }
 
 async function loadThumbs() {
@@ -187,6 +193,7 @@ async function loadCase(id) {
 }
 
 async function openCase(id) {
+  caseTab = "overview";
   current = await loadCase(id);
   location.hash = `#/cases`;
   renderCase();
@@ -398,6 +405,8 @@ export function initCases(el, actions) {
   root = el;
   actionsRef = actions;
   initInspector(() => refresh());
+  initCaseViews(root);
+  on(root, "click", "[data-case-tab]", (_e, btn) => { caseTab = btn.dataset.caseTab; refresh(); });
   $("#capture-egress").addEventListener("change", syncCapture);
   $("#watch-platform").addEventListener("change", syncWatch);
   ["case", "safety"].forEach((prefix) => {

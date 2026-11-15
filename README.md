@@ -365,6 +365,16 @@ notes and scans. Restricted cases are invisible even to administrators.
   reverse image search links; a **copy without metadata** for publishing safely
   ([`docs/explained/31-images-and-documents.md`](docs/explained/31-images-and-documents.md)).
 
+**Timeline and map**: each case has **Timeline** and **Map** views.
+
+- **Timeline**: everything dated in the case (events, account changes, captures, uploads, linked
+  scans and the dates inside photos), with an activity chart and filters. Exports to CSV.
+- **Map**: places given coordinates (decimal, degrees-minutes-seconds or a map link), photos' GPS,
+  and addresses looked up on request. Exports to KML for Google Earth.
+- Map images are fetched by Argus's server, never by your browser, so the map provider never sees
+  which streets you are looking at
+  ([`docs/explained/32-timeline-and-map.md`](docs/explained/32-timeline-and-map.md)).
+
 **Investigator safety**: the people you investigate can see every visit in their logs.
 
 - Captures and scans can go out through **Tor, a VPN or a proxy**, chosen per case, per capture

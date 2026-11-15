@@ -203,6 +203,18 @@ curl -X POST https://argus.example.com/api/cases/case_…/watches \
 Each inspection, analysis and clean copy is written to the evidence's chain of custody; the
 evidence itself is never changed.
 
+## Case timeline and map
+
+* `GET /api/cases/{id}/timeline`: every dated entry, oldest first, each with `at`, `kind`
+  (`event`, `account`, `capture`, `upload`, `scan` or `photo`), `title`, `detail`, `ref` (what it
+  points to) and `approximate` when a photo's time zone is unknown. `GET …/timeline.csv` exports it.
+* `GET /api/cases/{id}/places`: `places` (`lat`, `lon`, `label`, `type`, `how`: given, looked up
+  or photo GPS) and `unplaced` (addresses and locations without a position).
+  `GET …/places.kml` exports them.
+* `POST /api/cases/{id}/items/{item_id}/geocode`: look up an address entity's position, through
+  the case's route; the result is stored on the entity.
+* `GET /api/map/tiles/{z}/{x}/{y}.png`: map images, fetched and cached by the server.
+
 ## Investigator safety (routes)
 
 ```bash

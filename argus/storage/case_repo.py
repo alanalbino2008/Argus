@@ -17,7 +17,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from argus.evidence.capture import Capture, canonical, sha256
 from argus.storage.db import CaseItemRow, CaseRow, Database, EvidenceCaptureRow, EvidenceCustodyRow, EvidenceFileRow
@@ -252,6 +252,22 @@ class CaseRepository:
         async with self.db.session() as s:
             rows = (await s.scalars(select(EvidenceFileRow).where(EvidenceFileRow.capture_id == capture_id))).all()
         return {r.name: (r.media_type, r.data) for r in rows}
+
+    async def image_files(self, capture_ids: list[str]) -> list[tuple[str, str, bytes]]:
+        """(capture id, name, data) of the images people added or captured (not Argus's own screenshots).
+
+        For Argus's own reading (photo locations and dates on the map and timeline): not a viewing,
+        so nothing is written to the custody log.
+        """
+        if not capture_ids:
+            return []
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(EvidenceFileRow).where(
+                EvidenceFileRow.capture_id.in_(capture_ids), EvidenceFileRow.name != "screenshot.png",
+                or_(EvidenceFileRow.media_type.like("image/%"),
+                    *(func.lower(EvidenceFileRow.name).like(f"%.{ext}") for ext in ("jpg", "jpeg", "png", "tif", "tiff", "webp")))
+            ))).all()  # fmt: skip
+        return [(r.capture_id, r.name, r.data) for r in rows]
 
     async def log(self, capture_id: str, *, by: str, action: str, detail: str = "") -> None:
         async with self.db.session() as s, s.begin():

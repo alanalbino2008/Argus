@@ -128,6 +128,15 @@ class Settings(BaseSettings):
     username_catalog_file: str | None = Field(
         default=None, description="A local copy of the community catalog (offline installs); used instead of the URL"
     )
+    map_tile_url: str = Field(
+        default="https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        description="Map images (fetched by the server, never the browser); '' = maps without a background",
+    )
+    map_attribution: str = Field(default="© OpenStreetMap contributors", description="Credit shown on maps")
+    geocoder_url: str = Field(
+        default="https://nominatim.openstreetmap.org/search",
+        description="Nominatim-compatible address look-up, used only when asked; '' = off",
+    )
     account_watch_enabled: bool = Field(default=True, description="Re-read watched accounts and record changes")
     account_watch_poll_seconds: float = Field(default=60.0, ge=5.0, description="How often due watches are looked for")
     username_catalog_ttl_hours: int = Field(default=168, ge=1, le=2160, description="How long the catalog is cached")

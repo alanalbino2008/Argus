@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.31.0"
+__version__ = "1.32.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -324,6 +324,18 @@ class ArgusClient:
     def sun(self, lat: float, lon: float, at: str) -> dict[str, Any]:
         """Where the sun was (and where shadows pointed) at a place and ISO 8601 time with offset."""
         return self.get("/api/tools/sun", lat=lat, lon=lon, at=at)
+
+    def case_timeline(self, case_id: str) -> list[dict[str, Any]]:
+        """Everything dated in a case, oldest first (events, account changes, evidence, scans, photo dates)."""
+        return self.get(f"/api/cases/{case_id}/timeline")
+
+    def case_places(self, case_id: str) -> dict[str, Any]:
+        """Everything placed in a case, and the addresses not yet on the map."""
+        return self.get(f"/api/cases/{case_id}/places")
+
+    def geocode(self, case_id: str, item_id: str) -> dict[str, Any]:
+        """Look up an address entity's position (sends the address to the geocoder, via the case's route)."""
+        return self.post(f"/api/cases/{case_id}/items/{item_id}/geocode")
 
     def verify_evidence(self, capture_id: str) -> dict[str, Any]:
         return self.post(f"/api/evidence/{capture_id}/verify")

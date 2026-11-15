@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.32.0] — Phase 32: Timeline & map
+
+### Added
+- **Case timeline** (`/api/cases/{id}/timeline`): investigator events, watched-account changes,
+  captures and uploads, linked scans, and the moment each photo in the evidence was taken (read
+  from its own metadata, flagged approximate when its time zone is unknown; not duplicated when
+  already added by hand). The **Timeline** tab has an activity chart on a true time scale (day,
+  month or year), filters by kind, and a CSV export (formula-safe).
+- **Case map** (`/api/cases/{id}/places`): location and address entities with coordinates, photos
+  with GPS, and addresses looked up on request. The **Map** tab is drawn by Argus itself: no
+  mapping library, no third-party scripts. It supports dragging, zooming and the keyboard,
+  shows details on click, has "show all", and exports KML for Google Earth.
+- Coordinates are read as decimal, degrees-minutes-seconds (`51°30'02.5"N 0°07'28.6"W`,
+  `40.7128° N`), or OpenStreetMap and Google Maps links; 0, 0 is ignored.
+- **Address look-up** (`POST /api/cases/{id}/items/{item}/geocode`), Nominatim-compatible
+  (`ARGUS_GEOCODER_URL`): only on request, through the case's route (anonymous cases never go
+  direct), at most once a second, stored on the entity and audited.
+- Python client: `case_timeline()`, `case_places()`, `geocode()`.
+- `docs/explained/32-timeline-and-map.md`.
+
+### Security
+- **Map images are fetched by the server** (`/api/map/tiles`, `ARGUS_MAP_TILE_URL`), validated
+  (images only, size-capped) and cached, so the investigator's browser never tells a map provider
+  which area they are studying.
+- Reading photos' dates and positions for the map and timeline is Argus's own background work,
+  so it is not written to the custody log as a person viewing the evidence.
+
 ## [1.31.0] — Phase 31: Images & documents
 
 ### Added
