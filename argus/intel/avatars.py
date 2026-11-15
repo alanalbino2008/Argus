@@ -38,7 +38,7 @@ def fingerprint(data: bytes) -> str | None:
                 return None
             img.seek(0)  # first frame of an animated avatar
             grey = img.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-            pixels = [int(grey.getpixel((x, y)) or 0) for y in range(8) for x in range(9)]  # type: ignore[arg-type]
+            pixels = list(grey.tobytes())  # 72 grey levels, row by row
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError, EOFError):
         return None
     if max(pixels) - min(pixels) < 12:  # blank or a flat colour: a default avatar
