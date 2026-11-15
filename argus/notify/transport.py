@@ -15,16 +15,23 @@ is the secret for Slack and Teams.
 from __future__ import annotations
 
 import asyncio
+import json
 import smtplib
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
+from typing import Any
 from urllib.parse import urlsplit
 
 import aiohttp
 
 from argus.core.settings import Settings
-from argus.security.network import BlockedDestinationError, GuardedResolver, assert_public_host, configured_proxy_hosts
+from argus.security.network import (
+    BlockedDestinationError,
+    GuardedResolver,
+    assert_allowed_host,
+    configured_proxy_hosts,
+)
 
 USER_AGENT = "Argus-Notifications/1 (+https://github.com/alanalbino2008/Argus)"
 RETRYABLE_STATUS = {408, 425, 429, 500, 502, 503, 504}
@@ -38,6 +45,26 @@ class Result:
     status_code: int | None = None
     error: str | None = None
     retry_after: float | None = None
+    reference: str | None = None  # what the receiver created, e.g. a Jira issue key
+
+
+def classify(host: str, reply: Reply, detail: str = "") -> Result:
+    """Turn an HTTP status into delivered / retry later / give up."""
+    status, suffix = reply.status, f": {detail}" if detail else ""
+    if 200 <= status < 300:
+        return Result(True, status_code=status)
+    if 300 <= status < 400:
+        return Result(
+            False, False, status, f"{host} answered with a redirect (HTTP {status}); redirects are not followed"
+        )
+    if status in RETRYABLE_STATUS:
+        return Result(False, True, status, f"{host} answered HTTP {status}{suffix}", reply.retry_after)
+    hint = ""
+    if not detail:
+        hint = {401: " (check the credentials)", 403: " (the credentials lack permission, or the webhook was"
+                " revoked)", 404: " (the webhook was probably deleted or revoked)", 410: " (the webhook was deleted)"
+                }.get(status, "")  # fmt: skip
+    return Result(False, False, status, f"{host} refused the notification: HTTP {status}{hint}{suffix}")
 
 
 def _retry_after(value: str | None) -> float | None:
@@ -53,15 +80,31 @@ def _blocked(exc: BaseException) -> bool:
     )
 
 
+@dataclass(frozen=True)
+class Reply:
+    """An HTTP answer, for integrations that need to read a (small, JSON) response."""
+
+    status: int
+    retry_after: float | None = None
+    data: Any = None  # parsed JSON body, or None
+
+
+MAX_BODY = 256 * 1024
+
+
 class Transport:
     def __init__(self, settings: Settings):
         self.settings = settings
         self._session: aiohttp.ClientSession | None = None
+        self.private_ok = tuple(settings.integration_allowed_hosts)
+        self.tokens: dict[str, tuple[str, float]] = {}  # OAuth access tokens by credential fingerprint
 
     def _http(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             resolver = (
-                None if self.settings.allow_private_targets else GuardedResolver(trusted_hosts=configured_proxy_hosts())
+                None
+                if self.settings.allow_private_targets
+                else GuardedResolver(trusted_hosts=configured_proxy_hosts(), private_ok_hosts=self.private_ok)
             )
             self._session = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(limit=20, ttl_dns_cache=60, resolver=resolver),
@@ -75,16 +118,32 @@ class Transport:
         if self._session is not None:
             await self._session.close()
 
-    async def post(self, url: str, body: bytes, headers: dict[str, str]) -> Result:
+    async def request(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        content_type: str = "application/json",
+        read: bool = False,
+    ) -> Reply | Result:
+        """One guarded request. Returns a :class:`Reply`, or a :class:`Result` if it never got an answer."""
         host = urlsplit(url).hostname or "?"
+        all_headers = {**({"Content-Type": content_type} if body is not None else {}), **(headers or {})}
         try:
             if not self.settings.allow_private_targets:
-                assert_public_host(host)
-            async with self._http().post(
-                url, data=body, headers={"Content-Type": "application/json", **headers}, allow_redirects=False
-            ) as resp:
-                status = resp.status
-                retry_after = _retry_after(resp.headers.get("Retry-After"))
+                assert_allowed_host(host, self.private_ok)
+            async with self._http().request(method, url, data=body, headers=all_headers, allow_redirects=False) as resp:
+                data = None
+                if read and "json" in (resp.headers.get("Content-Type") or ""):
+                    raw = await resp.content.read(MAX_BODY + 1)
+                    if len(raw) <= MAX_BODY:
+                        try:
+                            data = json.loads(raw)
+                        except ValueError:
+                            data = None
+                return Reply(resp.status, _retry_after(resp.headers.get("Retry-After")), data)
         except asyncio.TimeoutError:
             return Result(
                 False, True, error=f"Timed out after {self.settings.notify_timeout_seconds:g}s waiting for {host}"
@@ -95,16 +154,12 @@ class Transport:
             if isinstance(exc, aiohttp.ClientError | OSError):
                 return Result(False, True, error=f"Could not connect to {host} ({type(exc).__name__})")
             raise
-        if 200 <= status < 300:
-            return Result(True, status_code=status)
-        if 300 <= status < 400:
-            return Result(
-                False, False, status, f"{host} answered with a redirect (HTTP {status}); redirects are not followed"
-            )
-        if status in RETRYABLE_STATUS:
-            return Result(False, True, status, f"{host} answered HTTP {status}", retry_after)
-        hint = " (the webhook was probably deleted or revoked)" if status in (403, 404, 410) else ""
-        return Result(False, False, status, f"{host} refused the notification: HTTP {status}{hint}")
+
+    async def post(self, url: str, body: bytes, headers: dict[str, str]) -> Result:
+        reply = await self.request("POST", url, body=body, headers=headers)
+        if isinstance(reply, Result):
+            return reply
+        return classify(urlsplit(url).hostname or "?", reply)
 
     # ------------------------------------------------------------------ email
     @property

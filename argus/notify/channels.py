@@ -10,6 +10,16 @@ exactly the shape of a Server-Side Request Forgery (SSRF) attack. So:
   and redirects are not followed;
 * the URL is a secret (a Slack webhook URL alone lets anyone post) so it is encrypted at rest
   and only a masked hint is ever shown again.
+
+Integrations (Jira, ServiceNow, Splunk, Microsoft Sentinel) carry credentials, so:
+
+* everything needed to send - URL included - is sealed together, so a changed database row
+  cannot redirect stored credentials to another host;
+* changing an integration's destination (scheme, host or port) requires re-entering its credentials (otherwise an admin who
+  never saw a token could send it to a server they control);
+* self-hosted instances on private networks are reachable only if the *operator* lists their
+  exact host name in ``ARGUS_INTEGRATION_ALLOWED_HOSTS``; link-local and metadata addresses
+  stay blocked even then.
 """
 
 from __future__ import annotations
@@ -18,15 +28,31 @@ import re
 from typing import Any
 from urllib.parse import urlsplit
 
-from argus.security.network import BlockedDestinationError, assert_public_host
+from argus.security.network import BlockedDestinationError, assert_allowed_host
 
-TYPES = ("slack", "teams", "webhook", "email")
+TYPES = ("slack", "teams", "webhook", "email", "jira", "servicenow", "splunk", "sentinel")
+INTEGRATIONS = ("jira", "servicenow", "splunk", "sentinel")
+TICKETING = ("jira", "servicenow")  # create tickets for alerts; scheduled reports are not tickets
 SEVERITIES = ("low", "medium", "high", "critical")
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 MAX_RECIPIENTS = 20
 SLACK_HOSTS = {"hooks.slack.com"}
 # Teams "Workflows" (Power Automate) webhooks, and the older Office 365 connector URLs.
 TEAMS_HOST_SUFFIXES = (".logic.azure.com", ".api.powerplatform.com", ".webhook.office.com")
+_JIRA_PROJECT = re.compile(r"^[A-Z][A-Z0-9_]{1,9}$")
+_SPLUNK_INDEX = re.compile(r"^[a-z0-9_][a-z0-9_-]{0,79}$")
+_SOURCETYPE = re.compile(r"^[A-Za-z0-9_:.\-]{1,100}$")
+_GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_TENANT_DOMAIN = re.compile(r"^[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+$")
+_DCR_ID = re.compile(r"^dcr-[0-9a-f]{32}$")
+_STREAM = re.compile(r"^(Custom|Microsoft)-[A-Za-z0-9_]{1,100}$")
+_TOKEN = re.compile(r"^[^\s]{8,1024}$")
+SENTINEL_CLOUDS = {  # DCE host suffix -> (token authority, scope)
+    ".ingest.monitor.azure.com": ("login.microsoftonline.com", "https://monitor.azure.com//.default"),
+    ".ingest.monitor.azure.us": ("login.microsoftonline.us", "https://monitor.azure.us//.default"),
+    ".ingest.monitor.azure.cn": ("login.chinacloudapi.cn", "https://monitor.azure.cn//.default"),
+}
+SPLUNK_PATH = "/services/collector/event"
 _EMAIL = re.compile(r"^[^@\s<>,;\"']{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}$")
 
 
@@ -60,10 +86,142 @@ def mask(url: str) -> str:
     )
 
 
-def validate(
-    channel_type: str, config: dict[str, Any], *, allow_private: bool
+def _text(config: dict[str, Any], key: str, limit: int = 256) -> str:
+    value = str(config.get(key) or "").strip()
+    if len(value) > limit:
+        raise ChannelConfigError(f"{key.replace('_', ' ').capitalize()} is too long")
+    if any(c in value for c in "\r\n\t"):
+        raise ChannelConfigError(f"{key.replace('_', ' ').capitalize()} cannot contain line breaks")
+    return value
+
+
+def _reachable(host: str, *, allow_private: bool, private_ok: tuple[str, ...], what: str) -> None:
+    if allow_private:
+        return
+    try:
+        assert_allowed_host(host, private_ok)
+    except BlockedDestinationError as exc:
+        raise ChannelConfigError(
+            f"{what} must be on the public internet. A self-hosted instance on a private network has to be "
+            "allowed by the server operator (ARGUS_INTEGRATION_ALLOWED_HOSTS)"
+        ) from exc
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{(parts.netloc or '').lower()}"
+
+
+def _secret(
+    config: dict[str, Any], key: str, label: str, url: str, current: dict[str, Any] | None, *, required: bool = True
+) -> str:
+    """A credential: new if given; otherwise kept, but only while the destination (scheme, host, port) is unchanged."""
+    value = str(config.get(key) or "").strip()
+    if value:
+        if not _TOKEN.match(value):
+            raise ChannelConfigError(f"The {label} doesn't look right (no spaces, at least 8 characters)")
+        return value
+    if current and current.get(key) and _origin(str(current.get("url", ""))) == _origin(url):
+        return str(current[key])
+    if not required:
+        return ""
+    if current and current.get(key):
+        raise ChannelConfigError(f"Re-enter the {label}: the destination changed, so the saved one is not reused")
+    raise ChannelConfigError(f"Enter the {label}")
+
+
+def _base_url(config: dict[str, Any], *, allow_private: bool) -> tuple[str, str]:
+    url, host = _check_url(str(config.get("url") or ""), allow_private=allow_private)
+    parts = urlsplit(url)
+    if parts.query or parts.fragment:
+        raise ChannelConfigError("Enter the site address only, without ?query or #fragment")
+    return f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}", host
+
+
+def _integration(
+    channel_type: str,
+    config: dict[str, Any],
+    *,
+    allow_private: bool,
+    private_ok: tuple[str, ...],
+    current: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return (public settings to store in clear, secrets to encrypt)."""
+    if channel_type == "sentinel":
+        dce, host = _base_url({"url": config.get("dce_url") or config.get("url")}, allow_private=allow_private)
+        cloud = next((v for k, v in SENTINEL_CLOUDS.items() if host.endswith(k)), None)
+        if cloud is None or urlsplit(dce).path:
+            raise ChannelConfigError(
+                "Use the data collection endpoint's Logs Ingestion URL (https://<name>.<region>.ingest.monitor.azure.com)"
+            )
+        tenant, client = _text(config, "tenant_id", 253), _text(config, "client_id", 64)
+        if not (_GUID.match(tenant) or _TENANT_DOMAIN.match(tenant)):
+            raise ChannelConfigError("The tenant ID should be a GUID (or the tenant's domain)")
+        if not _GUID.match(client):
+            raise ChannelConfigError("The application (client) ID should be a GUID")
+        dcr, stream = _text(config, "dcr_id", 64), _text(config, "stream", 120) or "Custom-ArgusEvents_CL"
+        if not _DCR_ID.match(dcr):
+            raise ChannelConfigError("The DCR immutable ID looks like dcr-0123456789abcdef0123456789abcdef")
+        if not _STREAM.match(stream):
+            raise ChannelConfigError("The stream name looks like Custom-ArgusEvents_CL")
+        secret = _secret(config, "client_secret", "client secret", dce, current)
+        public: dict[str, Any] = {"destination": dce, "host": host, "tenant_id": tenant, "client_id": client, "dcr_id": dcr,
+                  "stream": stream}  # fmt: skip
+        return public, {**public, "url": dce, "authority": cloud[0], "scope": cloud[1], "client_secret": secret}
+
+    url, host = _base_url(config, allow_private=allow_private)
+    if channel_type == "jira":
+        _reachable(host, allow_private=allow_private, private_ok=private_ok, what="Jira")
+        project = _text(config, "project_key", 16).upper()
+        if not _JIRA_PROJECT.match(project):
+            raise ChannelConfigError("Enter the Jira project key, e.g. SEC")
+        issue_type = _text(config, "issue_type", 64) or "Task"
+        email = _text(config, "email", 254).lower()
+        if email and not _EMAIL.match(email):
+            raise ChannelConfigError("Enter the email address of the Jira account the API token belongs to")
+        token = _secret(config, "api_token", "API token", url, current)
+        public = {"destination": url, "host": host, "project_key": project, "issue_type": issue_type,
+                  "auth": f"API token of {email}" if email else "Personal access token",
+                  "cloud": host.endswith(".atlassian.net")}  # fmt: skip
+        return public, {**public, "url": url, "email": email, "api_token": token}
+    if channel_type == "servicenow":
+        _reachable(host, allow_private=allow_private, private_ok=private_ok, what="ServiceNow")
+        username = _text(config, "username", 128)
+        if not username:
+            raise ChannelConfigError("Enter the ServiceNow integration user's name")
+        group = _text(config, "assignment_group", 100)
+        password = _secret(config, "password", "password", url, current)
+        public = {"destination": url, "host": host, "username": username, "assignment_group": group}
+        return public, {**public, "url": url, "password": password}
+    if channel_type == "splunk":
+        _reachable(host, allow_private=allow_private, private_ok=private_ok, what="Splunk")
+        url = url.removesuffix(SPLUNK_PATH).removesuffix("/services/collector")
+        index, sourcetype = _text(config, "index", 80), _text(config, "sourcetype", 100) or "argus:event"
+        if index and not _SPLUNK_INDEX.match(index):
+            raise ChannelConfigError("Splunk index names use lowercase letters, digits, - and _")
+        if not _SOURCETYPE.match(sourcetype):
+            raise ChannelConfigError("The sourcetype may contain letters, digits and : . _ -")
+        token = _secret(config, "token", "HEC token", url, current)
+        public = {"destination": url, "host": host, "index": index, "sourcetype": sourcetype}
+        return public, {**public, "url": url, "token": token}
+    raise ChannelConfigError(f"Unknown channel type {channel_type!r}")
+
+
+def validate(
+    channel_type: str,
+    config: dict[str, Any],
+    *,
+    allow_private: bool,
+    private_ok: tuple[str, ...] | list[str] = (),
+    current: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return (public settings to store in clear, secrets to encrypt).
+
+    ``current`` holds the channel's present secrets when it is being edited, so credentials can
+    be kept without being re-typed (as long as the destination host stays the same).
+    """
+    private_ok = tuple(private_ok)
+    if channel_type in INTEGRATIONS:
+        return _integration(channel_type, config, allow_private=allow_private, private_ok=private_ok, current=current)
     if channel_type == "email":
         raw = config.get("recipients") or []
         if isinstance(raw, str):
@@ -90,7 +248,7 @@ def validate(
     elif channel_type == "webhook":
         if not allow_private:
             try:
-                assert_public_host(host)
+                assert_allowed_host(host, private_ok)
             except BlockedDestinationError as exc:
                 raise ChannelConfigError("Webhooks can only be sent to public internet addresses") from exc
     else:

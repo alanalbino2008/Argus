@@ -167,6 +167,10 @@
             "json",
             "text"
           ]
+        },
+        "apiRequestsPerMinute": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
@@ -427,6 +431,14 @@
         },
         "scheduledReports": {
           "type": "boolean"
+        },
+        "integrationAllowedHosts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9.-]+$"
+          },
+          "uniqueItems": true
         }
       }
     }

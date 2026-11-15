@@ -148,6 +148,21 @@ Workspace admins add destinations in *Monitoring → Notifications*. The operato
 Slack, Teams and public webhooks need nothing else: they use the normal internet egress, and
 private addresses stay blocked. Watch `ArgusNotificationsFailing` and `ArgusNotificationBacklog`.
 
+### Integrations (Jira, ServiceNow, Splunk, Microsoft Sentinel)
+
+Cloud-hosted integrations (Jira Cloud, ServiceNow, Splunk Cloud, Sentinel) need nothing from the
+operator. A **self-hosted** instance on a private network is refused unless you list its exact
+host name. Wildcards are not accepted, and link-local and metadata addresses stay blocked:
+
+```bash
+helm upgrade argus deploy/helm/argus -n argus --reuse-values \
+  --set 'notifications.integrationAllowedHosts={splunk-hec.corp.internal,jira.corp.internal}'
+```
+
+The pods also need a route there: add the hosts' network to `networkPolicy.internalEgress`. HTTPS
+with a certificate the pods trust is required. Mount an internal CA bundle and set `SSL_CERT_FILE`
+through `config.extraEnv` if needed. Setup for each integration is in [`API.md`](API.md#integrations).
+
 ### Client reports
 
 Reports need no setup: the image includes the fonts, and every report's fingerprint is
@@ -218,8 +233,9 @@ Replicas share nothing but PostgreSQL:
 | Two pods start at once and migrate | An **advisory lock** serialises migrations |
 | The concurrent-scan cap | Counted across the cluster (live heartbeats), not per pod |
 
-Per-key scan rate limits (`ARGUS_SCANS_PER_MINUTE`) are enforced per pod, so the effective limit
-is that value × replicas.
+Per-key rate limits are enforced per pod: scan launches (`ARGUS_SCANS_PER_MINUTE`) and API
+requests (`ARGUS_API_REQUESTS_PER_MINUTE`, `config.apiRequestsPerMinute`). The effective limit is
+therefore that value × replicas.
 
 ---
 

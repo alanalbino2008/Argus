@@ -27,6 +27,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             h.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
         if request.url.path.startswith("/api/"):
             h.setdefault("Cache-Control", "no-store")  # investigation data must not be cached
+        rate = getattr(request.state, "rate_limit", None)
+        if rate is not None:
+            limit, remaining, reset = rate
+            h.setdefault("RateLimit-Limit", str(limit))
+            h.setdefault("RateLimit-Remaining", str(max(0, remaining)))
+            h.setdefault("RateLimit-Reset", str(reset))
         if request.url.scheme == "https":
             h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         return response

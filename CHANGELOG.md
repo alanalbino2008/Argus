@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.23.0] — Phase 23: API & integrations
+
+### Added
+- **Jira integration** (Cloud and Data Center): each alert opens one issue, labelled
+  `argus-<alert id>`. A search runs before every create, so a retried delivery finds the issue
+  instead of duplicating it. *Send test* checks the project and issue type without creating
+  anything.
+- **ServiceNow integration**: each alert opens one incident, with `correlation_id` used for the
+  same deduplication, impact and urgency set from severity, and an optional assignment group.
+- **Splunk integration** (HTTP Event Collector): alerts, scheduled reports and tests as JSON
+  events, with optional index and sourcetype.
+- **Microsoft Sentinel integration** (Logs Ingestion API): OAuth client credentials with token
+  caching and re-sign-in, flat rows plus a `Details` column, and support for Azure commercial,
+  Government and China clouds.
+- The delivery log shows what each delivery created (`reference`, migration `0012`), e.g.
+  `SEC-12` or `INC0010001`.
+- **OpenAPI document**:
+  - API key security schemes on exactly the authenticated operations;
+  - the `X-Argus-Workspace` header, and the minimum role (`x-argus-role`) derived from each
+    operation's dependencies;
+  - stable operation IDs, tags for every operation, and documented `401`/`403`/`404`/`429`
+    responses.
+- **Per-key API rate limit** (`ARGUS_API_REQUESTS_PER_MINUTE`, default 600, Helm
+  `config.apiRequestsPerMinute`) with `RateLimit-*` headers on every response and `Retry-After` on
+  `429`.
+- **Official Python client** (`clients/python`): typed errors, automatic waiting on rate limits,
+  `wait()` for scans, workspaces, PDF reports and webhook verification.
+- **Settings → API & integrations** card with copyable curl and Python examples.
+- `docs/API.md` and `docs/explained/23-api-and-integrations.md`.
+
+### Security
+- Integration credentials are write-only and sealed together with the destination URL. Editing
+  can keep a saved credential only while the host is unchanged.
+- `ARGUS_INTEGRATION_ALLOWED_HOSTS` (Helm `notifications.integrationAllowedHosts`): operator-listed
+  exact host names may be private. Link-local and cloud-metadata addresses (including
+  `fd00:ec2::254` and `100.100.100.200`) stay blocked, at validation and after every DNS lookup.
+- Jira descriptions wrap untrusted text in `{noformat}`. Error messages quote only specific error
+  fields, never response bodies.
+
 ## [1.22.0] — Phase 22: Supplier risk
 
 ### Added

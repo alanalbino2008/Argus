@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from argus.api.deps import WorkspaceContext, audit, client_ip, in_workspace
+from argus.notify.channels import TICKETING
 from argus.observability import metrics
 from argus.reports.branding import BrandingError, check_accent, decode_data_url, sanitise_logo
 from argus.reports.schedule import ScheduleError
@@ -168,6 +169,10 @@ async def _check_channels(request: Request, workspace_id: str, channel_ids: list
         channel = await request.app.state.notifications.get_channel(channel_id, workspace_id=workspace_id)
         if channel is None:
             raise HTTPException(status_code=422, detail=f"Unknown destination {channel_id}")
+        if channel["type"] in TICKETING:
+            raise HTTPException(
+                status_code=422, detail=f"{channel['name']} creates tickets for alerts; it cannot receive reports"
+            )
 
 
 def _check_timing(values: dict[str, Any]) -> None:

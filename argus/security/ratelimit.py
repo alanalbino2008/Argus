@@ -33,3 +33,8 @@ class SlidingWindowLimiter:
         if not q:
             return 0
         return max(1, int(self.window - (time.monotonic() - q[0])) + 1)
+
+    def remaining(self, key: str) -> int:
+        now = time.monotonic()
+        q = self._events.get(key)
+        return self.limit - sum(1 for t in q if now - t < self.window) if q else self.limit

@@ -24,7 +24,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from argus.notify.channels import SEVERITY_RANK, ChannelConfigError
+from argus.notify.channels import INTEGRATIONS, SEVERITY_RANK, ChannelConfigError
 from argus.notify.render import alert_event
 from argus.notify.signing import new_secret
 from argus.security.crypto import SecretBox, SecretBoxError
@@ -69,6 +69,7 @@ def _channel(row: NotificationChannelRow) -> dict[str, Any]:
         "min_severity": row.min_severity,
         **(row.config or {}),
         "signed": row.type == "webhook",
+        "integration": row.type in INTEGRATIONS,
         "health": health,
         "created_at": _iso(row.created_at),
         "created_by": row.created_by,
@@ -94,6 +95,7 @@ def _delivery(row: NotificationDeliveryRow, channel: NotificationChannelRow | No
         "last_error": row.last_error,
         "created_at": _iso(row.created_at),
         "delivered_at": _iso(row.delivered_at),
+        "reference": row.reference,
         "summary": _summary(row.payload),
     }
     if channel is not None:
@@ -274,13 +276,28 @@ class NotificationRepository:
             if public is not None:
                 row.config = public
             if secret_values is not None:  # a new destination keeps its signing secrets
-                kept = {k: v for k, v in self.open_secrets(row).items() if k != "url"}
+                kept = (
+                    {}  # validate() already carried over the credentials it allows to be kept
+                    if row.type in INTEGRATIONS
+                    else {k: v for k, v in self.open_secrets(row).items() if k != "url"}
+                )
                 row.sealed = (
                     self._seal(workspace_id, channel_id, {**kept, **secret_values}) if (kept or secret_values) else None
                 )
                 row.consecutive_failures, row.last_error = 0, None
             row.updated_at = _now()
             return _channel(row)
+
+    async def channel_secrets(self, channel_id: str, *, workspace_id: str) -> dict[str, Any] | None:
+        """The decrypted settings of a channel (server-side only: used to keep credentials on edit)."""
+        async with self.db.session() as s:
+            row = await self._row(s, channel_id, workspace_id)
+            if row is None:
+                return None
+            try:
+                return self.open_secrets(row)
+            except SecretBoxError:  # e.g. the encryption key changed: the credentials must be entered again
+                return None
 
     async def rotate_secret(self, channel_id: str, *, workspace_id: str) -> str | None:
         """New signing secret; the previous one keeps signing too for 24 h so receivers can switch."""
@@ -417,7 +434,9 @@ class NotificationRepository:
                 row.consecutive_failures = (row.consecutive_failures or 0) + 1
                 row.last_error = (error or "")[:512]
 
-    async def record_delivered(self, delivery_id: str, channel_id: str, instance: str, status_code: int | None) -> bool:
+    async def record_delivered(
+        self, delivery_id: str, channel_id: str, instance: str, status_code: int | None, *, reference: str | None = None
+    ) -> bool:
         done = await self._finish(
             delivery_id,
             instance,
@@ -425,6 +444,7 @@ class NotificationRepository:
             delivered_at=_now(),
             last_status_code=status_code,
             last_error=None,
+            reference=reference[:128] if reference else None,
         )
         if done:
             await self._channel_result(channel_id, ok=True)

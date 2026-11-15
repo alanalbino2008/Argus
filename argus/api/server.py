@@ -33,6 +33,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
@@ -51,6 +52,7 @@ from argus.api.monitor_routes import router as monitor_router
 from argus.api.notification_routes import router as notification_router
 from argus.api.onboarding_routes import router as onboarding_router
 from argus.api.onboarding_routes import scope_warnings
+from argus.api.openapi import build_openapi
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.report_routes import router as report_router
@@ -173,6 +175,9 @@ async def lifespan(app: FastAPI):
     app.state.audit = AuditLog(db)
     app.state.ws_tickets = TicketStore(db, settings.ws_ticket_ttl_seconds)
     app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
+    app.state.api_limiter = (
+        SlidingWindowLimiter(settings.api_requests_per_minute, 60) if settings.api_requests_per_minute else None
+    )
     await _bootstrap_admin_key(app)
     await _audit_plugins(app)
     app.state.monitors = MonitorRepository(db)
@@ -287,12 +292,61 @@ async def _install_bootstrap_key(app: FastAPI, settings: Settings) -> None:
         )
 
 
+API_DESCRIPTION = """
+Everything the Argus web app does is available through this API: launch investigations, read
+graphs and attack paths, watch targets, rate security posture, manage suppliers and reports,
+and connect alerts to Slack, Teams, email, webhooks, Jira, ServiceNow, Splunk or Microsoft Sentinel.
+
+**Authentication.** Send an API key as `Authorization: Bearer <key>` (or `X-API-Key: <key>`).
+Keys are created by an admin under Settings → API keys and carry a role: *viewer* (read),
+*analyst* (scan and edit) or *admin* (manage the workspace).
+
+**Workspaces.** Data lives in workspaces. Requests act in your default workspace unless you
+send `X-Argus-Workspace: <slug or id>`. Anything in a workspace you are not a member of
+answers **404**, exactly as if it did not exist.
+
+**Rate limits.** Each API key may make 600 requests a minute by default (and launch 10 scans a
+minute). Every response carries `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`;
+a `429` also carries `Retry-After`.
+
+**Errors** are JSON: `{"detail": "a message you can show to a person"}`; validation errors
+(`422`) list each problem in `detail`.
+
+**Webhooks** are signed with the Standard Webhooks scheme (`webhook-id`, `webhook-timestamp`,
+`webhook-signature`). The guide in `docs/API.md` shows how to verify them, and the official
+Python client (`clients/python`) does it for you.
+"""
+
+API_TAGS = [
+    {"name": "investigations", "description": "Launch scans; read graphs, attack paths, people and exports."},
+    {"name": "ratings", "description": "A-F security ratings with factor breakdowns, benchmarks and history."},
+    {"name": "supplier risk", "description": "The supplier register, passive assessments and the risk matrix."},
+    {"name": "monitoring", "description": "Continuous monitoring of targets and the alerts it raises."},
+    {"name": "notifications", "description": "Alert destinations and integrations, and the delivery log."},
+    {"name": "reports", "description": "Signed PDF reports, verification and schedules."},
+    {"name": "workspaces", "description": "Team workspaces and their members."},
+    {"name": "security", "description": "API keys, users and the audit log."},
+    {"name": "single sign-on", "description": "OpenID Connect sign-in for the web app."},
+    {"name": "getting started", "description": "The guided first scan."},
+    {"name": "platform", "description": "Health, modules and plugins."},
+]
+
+
+def _operation_id(route: Any) -> str:
+    return str(route.name)
+
+
 app = FastAPI(
-    title="Argus OSINT Platform API",
-    description="REST & WebSocket API for Argus Reconnaissance & Relationship Graphing",
+    title="Argus API",
+    summary="Outside-in attack surface intelligence: reconnaissance, ratings, supplier risk and alerts.",
+    description=API_DESCRIPTION,
     version=__version__,
     lifespan=lifespan,
+    openapi_tags=API_TAGS,
+    generate_unique_id_function=_operation_id,
+    license_info={"name": "Proprietary"},
 )
+app.openapi = partial(build_openapi, app)  # type: ignore[method-assign]
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(ObservabilityMiddleware)  # outermost: times and labels everything, incl. errors
@@ -1223,7 +1277,7 @@ def _snapshot_message(inv: Investigation, graph: IntelligenceGraph) -> str:
 if WEB_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
-    @app.get("/", response_class=HTMLResponse)
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def serve_index():
         index_file = WEB_DIR / "index.html"
         if index_file.exists():

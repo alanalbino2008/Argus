@@ -1,4 +1,5 @@
-// Notification destinations (Slack, Teams, email, signed webhooks) and the delivery log.
+// Notification destinations (Slack, Teams, email, signed webhooks), integrations (Jira,
+// ServiceNow, Splunk, Microsoft Sentinel) and the delivery log.
 // Rendered inside the Monitoring page for workspace administrators.
 
 import { api, enc } from "../api.js";
@@ -20,7 +21,47 @@ const TYPES = {
     label: "Webhook", sub: "Signed JSON, any system", url: "HTTPS endpoint", placeholder: "https://siem.company.com/argus",
     hint: "Argus POSTs a signed JSON event (Standard Webhooks). Use it for a SIEM, SOAR, ticketing or PagerDuty-style tool.",
   },
+  jira: {
+    label: "Jira", sub: "Alert → issue", url: "Jira site", placeholder: "https://your-company.atlassian.net",
+    hint: "Each alert becomes one issue (never a duplicate, even when a delivery is retried). Jira Data Center works too.",
+    fields: [
+      ["project_key", "Project key", { placeholder: "SEC" }],
+      ["issue_type", "Issue type", { placeholder: "Task", optional: true }],
+      ["email", "Account email (Jira Cloud)", { placeholder: "argus-bot@company.com", optional: true, hint: "Leave empty for a Data Center personal access token." }],
+      ["api_token", "API token", { secret: true, hint: "Jira Cloud: id.atlassian.com → Security → API tokens. Use a dedicated account that can create issues in the project." }],
+    ],
+  },
+  servicenow: {
+    label: "ServiceNow", sub: "Alert → incident", url: "Instance URL", placeholder: "https://your-company.service-now.com",
+    hint: "Each alert becomes one incident, correlated by the alert's ID, with impact and urgency set from its severity.",
+    fields: [
+      ["username", "Integration user", { placeholder: "argus.integration" }],
+      ["password", "Password", { secret: true, hint: "Give the user the itil role (or REST access to the incident table) and nothing more." }],
+      ["assignment_group", "Assignment group", { placeholder: "Security Operations", optional: true }],
+    ],
+  },
+  splunk: {
+    label: "Splunk", sub: "HTTP Event Collector", url: "HEC URL", placeholder: "https://http-inputs-acme.splunkcloud.com",
+    hint: "Alerts, reports and tests are sent as JSON events to /services/collector/event.",
+    fields: [
+      ["token", "HEC token", { secret: true, hint: "Settings → Data inputs → HTTP Event Collector → New token." }],
+      ["index", "Index", { placeholder: "security", optional: true }],
+      ["sourcetype", "Sourcetype", { placeholder: "argus:event", optional: true }],
+    ],
+  },
+  sentinel: {
+    label: "Microsoft Sentinel", sub: "Logs Ingestion API", url: "Data collection endpoint", placeholder: "https://argus-dce-a1b2.westeurope-1.ingest.monitor.azure.com",
+    hint: "Events land in a custom table of your Log Analytics workspace, ready for analytics rules. docs/API.md has the table schema.",
+    fields: [
+      ["dcr_id", "Data collection rule ID", { placeholder: "dcr-0123456789abcdef0123456789abcdef" }],
+      ["stream", "Stream", { placeholder: "Custom-ArgusEvents_CL", optional: true }],
+      ["tenant_id", "Tenant ID", { placeholder: "00000000-0000-0000-0000-000000000000" }],
+      ["client_id", "Application (client) ID", { placeholder: "00000000-0000-0000-0000-000000000000" }],
+      ["client_secret", "Client secret", { secret: true, hint: "The app registration needs the Monitoring Metrics Publisher role on the data collection rule." }],
+    ],
+  },
 };
+const TICKETING = new Set(["jira", "servicenow"]);
 
 let data = null; // { caps, channels, deliveries }
 let chosen = "slack";
@@ -43,7 +84,12 @@ export async function loadNotifications() {
   return data;
 }
 
-const destination = (c) => (c.type === "email" ? (c.recipients || []).join(", ") : c.destination);
+function destination(c) {
+  if (c.type === "email") return (c.recipients || []).join(", ");
+  const extra = { jira: c.project_key && `project ${c.project_key} · ${c.issue_type}`, servicenow: c.username && `as ${c.username}`,
+    splunk: c.index && `index ${c.index}`, sentinel: c.stream }[c.type];
+  return extra ? `${c.destination} · ${extra}` : c.destination;
+}
 
 function healthPill(c) {
   if (!c.enabled) return html`<span class="pill">Paused</span>`;
@@ -90,7 +136,7 @@ export function notificationsCard() {
         <td>${timeAgo(d.created_at)}</td>
         <td>${d.channel_name}</td>
         <td style="max-width:380px">${d.event_type === "notification.test" ? html`<span class="muted">Test message</span>` : d.summary}</td>
-        <td>${statusPill(d)}${d.attempts > 1 ? html` <span class="muted small">${d.attempts} attempts</span>` : ""}
+        <td>${statusPill(d)}${d.reference && d.status === "delivered" ? html` <span class="pill accent mono" style="text-transform:none" title="Created by the integration">${d.reference}</span>` : ""}${d.attempts > 1 ? html` <span class="muted small">${d.attempts} attempts</span>` : ""}
           ${d.last_error && d.status !== "delivered" ? html`<div class="delivery-error">${d.last_error}</div>` : ""}</td>
         <td class="actions">${d.status === "failed" || d.status === "cancelled" ? html`<button class="btn sm ghost" data-act="n-retry" data-id="${d.id}">Retry</button>` : ""}</td>
       </tr>`)}</tbody></table></div>` : ""}
@@ -110,6 +156,11 @@ function renderTypes() {
     <button type="button" class="channel-type" role="radio" aria-checked="${key === chosen}" data-type="${key}" ${allowed.has(key) ? "" : html`disabled title="${key === "email" ? "Email isn't configured on this server" : "Needs ARGUS_ENCRYPTION_KEY on the server"}"`}>
       <b>${t.label}</b><small>${t.sub}</small></button>`)}`);
   const t = TYPES[chosen];
+  setHTML($("#channel-extra"), html`${(t.fields || []).map(([key, label, o]) => html`<div class="field">
+    <label class="label" for="ch-${key}">${label}${o.optional ? html` <span class="muted small">optional</span>` : ""}</label>
+    <input id="ch-${key}" data-key="${key}" class="input ${o.secret ? "mono" : ""}" type="${o.secret ? "password" : "text"}" autocomplete="${o.secret ? "new-password" : "off"}" spellcheck="false" placeholder="${o.placeholder || ""}">
+    ${o.hint ? html`<div class="hint">${o.hint}</div>` : ""}</div>`)}`);
+  $("#channel-severity-label").textContent = TICKETING.has(chosen) ? "Open a ticket for alerts of at least" : "Send alerts of at least";
   $("#channel-url-field").hidden = chosen === "email";
   $("#channel-recipients-field").hidden = chosen !== "email";
   $("#channel-url-label").textContent = t.url;
@@ -171,14 +222,19 @@ export function initNotifications(refresh) {
     const name = $("#channel-name").value.trim();
     const error = $("#channel-error");
     if (!name) return (error.textContent = "Give the destination a name.");
-    const dest = chosen === "email" ? { recipients: $("#channel-recipients").value } : { url: $("#channel-url").value.trim() };
-    if (!(dest.url || dest.recipients)) return (error.textContent = chosen === "email" ? "Add at least one recipient." : "Paste the URL.");
+    const dest = chosen === "email" ? { recipients: $("#channel-recipients").value } : { [chosen === "sentinel" ? "dce_url" : "url"]: $("#channel-url").value.trim() };
+    if (!(dest.url || dest.dce_url || dest.recipients)) return (error.textContent = chosen === "email" ? "Add at least one recipient." : "Paste the URL.");
+    for (const [key, label, o] of TYPES[chosen].fields || []) {
+      const value = $(`#ch-${key}`).value.trim();
+      if (!value && !o.optional) return (error.textContent = `Enter the ${label.toLowerCase()}.`);
+      if (value) dest[key] = value;
+    }
     const submit = $("#channel-submit");
     submit.disabled = true;
     try {
       const created = await api.post("/api/notifications/channels", { name, type: chosen, min_severity: $("#channel-severity").value, destination: dest });
       closeModal("channel-modal");
-      toast(`“${created.name}” added — send a test to check it`, "success", 5000);
+      toast(`“${created.name}” added — send a test to check ${created.integration ? "the connection" : "it"}`, "success", 5000);
       if (created.signing_secret) showSecret(created.signing_secret);
       await onChange();
     } catch (err) {

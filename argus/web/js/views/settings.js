@@ -15,6 +15,8 @@ let data = { keys: null, audit: null, plugins: null, health: null, verify: null,
 export function initSettings(el) {
   root = el;
   onState("workspace", () => { data = { ...data, keys: null, audit: null, members: null }; refresh(); });
+  on(root, "click", "[data-copy]", (_e, btn) => copyText(btn.dataset.copy));
+  on(root, "click", "[data-goto]", (e, el2) => { e.preventDefault(); document.querySelector(`.nav-item[data-view="${el2.dataset.goto}"]`)?.click(); });
   on(root, "click", "[data-theme-choice]", (_e, btn) => { window.argusTheme.set(btn.dataset.themeChoice); render(); });
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
@@ -195,6 +197,41 @@ function keysCard() {
   </div>`;
 }
 
+function snippet(text, label) {
+  return html`<div class="snippet"><pre class="mono">${text}</pre>
+    <button class="btn sm ghost" data-copy="${text}" aria-label="Copy ${label}">${ico("copy")}Copy</button></div>`;
+}
+
+function apiCard() {
+  const base = location.origin;
+  const ws = state.workspace?.slug || "default";
+  const curl = `curl -H "Authorization: Bearer $ARGUS_API_KEY" \\
+     -H "X-Argus-Workspace: ${ws}" \\
+     ${base}/api/ratings`;
+  const python = `import os
+from argus_client import ArgusClient
+
+argus = ArgusClient(
+    "${base}",
+    api_key=os.environ["ARGUS_API_KEY"],
+    workspace="${ws}",
+)
+scan = argus.scan("example.com", purpose="Authorised test, SEC-42")
+done = argus.wait(scan["investigation_id"])
+print(argus.rating(done["id"])["grade"])`;
+  return html`<div class="card card-pad" style="margin-top:16px" id="api-card">
+    <div class="card-head wrap"><div><h2>API &amp; integrations</h2><p class="muted small">Everything in Argus is available through a documented REST API. Use an API key (below) and name the workspace with the <code>X-Argus-Workspace</code> header.</p></div>
+      <div class="page-actions"><a class="btn sm" href="/docs" target="_blank" rel="noopener">${ico("external")}Interactive reference</a><a class="btn sm ghost" href="/openapi.json" target="_blank" rel="noopener">OpenAPI 3.1</a></div></div>
+    <dl class="kv" style="margin-bottom:12px"><dt>Base URL</dt><dd class="mono">${base}</dd><dt>Workspace</dt><dd class="mono">${ws}</dd>
+      <dt>Rate limit</dt><dd>A per-minute budget for each key; every response reports it in <code>RateLimit-*</code> headers</dd></dl>
+    <div class="grid two" style="align-items:start">
+      <div><div class="section-title">curl</div>${snippet(curl, "the curl example")}</div>
+      <div><div class="section-title">Python (clients/python)</div>${snippet(python, "the Python example")}</div>
+    </div>
+    <p class="muted small" style="margin-top:12px">${ico("info")} To open Jira issues or ServiceNow incidents for alerts, or stream events to Splunk or Microsoft Sentinel, add them as destinations under <a href="#" data-goto="monitoring">Monitoring → Notifications</a>.</p>
+  </div>`;
+}
+
 function brandingCard() {
   const b = data.branding;
   if (!b) return "";
@@ -331,6 +368,7 @@ function render() {
       </div>
     </div>
     ${workspacesCard()}
+    ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}
     ${admin ? html`${platform ? usersCard() : ""}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`

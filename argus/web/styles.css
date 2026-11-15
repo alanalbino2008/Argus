@@ -828,3 +828,10 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .rm-cell { height: 38px; border-radius: 6px; display: grid; place-items: center; font-weight: 700; opacity: .35; color: #fff; }
 .rm-cell.has { opacity: 1; box-shadow: inset 0 0 0 2px rgba(0,0,0,.08); font-size: 15px; }
 .rm-low { background: #2f9e44; } .rm-medium { background: #c99a06; } .rm-high { background: #e8590c; } .rm-critical { background: #c0262d; }
+
+/* Copyable code snippets (Settings → API & integrations) */
+.snippet { position: relative; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.snippet pre { margin: 0; padding: 12px 14px; padding-right: 80px; font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.snippet .btn { position: absolute; top: 6px; right: 6px; }
+.card-head.wrap { flex-wrap: wrap; gap: 12px; }
+.card-head.wrap > div:first-child { flex: 1 1 280px; }

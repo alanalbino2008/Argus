@@ -296,6 +296,8 @@ class NotificationDeliveryRow(Base):
     last_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # What the receiver created, e.g. a Jira issue key or ServiceNow incident number.
+    reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class ReportBrandingRow(Base):

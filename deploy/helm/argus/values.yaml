@@ -93,6 +93,7 @@ secrets:
 config:
   maxConcurrentScans: 5          # cluster-wide cap
   scansPerMinute: 10             # per API key, per replica
+  apiRequestsPerMinute: 600      # per API key, per replica (0 = unlimited); browser sessions are not limited
   monitorsEnabled: true          # every replica runs a scheduler; due monitors are claimed atomically
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone
@@ -114,6 +115,10 @@ notifications:
     security: starttls           # starttls (587) | tls (465) | none (trusted relay only)
     username: ""                 # password: secrets.smtpPassword
     from: ""                     # e.g. argus@company.com
+  # Exact host names of self-hosted integrations on private networks (Splunk, Jira Data Center,
+  # ServiceNow, webhook receivers). Everything else must be on the public internet; link-local and
+  # cloud metadata addresses stay blocked even for these. Example: [splunk-hec.corp.internal]
+  integrationAllowedHosts: []
 
 # ---------------------------------------------------------------------------- observability
 metrics:

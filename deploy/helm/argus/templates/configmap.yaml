@@ -7,10 +7,14 @@ data:
   ARGUS_AUTO_MIGRATE: "false"
   ARGUS_MAX_CONCURRENT_SCANS: {{ .Values.config.maxConcurrentScans | quote }}
   ARGUS_SCANS_PER_MINUTE: {{ .Values.config.scansPerMinute | quote }}
+  ARGUS_API_REQUESTS_PER_MINUTE: {{ .Values.config.apiRequestsPerMinute | quote }}
   ARGUS_MONITORS_ENABLED: {{ .Values.config.monitorsEnabled | quote }}
   ARGUS_NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
   ARGUS_NOTIFY_MAX_ATTEMPTS: {{ .Values.notifications.maxAttempts | quote }}
   ARGUS_REPORT_SCHEDULES_ENABLED: {{ .Values.notifications.scheduledReports | quote }}
+  {{- with .Values.notifications.integrationAllowedHosts }}
+  ARGUS_INTEGRATION_ALLOWED_HOSTS: {{ toJson . | quote }}
+  {{- end }}
   {{- with .Values.notifications.smtp }}
   {{- if .host }}
   ARGUS_SMTP_HOST: {{ .host | quote }}

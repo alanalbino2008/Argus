@@ -63,6 +63,29 @@ def is_public_ip(ip: str | IPAddress) -> bool:
     return addr.is_global and not addr.is_multicast
 
 
+# Metadata services outside the link-local range: AWS over IPv6, Alibaba Cloud.
+METADATA_ADDRESSES = frozenset({"fd00:ec2::254", "100.100.100.200"})
+
+
+def is_metadata_ip(ip: str | IPAddress) -> bool:
+    """Link-local (cloud metadata services), unspecified and multicast addresses: never a destination."""
+    address = ipaddress.ip_address(ip) if isinstance(ip, str) else ip
+    mapped = getattr(address, "ipv4_mapped", None)
+    if mapped is not None:
+        address = mapped
+    return address.is_link_local or address.is_unspecified or address.is_multicast or str(address) in METADATA_ADDRESSES
+
+
+def assert_allowed_host(host: str, private_ok: Iterable[str] = ()) -> None:
+    """Like :func:`assert_public_host`, but hosts the operator listed may be private (never link-local)."""
+    if host.lower() in {h.lower() for h in private_ok}:
+        ip = _as_ip(host)
+        if ip is not None and is_metadata_ip(ip):
+            raise BlockedDestinationError(f"Destination {host} is a link-local address")
+        return
+    assert_public_host(host)
+
+
 def _as_ip(host: str) -> IPAddress | None:
     try:
         return ipaddress.ip_address(host.strip("[]"))
@@ -103,14 +126,28 @@ async def resolve_public(host: str, port: int) -> list[str]:
 class GuardedResolver(AbstractResolver):
     """aiohttp resolver that drops every non-public address after DNS resolution."""
 
-    def __init__(self, inner: AbstractResolver | None = None, trusted_hosts: Iterable[str] = ()):
+    def __init__(
+        self,
+        inner: AbstractResolver | None = None,
+        trusted_hosts: Iterable[str] = (),
+        private_ok_hosts: Iterable[str] = (),
+    ):
         self._inner = inner or DefaultResolver()
         # The operator-configured outbound proxy may legitimately be internal.
         self._trusted = {h.lower() for h in trusted_hosts}
+        # Operator-listed self-hosted integrations: private addresses are fine, but never
+        # link-local ones (169.254.169.254 is the cloud metadata service).
+        self._private_ok = {h.lower() for h in private_ok_hosts}
 
     async def resolve(self, host: str, port: int = 0, family: socket.AddressFamily = socket.AF_INET) -> list[Any]:
         if host.lower() in self._trusted:
             return await self._inner.resolve(host, port, family)
+        if host.lower() in self._private_ok:
+            results = await self._inner.resolve(host, port, family)
+            allowed = [r for r in results if not is_metadata_ip(r["host"])]
+            if not allowed:
+                raise BlockedDestinationError(f"{host} resolves only to link-local or unspecified addresses")
+            return allowed
         assert_public_host(host)
         results = await self._inner.resolve(host, port, family)
         allowed = [r for r in results if is_public_ip(r["host"])]

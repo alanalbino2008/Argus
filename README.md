@@ -303,6 +303,18 @@ tier.
 
 ([`docs/explained/22-supplier-risk.md`](docs/explained/22-supplier-risk.md)).
 
+**API & integrations**: a documented REST API (OpenAPI 3.1 at `/docs`, with authentication,
+workspace header and required role on every operation), per-key rate limits with `RateLimit-*`
+headers, and an official Python client (`clients/python`).
+
+- Alerts open **Jira** issues or **ServiceNow** incidents, exactly one per alert even when a
+  delivery is retried.
+- Alerts and reports stream into **Splunk** or **Microsoft Sentinel**.
+- Credentials are write-only and encrypted.
+- Self-hosted systems on private networks are reachable only when the operator allowlists them.
+
+([`docs/API.md`](docs/API.md) · [`docs/explained/23-api-and-integrations.md`](docs/explained/23-api-and-integrations.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —

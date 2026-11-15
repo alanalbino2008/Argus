@@ -19,6 +19,7 @@ from typing import Any
 
 from argus.core.settings import Settings
 from argus.notify import render
+from argus.notify.integrations import SENDERS
 from argus.notify.signing import sign_headers
 from argus.notify.transport import Result, Transport
 from argus.observability import metrics
@@ -97,6 +98,10 @@ class NotificationDispatcher:
         self, channel: dict[str, Any], secrets: dict[str, Any], event: dict[str, Any], msg_id: str
     ) -> Result:
         kind = channel["type"]
+        if kind in SENDERS:
+            if not secrets.get("url"):
+                return Result(False, False, error="The integration's settings are missing; edit the channel")
+            return await SENDERS[kind](self.transport, secrets, event)
         if kind == "email":
             if not self.transport.email_available:
                 return Result(False, False, error="Email is not configured on this server")
@@ -148,7 +153,9 @@ class NotificationDispatcher:
                 result = Result(False, True, error=f"Internal error ({type(exc).__name__})")
 
         if result.ok:
-            await self.repo.record_delivered(delivery["id"], channel["id"], instance, result.status_code)
+            await self.repo.record_delivered(
+                delivery["id"], channel["id"], instance, result.status_code, reference=result.reference
+            )
             metrics.NOTIFICATIONS.labels(kind, "delivered").inc()
             created = _parse(delivery["created_at"])
             if created:

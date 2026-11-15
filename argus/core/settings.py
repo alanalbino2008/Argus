@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     )
     max_concurrent_scans: int = Field(default=5, ge=1, description="Scans allowed to run at once (whole server)")
     scans_per_minute: int = Field(default=10, ge=1, description="Scan launches allowed per API key per minute")
+    api_requests_per_minute: int = Field(
+        default=600, ge=0, description="API requests allowed per API key per minute (0 = unlimited)"
+    )
     # --- Optional intelligence sources (modules stay disabled until a key is set) ---------
     virustotal_api_key: SecretStr | None = Field(default=None, description="VirusTotal v3 API key")
     hibp_api_key: SecretStr | None = Field(default=None, description="Have I Been Pwned v3 API key")
@@ -137,6 +140,24 @@ class Settings(BaseSettings):
     smtp_username: str | None = Field(default=None, description="SMTP user (unset = no authentication)")
     smtp_password: SecretStr | None = Field(default=None, description="SMTP password")
     smtp_from: str = Field(default="argus@localhost", description="Sender address of notification emails")
+    integration_allowed_hosts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact host names of self-hosted integrations (Splunk, Jira Data Center, ServiceNow, webhooks) that may"
+            ' be on a private network, e.g. ["splunk.corp.internal"]. Link-local and metadata addresses stay blocked.'
+        ),
+    )
+
+    @field_validator("integration_allowed_hosts")
+    @classmethod
+    def _exact_hosts(cls, hosts: list[str]) -> list[str]:
+        cleaned = []
+        for host in hosts:
+            h = host.strip().lower().rstrip(".")
+            if not h or any(c in h for c in "*/:@ ") or h.startswith("."):
+                raise ValueError(f"integration_allowed_hosts takes exact host names, not patterns or URLs: {host!r}")
+            cleaned.append(h)
+        return sorted(set(cleaned))
 
     @field_validator("encryption_key", mode="before")
     @classmethod

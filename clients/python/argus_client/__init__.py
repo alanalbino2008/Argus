@@ -1,0 +1,280 @@
+"""Official Python client for the Argus API.
+
+    from argus_client import ArgusClient
+
+    argus = ArgusClient("https://argus.example.com", api_key="argus_…")
+    scan = argus.scan("example.com", purpose="Annual external assessment, ticket SEC-42")
+    investigation = argus.wait(scan["investigation_id"])
+    print(argus.rating(investigation["id"])["grade"])
+
+Rate limits are handled for you: a ``429`` or ``503`` is retried after the server's
+``Retry-After`` (a few times, then :class:`RateLimited` is raised). Every other error raises an
+:class:`ArgusError` subclass carrying the server's human-readable ``detail``.
+
+Webhooks: :func:`verify_webhook` checks a delivery's Standard Webhooks signature.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import time
+from collections.abc import Mapping
+from typing import Any
+
+import httpx
+
+__all__ = [
+    "ArgusClient",
+    "ArgusError",
+    "AuthenticationError",
+    "NotFound",
+    "PermissionDenied",
+    "RateLimited",
+    "ValidationError",
+    "WebhookVerificationError",
+    "verify_webhook",
+]
+__version__ = "1.23.0"
+
+FINISHED = {"completed", "cancelled", "failed"}
+USER_AGENT = f"argus-client-python/{__version__}"
+
+
+class ArgusError(Exception):
+    """The API refused the request. ``detail`` is a message that can be shown to a person."""
+
+    def __init__(self, status_code: int, detail: Any, response: httpx.Response | None = None):
+        self.status_code = status_code
+        self.detail = detail
+        self.response = response
+        super().__init__(f"HTTP {status_code}: {detail}")
+
+
+class AuthenticationError(ArgusError):
+    """401: the API key is missing, wrong or revoked."""
+
+
+class PermissionDenied(ArgusError):
+    """403: the key's role in this workspace is not enough."""
+
+
+class NotFound(ArgusError):
+    """404: it does not exist, or belongs to a workspace this key cannot see."""
+
+
+class ValidationError(ArgusError):
+    """422: the request was invalid; ``detail`` explains what to fix."""
+
+
+class RateLimited(ArgusError):
+    """429: still over the rate limit after retrying. ``retry_after`` is in seconds."""
+
+    def __init__(self, status_code: int, detail: Any, response: httpx.Response | None = None):
+        super().__init__(status_code, detail, response)
+        self.retry_after = _retry_after(response) if response is not None else None
+
+
+_ERRORS = {401: AuthenticationError, 403: PermissionDenied, 404: NotFound, 422: ValidationError, 429: RateLimited}
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    try:
+        return float(response.headers["Retry-After"])
+    except (KeyError, ValueError):
+        return None
+
+
+class ArgusClient:
+    """A connection to one Argus server, acting in one workspace.
+
+    :param base_url: e.g. ``https://argus.example.com``
+    :param api_key: an API key (Settings → API keys)
+    :param workspace: slug or id of the workspace to act in (default: the key's default)
+    :param max_retries: how many times a ``429``/``503`` is retried before giving up
+    :param http: an existing ``httpx.Client`` to use (for proxies, custom TLS or tests)
+    """
+
+    def __init__(
+        self,
+        base_url: str = "",
+        api_key: str | None = None,
+        *,
+        workspace: str | None = None,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        max_wait: float = 60.0,
+        http: httpx.Client | None = None,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.workspace = workspace
+        self.max_retries = max_retries
+        self.max_wait = max_wait
+        self._own_http = http is None
+        self._http = http or httpx.Client(timeout=timeout, follow_redirects=False)
+
+    # ------------------------------------------------------------------ plumbing
+    def close(self) -> None:
+        if self._own_http:
+            self._http.close()
+
+    def __enter__(self) -> ArgusClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def in_workspace(self, workspace: str) -> ArgusClient:
+        """The same connection, acting in another workspace."""
+        clone = ArgusClient(self.base_url, self.api_key, workspace=workspace, max_retries=self.max_retries,
+                            max_wait=self.max_wait, http=self._http)  # fmt: skip
+        clone._own_http = False
+        return clone
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.workspace:
+            headers["X-Argus-Workspace"] = self.workspace
+        return headers
+
+    def request(self, method: str, path: str, *, json: Any = None, params: Mapping[str, Any] | None = None,
+                raw: bool = False) -> Any:  # fmt: skip
+        """Call any endpoint. Returns parsed JSON (or the raw response with ``raw=True``)."""
+        url = f"{self.base_url}{path}"
+        clean = {k: v for k, v in (params or {}).items() if v is not None}
+        for attempt in range(self.max_retries + 1):
+            response = self._http.request(method, url, json=json, params=clean, headers=self._headers())
+            if response.status_code in (429, 503) and attempt < self.max_retries:
+                wait = _retry_after(response)
+                time.sleep(min(self.max_wait, wait if wait is not None else 2.0**attempt))
+                continue
+            break
+        if response.status_code >= 400:
+            try:
+                detail = response.json().get("detail", response.text)
+            except ValueError:
+                detail = response.text
+            raise _ERRORS.get(response.status_code, ArgusError)(response.status_code, detail, response)
+        if raw:
+            return response
+        if response.status_code == 204 or not response.content:
+            return None
+        return response.json()
+
+    def get(self, path: str, **params: Any) -> Any:
+        return self.request("GET", path, params=params)
+
+    def post(self, path: str, body: Any = None) -> Any:
+        return self.request("POST", path, json=body)
+
+    def patch(self, path: str, body: Any) -> Any:
+        return self.request("PATCH", path, json=body)
+
+    def delete(self, path: str) -> None:
+        self.request("DELETE", path)
+
+    # ------------------------------------------------------------------ identity
+    def me(self) -> dict[str, Any]:
+        return self.get("/api/me")
+
+    def workspaces(self) -> list[dict[str, Any]]:
+        return self.get("/api/workspaces")
+
+    # ------------------------------------------------------------------ investigations
+    def scan(self, target: str, *, purpose: str, depth: int = 2, passive_only: bool = False,
+             target_type: str | None = None, authorized: bool = True, **options: Any) -> dict[str, Any]:  # fmt: skip
+        """Launch an investigation. You confirm you are authorised to investigate ``target``."""
+        body = {"target": target, "purpose": purpose, "max_depth": depth, "passive_only": passive_only,
+                "target_type": target_type, "authorized": authorized, **options}  # fmt: skip
+        return self.post("/api/scan", {k: v for k, v in body.items() if v is not None})
+
+    def investigations(self, *, target: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        return self.get("/api/investigations", target=target, limit=limit)
+
+    def investigation(self, investigation_id: str) -> dict[str, Any]:
+        return self.get(f"/api/investigation/{investigation_id}")
+
+    def wait(self, investigation_id: str, *, timeout: float = 1800.0, poll: float = 5.0) -> dict[str, Any]:
+        """Block until the investigation finishes; returns it (status completed, cancelled or failed)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            investigation = self.investigation(investigation_id)
+            if investigation["status"] in FINISHED:
+                return investigation
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Investigation {investigation_id} still {investigation['status']} after {timeout}s")
+            time.sleep(poll)
+
+    def graph(self, investigation_id: str) -> dict[str, Any]:
+        return self.get(f"/api/investigation/{investigation_id}/graph")
+
+    def attack_paths(self, investigation_id: str) -> dict[str, Any]:
+        return self.get(f"/api/investigation/{investigation_id}/paths")
+
+    def stix(self, investigation_id: str) -> dict[str, Any]:
+        """A STIX 2.1 bundle, for threat-intelligence platforms."""
+        return self.get(f"/api/investigation/{investigation_id}/export/stix")
+
+    def report_pdf(self, investigation_id: str, **options: Any) -> bytes:
+        """A signed PDF report (options: prepared_for, tlp, include_inventory, compare_previous)."""
+        return self.request("POST", f"/api/investigation/{investigation_id}/report", json=options or None,
+                            raw=True).content  # fmt: skip
+
+    # ------------------------------------------------------------------ ratings and suppliers
+    def rating(self, investigation_id: str) -> dict[str, Any]:
+        return self.get(f"/api/investigation/{investigation_id}/rating")
+
+    def ratings(self) -> dict[str, Any]:
+        return self.get("/api/ratings")
+
+    def suppliers(self) -> dict[str, Any]:
+        return self.get("/api/suppliers")
+
+    def add_supplier(self, name: str, domain: str, *, basis: str, tier: str = "medium", data_access: str = "none",
+                     **fields: Any) -> dict[str, Any]:  # fmt: skip
+        """Register a supplier; it is assessed passively. ``basis``: why assessing it is legitimate."""
+        return self.post("/api/suppliers", {"name": name, "domain": domain, "tier": tier, "data_access": data_access,
+                                            "basis": basis, "authorized": True, **fields})  # fmt: skip
+
+    def import_suppliers(self, csv_text: str, *, basis: str) -> dict[str, Any]:
+        return self.post("/api/suppliers/import", {"csv": csv_text, "basis": basis, "authorized": True})
+
+    # ------------------------------------------------------------------ monitoring
+    def monitors(self) -> list[dict[str, Any]]:
+        return self.get("/api/monitors")
+
+    def watch(self, target: str, *, purpose: str, interval_hours: int = 24, **options: Any) -> dict[str, Any]:
+        """Monitor ``target`` continuously (you confirm you are authorised to)."""
+        return self.post("/api/monitors", {"target": target, "purpose": purpose, "interval_hours": interval_hours,
+                                           "authorized": True, **options})  # fmt: skip
+
+    def alerts(self, **params: Any) -> list[dict[str, Any]]:
+        return self.get("/api/alerts", **params)
+
+
+def verify_webhook(secret: str, headers: Mapping[str, str], body: bytes, *, tolerance: int = 300) -> None:
+    """Check a webhook's Standard Webhooks signature. Raises :class:`WebhookVerificationError`.
+
+    Pass the *raw* request body (before JSON parsing) and the request headers.
+    """
+    lowered = {k.lower(): v for k, v in headers.items()}
+    try:
+        msg_id, timestamp = lowered["webhook-id"], int(lowered["webhook-timestamp"])
+        offered = lowered["webhook-signature"].split()
+    except (KeyError, ValueError) as exc:
+        raise WebhookVerificationError("missing or malformed signature headers") from exc
+    if abs(time.time() - timestamp) > tolerance:
+        raise WebhookVerificationError("timestamp outside the tolerance window (replayed, or clock skew)")
+    key = base64.b64decode(secret.removeprefix("whsec_"))
+    mac = hmac.new(key, f"{msg_id}.{timestamp}.".encode() + body, hashlib.sha256).digest()
+    expected = "v1," + base64.b64encode(mac).decode()
+    if not any(hmac.compare_digest(expected, signature) for signature in offered):
+        raise WebhookVerificationError("no valid signature")
+
+
+class WebhookVerificationError(Exception):
+    pass

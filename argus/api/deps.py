@@ -105,7 +105,29 @@ async def get_principal(request: Request) -> Principal:
             headers={"WWW-Authenticate": "Bearer"},
         )
     request.state.auth_method = "api_key"
+    _rate_limit(request, principal.key_id)
     return principal
+
+
+def _rate_limit(request: Request, key_id: str) -> None:
+    """Per-key request budget for API clients (browser sessions are not limited)."""
+    limiter: SlidingWindowLimiter | None = getattr(request.app.state, "api_limiter", None)
+    if limiter is None:
+        return
+    allowed = limiter.hit(key_id)
+    reset = limiter.retry_after(key_id)
+    request.state.rate_limit = (limiter.limit, limiter.remaining(key_id), reset)
+    if not allowed:
+        metrics.RATE_LIMITED.labels("api").inc()
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded: {limiter.limit} requests per minute for this API key",
+            headers={"Retry-After": str(reset), **rate_limit_headers(limiter.limit, 0, reset)},
+        )
+
+
+def rate_limit_headers(limit: int, remaining: int, reset: int) -> dict[str, str]:
+    return {"RateLimit-Limit": str(limit), "RateLimit-Remaining": str(max(0, remaining)), "RateLimit-Reset": str(reset)}
 
 
 async def _session_principal(request: Request, token: str) -> Principal:
@@ -195,6 +217,7 @@ def in_workspace(min_role: Role):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires {min_role.value} role")
         return ctx
 
+    checker.workspace_role = min_role  # type: ignore[attr-defined]  # read by the OpenAPI generator
     return checker
 
 
