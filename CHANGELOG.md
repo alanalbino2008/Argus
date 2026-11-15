@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.22.0] — Phase 22: Supplier risk
+
+### Added
+- **Supplier register** (migration `0011`): name, domain, criticality tier, data handled, owner,
+  notes, an optional minimum grade, and the recorded basis for assessment. Unique per workspace
+  domain.
+- **CSV import** (`POST /api/suppliers/import`, up to 500 rows): forgiving column names, comma,
+  semicolon or tab separators, URLs normalised to domains, duplicates and bad rows reported by
+  line, existing suppliers skipped.
+- **Passive, continuous assessment**: each supplier gets a passive-only monitor re-assessing it
+  by tier (critical weekly, high fortnightly, medium monthly, low quarterly). Changing the tier
+  reschedules it; *Assess now* makes it due immediately.
+- **Policy and risk**: minimum grade by tier (B, C, D, none) or per supplier. Risk = grade
+  likelihood × impact (tier + data sensitivity), on a 5×5 matrix with low, medium, high and
+  critical levels.
+- **Supplier alerts** when a grade drops or a first assessment is below the minimum, sent
+  through notifications (critical-tier breaches are critical). Drift alerts are skipped for
+  supplier monitors.
+- API `/api/suppliers` (list with summary, matrix and policy; create, import, update, assess,
+  delete, `export.csv`), audited. **Suppliers** page (shortcut **S**): register, KPIs, risk
+  matrix, policy, add and import dialogs, export.
+- `docs/explained/22-supplier-risk.md`.
+
+### Security
+- Supplier assessments are always passive (third parties have not consented to testing), with a
+  required legitimate-interest confirmation and a recorded basis. Internal names and private
+  addresses are refused.
+
 ## [1.21.0] — Phase 21: Security rating
 
 ### Added

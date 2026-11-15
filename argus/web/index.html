@@ -24,6 +24,7 @@
       <button class="nav-item" data-view="paths" title="Attack paths (P)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-paths"/></svg>Paths<span class="nav-dot" id="paths-dot" hidden></span></button>
       <button class="nav-item" data-view="people" title="People (U)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-persona"/></svg>People</button>
       <button class="nav-item" data-view="monitoring" title="Monitoring (M)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>Monitor<span class="nav-dot" id="alerts-dot" hidden></span></button>
+      <button class="nav-item" data-view="suppliers" title="Supplier risk (S)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-organization"/></svg>Suppliers</button>
       <button class="nav-item" data-view="ratings" title="Security ratings (R)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rating"/></svg>Ratings</button>
       <button class="nav-item" data-view="history" title="History (H)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-history"/></svg>History</button>
       <div class="nav-spacer"></div>
@@ -101,6 +102,7 @@
       <section id="view-paths" class="view" aria-label="Attack paths"></section>
       <section id="view-people" class="view" aria-label="People"></section>
       <section id="view-monitoring" class="view" aria-label="Monitoring"></section>
+      <section id="view-suppliers" class="view" aria-label="Supplier risk"></section>
       <section id="view-ratings" class="view" aria-label="Security ratings"></section>
       <section id="view-history" class="view" aria-label="History"></section>
       <section id="view-settings" class="view" aria-label="Settings"></section>
@@ -282,6 +284,49 @@
     </form>
   </div>
 
+  <!-- ================================================================ suppliers -->
+  <div id="supplier-modal" class="modal-root" aria-hidden="true">
+    <form class="modal wide" role="dialog" aria-labelledby="supplier-title" id="supplier-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="supplier-title">Add a supplier</h2><p>Argus assesses suppliers <b>passively</b>: only public sources are consulted, their systems are never contacted.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body schedule-grid">
+        <div class="field"><label class="label" for="sup-name">Supplier</label><input id="sup-name" class="input" maxlength="200" placeholder="Payroll Co Ltd"></div>
+        <div class="field"><label class="label" for="sup-domain">Website / domain</label><input id="sup-domain" class="input" maxlength="253" placeholder="payroll-co.com" spellcheck="false"></div>
+        <div class="field"><label class="label" for="sup-tier">Criticality</label>
+          <select id="sup-tier" class="select"><option value="critical">Critical — minimum B, weekly</option><option value="high">High — minimum C, fortnightly</option><option value="medium" selected>Medium — minimum D, monthly</option><option value="low">Low — no minimum, quarterly</option></select></div>
+        <div class="field"><label class="label" for="sup-data">Data they handle</label>
+          <select id="sup-data" class="select"><option value="none">None</option><option value="internal">Internal business data</option><option value="personal">Personal data</option><option value="sensitive">Sensitive / special-category data</option></select></div>
+        <div class="field"><label class="label" for="sup-owner">Relationship owner</label><input id="sup-owner" class="input" maxlength="200" placeholder="e.g. HR, IT, Procurement"></div>
+        <div class="field"><label class="label" for="sup-notes">Notes</label><input id="sup-notes" class="input" maxlength="500" placeholder="Service provided, contract reference…"></div>
+        <div class="field span-2"><label class="label" for="sup-basis">Why is assessing this supplier legitimate? <span class="muted small">(recorded in the audit log)</span></label>
+          <input id="sup-basis" class="input" maxlength="300" placeholder="e.g. Contracted payroll provider; processes staff personal data"></div>
+        <label class="check span-2"><input type="checkbox" id="sup-authorized"> <span>This organisation is our supplier (or prospective supplier) and we have a legitimate business reason to monitor its public attack surface.</span></label>
+        <div class="error-text span-2" id="sup-error" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Add supplier</button></div>
+    </form>
+  </div>
+
+  <div id="supplier-import-modal" class="modal-root" aria-hidden="true">
+    <form class="modal wide" role="dialog" aria-labelledby="supplier-import-title" id="supplier-import-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="supplier-import-title">Import a supplier register</h2><p>A CSV exported from your spreadsheet or procurement system. Columns are recognised by name: <b>supplier</b>, <b>domain</b>/website, <b>tier</b>/criticality, <b>data</b> handled, <b>owner</b>, notes.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="sup-file">CSV file</label><input id="sup-file" type="file" accept=".csv,text/csv,text/plain"></div>
+        <div class="field"><label class="label" for="sup-csv">…or paste it</label><textarea id="sup-csv" class="textarea mono" rows="6" placeholder="Supplier,Domain,Tier,Data,Owner&#10;Payroll Co,payroll-co.com,critical,personal,HR"></textarea></div>
+        <div class="field"><label class="label" for="sup-import-basis">Basis for assessing these suppliers</label><input id="sup-import-basis" class="input" maxlength="300" value="Contracted suppliers under our third-party risk programme"></div>
+        <label class="check"><input type="checkbox" id="sup-import-authorized"> <span>These are our suppliers and we have a legitimate business reason to monitor their public attack surface.</span></label>
+        <div id="sup-import-result"></div>
+        <div class="error-text" id="sup-import-error" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="submit">Import</button></div>
+    </form>
+  </div>
+
   <!-- ================================================================ guided first scan -->
   <div id="guide-modal" class="modal-root" aria-hidden="true">
     <div class="modal wide guide" role="dialog" aria-labelledby="guide-title">
@@ -364,7 +409,7 @@
         <table class="table">
           <tbody>
             <tr><td><span class="kbd">N</span></td><td>New investigation</td></tr>
-            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Ratings · History</td></tr>
+            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Suppliers · Ratings · History</td></tr>
             <tr><td><span class="kbd">/</span></td><td>Find in graph</td></tr>
             <tr><td><span class="kbd">F</span></td><td>Fit graph to screen</td></tr>
             <tr><td><span class="kbd">T</span></td><td>Toggle light / dark theme</td></tr>

@@ -389,6 +389,31 @@ class RatingRow(Base):
     assessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class SupplierRow(Base):
+    """A third party in the workspace's supplier register, assessed passively on a schedule."""
+
+    __tablename__ = "suppliers"
+    __table_args__ = (Index("ux_suppliers_workspace_domain", "workspace_id", "domain", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(200))
+    domain: Mapped[str] = mapped_column(String(253))
+    tier: Mapped[str] = mapped_column(String(16))
+    data_access: Mapped[str] = mapped_column(String(16))
+    owner: Mapped[str] = mapped_column(String(200), default="")
+    notes: Mapped[str] = mapped_column(String(500), default="")
+    min_grade_override: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    monitor_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_grade: Mapped[str | None] = mapped_column(String(1), nullable=True)
+    last_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_investigation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_assessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128))
+    basis: Mapped[str] = mapped_column(String(300))  # why assessing this third party is legitimate
+
+
 class Database:
     """Owns the async engine and session factory for one database URL."""
 

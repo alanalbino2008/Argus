@@ -56,6 +56,7 @@ from argus.api.rating_routes import router as rating_router
 from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
+from argus.api.supplier_routes import router as supplier_router
 from argus.api.workspace_routes import router as workspace_router
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
@@ -68,6 +69,8 @@ from argus.intel.diff import compare, headline
 from argus.intel.identity import resolve_people
 from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
+from argus.intel.suppliers import min_grade as supplier_min_grade
+from argus.intel.suppliers import worse as grade_worse
 from argus.modules import get_default_modules, get_module_catalog, plugin_report
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.notify.dispatcher import NotificationDispatcher
@@ -91,6 +94,7 @@ from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.schedule_repo import ScheduleRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
+from argus.storage.supplier_repo import SupplierRepository
 from argus.storage.user_repo import UserRepository
 from argus.storage.workspace_repo import WorkspaceRepository
 
@@ -174,6 +178,7 @@ async def lifespan(app: FastAPI):
     app.state.monitors = MonitorRepository(db)
     app.state.reports = ReportRepository(db)
     app.state.ratings = RatingRepository(db)
+    app.state.suppliers = SupplierRepository(db)
     app.state.schedules = ScheduleRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
     app.state.notifications = NotificationRepository(db, app.state.secret_box)
@@ -310,6 +315,7 @@ app.include_router(notification_router)
 app.include_router(report_router)
 app.include_router(onboarding_router)
 app.include_router(rating_router)
+app.include_router(supplier_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -510,10 +516,70 @@ async def _launch_for_scheduler(
 SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 
 
+async def _evaluate_supplier(app: FastAPI, inv: Investigation, graph: IntelligenceGraph) -> bool:
+    """For a supplier's assessment: record the new grade; alert if it dropped or fell below policy.
+
+    Returns True when the scan belonged to a supplier (its drift alerts are then skipped: for a third
+    party, what matters to the buyer is the grade, not every change in its attack surface).
+    """
+    supplier = await app.state.suppliers.by_monitor(inv.monitor_id) if inv.monitor_id else None
+    if supplier is None:
+        return False
+    rating = await rate(app, inv, graph)
+    grade, previous = rating.get("grade"), supplier["last_grade"]
+    if not grade:
+        return True
+    await app.state.suppliers.record_assessment(
+        supplier["id"], grade=grade, score=rating["score"], investigation_id=inv.id,
+        assessed_at=inv.completed_at or inv.created_at,
+    )  # fmt: skip
+    floor = supplier_min_grade(supplier["tier"], supplier["min_grade_override"])
+    below = floor is not None and grade_worse(grade, floor)
+    dropped = previous is not None and grade_worse(grade, previous)
+    if not (dropped or (below and previous is None)):
+        return True  # unchanged or better (or still below, already alerted)
+    severity = ("critical" if supplier["tier"] == "critical" else "high") if below else "medium"
+    change = f"dropped from {previous} to {grade}" if dropped else f"was rated {grade}"
+    headline_text = f"Supplier {supplier['name']} ({supplier['domain']}) {change}" + (
+        f", below the {floor} required for {supplier['tier']} suppliers" if below else ""
+    )
+    alert = await app.state.monitors.create_alert(
+        monitor_id=inv.monitor_id,
+        investigation_id=inv.id,
+        previous_investigation_id=supplier["last_investigation_id"] or inv.id,
+        target=inv.config.target,
+        severity=severity,
+        headline=headline_text,
+        summary={
+            "supplier": {
+                "id": supplier["id"],
+                "name": supplier["name"],
+                "tier": supplier["tier"],
+                "previous_grade": previous,
+                "grade": grade,
+                "score": rating["score"],
+                "min_grade": floor,
+                "below_minimum": below,
+            }
+        },
+        workspace_id=inv.workspace_id,
+        public_url=app.state.settings.public_url,
+    )
+    metrics.ALERTS_RAISED.labels(severity).inc()
+    await app.state.audit.record(
+        SCHEDULER, "supplier.alert", alert["id"],
+        details={"supplier": supplier["name"], "previous_grade": previous, "grade": grade, "below_minimum": below},
+        workspace_id=inv.workspace_id,
+    )  # fmt: skip
+    return True
+
+
 async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:
     """After a monitored scan: compare with the previous scan and raise an alert if anything material changed."""
     inv = engine.investigation
     if inv.status != InvestigationStatus.COMPLETED:
+        return
+    if await _evaluate_supplier(app, inv, engine.graph):
         return
     repo: InvestigationRepository = app.state.repo
     previous = await repo.find_previous(inv)

@@ -123,6 +123,20 @@ class MonitorRepository:
             result = await s.execute(stmt.values(enabled=enabled))
         return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
+    async def reschedule(
+        self, monitor_id: str, *, workspace_id: str, interval_hours: int | None = None, run_now: bool = False
+    ) -> bool:
+        """Change how often a monitor runs and/or make it due immediately."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(MonitorRow, monitor_id)
+            if row is None or row.workspace_id != workspace_id:
+                return False
+            if interval_hours is not None:
+                row.interval_hours = interval_hours
+            if run_now:
+                row.next_run_at = _now()
+            return True
+
     async def delete(self, monitor_id: str, *, workspace_id: str) -> bool:
         async with self.db.session() as s, s.begin():
             result = await s.execute(

@@ -819,3 +819,12 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .grid.kpis:has(.kpi-grade) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .sparkline { display: block; }
 @media (max-width: 900px) { .rating-body { grid-template-columns: 1fr; } .factor-row { grid-template-columns: 150px minmax(0, 1fr) 24px; } }
+
+/* ------------------------------------------------------------------ supplier risk matrix */
+.risk-matrix { display: grid; grid-template-columns: 90px repeat(5, minmax(0, 1fr)); gap: 4px; font-size: 12px; }
+.rm-corner { font-size: 11px; color: var(--text-3); align-self: end; }
+.rm-head { text-align: center; padding-bottom: 2px; }
+.rm-row { display: flex; align-items: center; color: var(--text-2); }
+.rm-cell { height: 38px; border-radius: 6px; display: grid; place-items: center; font-weight: 700; opacity: .35; color: #fff; }
+.rm-cell.has { opacity: 1; box-shadow: inset 0 0 0 2px rgba(0,0,0,.08); font-size: 15px; }
+.rm-low { background: #2f9e44; } .rm-medium { background: #c99a06; } .rm-high { background: #e8590c; } .rm-critical { background: #c0262d; }

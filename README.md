@@ -292,6 +292,17 @@ network, web and TLS, email, brand, DNS, social engineering).
 ([`docs/explained/21-security-rating.md`](docs/explained/21-security-rating.md), which is also the published
 methodology).
 
+**Supplier risk**: a supplier register (add suppliers or import your spreadsheet) where every
+third party is assessed **passively** and continuously, on a schedule set by its criticality
+tier.
+
+- Each supplier is rated, checked against a policy (critical suppliers must hold a B, for
+  example) and placed on a criticality × grade **risk matrix**.
+- An alert fires when a supplier's grade drops or breaches its policy.
+- The register exports for compliance records such as DORA's register of information.
+
+([`docs/explained/22-supplier-risk.md`](docs/explained/22-supplier-risk.md)).
+
 **Observability**: every replica exports Prometheus metrics (API, scans, collectors, OSINT sources,
 SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by `request_id` and
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —
