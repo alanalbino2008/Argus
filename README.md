@@ -314,6 +314,15 @@ tier.
 - Staff addresses are masked unless an analyst reveals them, which is audited
   ([`docs/explained/24-breach-and-dark-web-exposure.md`](docs/explained/24-breach-and-dark-web-exposure.md)).
 
+**Remediation workflow**: every finding (attack path, exposure, supplier) can become a task with
+an owner, a deadline from the workspace's severity policy, and a timeline.
+
+- Fixes are **verified by evidence**: the next comparable scan (as deep, no more passive,
+  complete) confirms a path is gone, and reopens the task if it comes back.
+- Risk acceptances expire, and overdue tasks alert once.
+- The page reports SLA compliance and median time to verified fix
+  ([`docs/explained/25-remediation-workflow.md`](docs/explained/25-remediation-workflow.md)).
+
 **API & integrations**: a documented REST API (OpenAPI 3.1 at `/docs`, with authentication,
 workspace header and required role on every operation), per-key rate limits with `RateLimit-*`
 headers, and an official Python client (`clients/python`).

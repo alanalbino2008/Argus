@@ -21,7 +21,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -54,11 +54,13 @@ class ExposureMonitor:
         *,
         suppliers: SupplierLister,
         sources: BreachSources | None = None,
+        on_new: Callable[[str, list[dict[str, Any]]], Awaitable[None]] | None = None,
     ):
         self.repo = repo
         self.settings = settings
         self.suppliers = suppliers
         self.sources = sources or BreachSources(settings)
+        self.on_new = on_new  # e.g. open remediation tasks for qualifying findings
         self._last_purge = 0.0
         self._running: set[asyncio.Task[Any]] = set()
 
@@ -160,6 +162,11 @@ class ExposureMonitor:
         metrics.EXPOSURE_CHECKS.labels(watch["scope"], status).inc()
         if new:
             metrics.EXPOSURE_FINDINGS.inc(len(new))
+            if self.on_new is not None:
+                try:
+                    await self.on_new(watch["workspace_id"], new)
+                except Exception:  # remediation automation must never break exposure checks
+                    logger.exception("Opening remediation tasks for watch %s failed", watch["id"])
         logger.info("Exposure check %s (%s): %s, %d new", watch["id"], watch["domain"] or "suppliers", status, len(new))
         return {"watch_id": watch["id"], "status": status, "new": len(new), "alert": alert["id"] if alert else None}
 

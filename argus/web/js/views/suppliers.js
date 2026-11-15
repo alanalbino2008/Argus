@@ -5,6 +5,7 @@ import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDay, html, on, openModal, setHTML, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
 import { gradeBadge, sparkline } from "./ratings.js";
+import { trackFinding } from "./remediation.js";
 
 let root;
 let actions;
@@ -77,6 +78,7 @@ function render() {
             <td>${x.risk.level === "unknown" ? html`<span class="muted small">—</span>` : html`<span class="pill ${RISK[x.risk.level]}">${x.risk.level}</span><div class="muted small">${x.risk.score}/25</div>`}</td>
             <td class="actions">
               ${x.last_investigation_id ? html`<button class="btn sm ghost" data-act="open" data-id="${x.last_investigation_id}" title="Open the latest assessment">Open</button>` : ""}
+              ${canEdit && x.status === "below_minimum" ? html`<button class="btn sm ghost" data-act="track" data-id="${x.id}" title="Track getting this supplier back to its minimum grade">Track fix</button>` : ""}
               ${canEdit ? html`<button class="btn sm ghost" data-act="assess" data-id="${x.id}" title="Re-assess now">${ico("compare")}</button>` : ""}
               ${state.workspace?.role === "admin" ? html`<button class="btn sm ghost icon" data-act="remove" data-id="${x.id}" title="Remove" aria-label="Remove ${x.name}">${ico("trash")}</button>` : ""}
             </td></tr>`;
@@ -117,6 +119,7 @@ export function initSuppliers(el, appActions) {
       if (act === "import") { $("#supplier-import-form").reset(); setHTML($("#sup-import-result"), html``); return openModal("supplier-import-modal"); }
       if (act === "export") return download("/api/suppliers/export.csv", "supplier-register.csv");
       if (act === "open") return actions.open(id);
+      if (act === "track") return trackFinding({ type: "supplier", supplier_id: id });
       if (act === "assess") { await api.post(`/api/suppliers/${enc(id)}/assess`); toast("Re-assessment started (passive)", "success"); }
       if (act === "remove") {
         if (!(await confirmDialog({ title: "Remove this supplier?", message: "Its monitoring stops. Past assessments stay in History.", confirm: "Remove", danger: true }))) return;

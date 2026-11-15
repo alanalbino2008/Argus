@@ -47,6 +47,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
+from argus.api import remediation_hooks
 from argus.api.auth_routes import router as auth_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.exposure_routes import router as exposure_router
@@ -57,6 +58,7 @@ from argus.api.onboarding_routes import scope_warnings
 from argus.api.openapi import build_openapi
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
+from argus.api.remediation_routes import router as remediation_router
 from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
@@ -74,6 +76,7 @@ from argus.intel.exposure import demo_findings
 from argus.intel.exposure_monitor import ExposureMonitor
 from argus.intel.identity import resolve_people
 from argus.intel.paths import find_attack_paths
+from argus.intel.remediation_clock import RemediationClock
 from argus.intel.stix import build_bundle
 from argus.intel.suppliers import min_grade as supplier_min_grade
 from argus.intel.suppliers import worse as grade_worse
@@ -97,6 +100,7 @@ from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
 from argus.storage.rating_repo import RatingRepository
+from argus.storage.remediation_repo import RemediationRepository
 from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.schedule_repo import ScheduleRepository
@@ -190,10 +194,14 @@ async def lifespan(app: FastAPI):
     app.state.ratings = RatingRepository(db)
     app.state.suppliers = SupplierRepository(db)
     app.state.exposure = ExposureRepository(db)
+    app.state.remediation = RemediationRepository(db)
+    app.state.remediation_clock = RemediationClock(app.state.remediation, settings)
+    app.state.rescan = partial(_rescan, app)
     app.state.exposure_monitor = ExposureMonitor(
         app.state.exposure,
         settings,
         suppliers=lambda workspace_id: app.state.suppliers.list_suppliers(workspace_id=workspace_id),
+        on_new=lambda workspace_id, new: remediation_hooks.after_exposure_check(app, workspace_id, new),
     )
     app.state.schedules = ScheduleRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
@@ -230,6 +238,11 @@ async def lifespan(app: FastAPI):
         if settings.exposure_monitoring_enabled
         else None
     )
+    remediation_task = (
+        asyncio.create_task(app.state.remediation_clock.run_forever(), name="remediation-clock")
+        if settings.monitors_enabled
+        else None
+    )
     janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
     scheduler_task = (
         asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
@@ -240,7 +253,9 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        background = [t for t in (scheduler_task, janitor_task, notifier_task, report_task, exposure_task) if t]
+        background = [
+            t for t in (scheduler_task, janitor_task, notifier_task, report_task, exposure_task, remediation_task) if t
+        ]
         for task in background:
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
@@ -393,6 +408,7 @@ app.include_router(onboarding_router)
 app.include_router(rating_router)
 app.include_router(supplier_router)
 app.include_router(exposure_router)
+app.include_router(remediation_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -574,11 +590,42 @@ async def launch_scan(
     # Keep a strong reference to the task (asyncio only holds weak refs) and log failures.
     task = asyncio.create_task(_run_scan(engine, recorder), name=f"scan-{engine.investigation_id}")
     task.add_done_callback(_on_scan_done)
+    task.add_done_callback(
+        lambda _t: _spawn(_after_scan_remediation(app, engine), f"remediation-{engine.investigation_id}")
+    )
     if monitor_id:
         task.add_done_callback(lambda _t: _spawn(_evaluate_drift(app, engine), f"drift-{engine.investigation_id}"))
     SCAN_TASKS[engine.investigation_id] = task
     metrics.SCANS_STARTED.labels("monitor" if monitor_id else "manual").inc()
     return engine
+
+
+async def _rescan(app: FastAPI, config: ScanConfig, principal: Principal, purpose: str, workspace_id: str) -> str:
+    """Rescan a target with a previous scan's exact configuration (to verify a remediation)."""
+    settings = app.state.settings
+    if not settings.allow_private_targets:
+        try:
+            validate_scan_target(config.target, config.target_type)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if await cluster_running_scans(app) >= settings.max_concurrent_scans:
+        metrics.RATE_LIMITED.labels("concurrent_scans").inc()
+        raise HTTPException(
+            status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
+        )
+    limiter: SlidingWindowLimiter = app.state.scan_limiter
+    if not limiter.hit(principal.key_id):
+        metrics.RATE_LIMITED.labels("scans_per_minute").inc()
+        raise HTTPException(status_code=429, detail="Scan rate limit exceeded",
+                            headers={"Retry-After": str(limiter.retry_after(principal.key_id))})  # fmt: skip
+    fresh = config.model_copy(update={"allow_private_targets": settings.allow_private_targets})
+    engine = await launch_scan(app, fresh, created_by=principal.name, purpose=purpose, workspace_id=workspace_id)
+    return engine.investigation_id
+
+
+async def _after_scan_remediation(app: FastAPI, engine: ArgusEngine) -> None:
+    """Every finished scan is evidence for or against the remediation tasks of its target."""
+    await remediation_hooks.after_scan(app, engine.investigation, engine.graph, truncated=bool(engine.truncated))
 
 
 async def _launch_for_scheduler(
@@ -612,6 +659,8 @@ async def _evaluate_supplier(app: FastAPI, inv: Investigation, graph: Intelligen
     )  # fmt: skip
     floor = supplier_min_grade(supplier["tier"], supplier["min_grade_override"])
     below = floor is not None and grade_worse(grade, floor)
+    await remediation_hooks.after_supplier_assessment(app, inv.workspace_id, supplier, grade=grade, floor=floor,
+                                                      below=below)  # fmt: skip
     dropped = previous is not None and grade_worse(grade, previous)
     if not (dropped or (below and previous is None)):
         return True  # unchanged or better (or still below, already alerted)

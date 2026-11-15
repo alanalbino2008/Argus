@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.25.0] — Phase 25: Remediation workflow
+
+### Added
+- **Remediation tasks** (migration `0014`) from attack paths, exposure findings, suppliers below
+  their minimum grade, or manual entry. *Track fix* buttons appear on attack paths, exposure
+  findings and supplier rows. There is one task per finding, with a snapshot of its narrative,
+  evidence and fix steps.
+- **Lifecycle**: open, in progress, fixed, verified, or accepted. Allowed transitions are
+  enforced.
+- **Deadlines** by severity from a workspace policy (defaults 7/30/90/180 days), with per-task
+  dates, owners and ticket references.
+- **Risk acceptance** requires a reason and an end date within a year, and reopens automatically
+  when it expires.
+- **Verification by evidence**: every completed scan verifies the attack-path tasks it no longer
+  finds, and reopens fixed or verified tasks whose path is still there or came back (regressions
+  are counted). Absence only counts when the scan is comparable: as deep, no more passive, every
+  module, not truncated. *Rescan to verify* reruns the original scan's configuration.
+- Supplier tasks close when the supplier meets its minimum grade. Exposure tasks and findings
+  stay in sync both ways.
+- **Automation**: the policy can open tasks for new critical, or critical and high, findings
+  (attack paths on watched targets, exposure, suppliers).
+- **Overdue alerts**, one per workspace per check, each task announced once across replicas,
+  linking to the Remediation page.
+- **Timeline** of every change, comment and scan conclusion.
+- **Metrics**: overdue, due this week, awaiting verification, SLA compliance (90 days), median
+  time to verified fix by severity, regressions, by owner, and a 12-week trend. CSV export.
+- **Remediation page** (shortcut **W**), task dialog and policy editor.
+- API `/api/remediation`, Python client `tasks()`, `track()` and `update_task()`, and
+  `docs/explained/25-remediation-workflow.md`.
+
+### Fixed
+- Two API operations shared the OpenAPI operation ID `export`. They are now `export_tasks` and
+  `export_exposure`.
+
 ## [1.24.0] — Phase 24: Breach & dark-web exposure
 
 ### Added

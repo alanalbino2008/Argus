@@ -32,6 +32,14 @@ def _link(public_url: str | None, path: str) -> str | None:
     return f"{public_url.rstrip('/')}{path}" if public_url else None
 
 
+def _alert_path(summary: dict[str, Any], workspace_id: Any, investigation_id: str) -> str:
+    """Where an alert's "Open in Argus" link goes: the page that explains it."""
+    for page in ("exposure", "remediation"):
+        if summary.get(page):
+            return f"/?ws={workspace_id}#/{page}"
+    return f"/?ws={workspace_id}&inv={investigation_id}"
+
+
 def alert_event(alert: dict[str, Any], workspace: dict[str, Any], public_url: str | None) -> dict[str, Any]:
     """The JSON document sent to webhooks and stored in the outbox (contains no secrets)."""
     summary = alert.get("summary") or {}
@@ -59,13 +67,8 @@ def alert_event(alert: dict[str, Any], workspace: dict[str, Any], public_url: st
                 if k in counts
             },
             "new_paths": paths,
-            "url": _link(
-                public_url,
-                f"/?ws={workspace.get('id')}#/exposure"
-                if summary.get("exposure")
-                else f"/?ws={workspace.get('id')}&inv={alert['investigation_id']}",
-            ),
-            **({"exposure": summary["exposure"]} if summary.get("exposure") else {}),
+            "url": _link(public_url, _alert_path(summary, workspace.get("id"), alert["investigation_id"])),
+            **{key: summary[key] for key in ("exposure", "remediation") if summary.get(key)},
         },
     }
 

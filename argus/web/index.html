@@ -26,6 +26,7 @@
       <button class="nav-item" data-view="monitoring" title="Monitoring (M)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>Monitor<span class="nav-dot" id="alerts-dot" hidden></span></button>
       <button class="nav-item" data-view="suppliers" title="Supplier risk (S)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-organization"/></svg>Suppliers</button>
       <button class="nav-item" data-view="exposure" title="Breach &amp; dark-web exposure (E)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-breach"/></svg>Exposure</button>
+      <button class="nav-item" data-view="remediation" title="Remediation work (W)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>Fixes</button>
       <button class="nav-item" data-view="ratings" title="Security ratings (R)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rating"/></svg>Ratings</button>
       <button class="nav-item" data-view="history" title="History (H)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-history"/></svg>History</button>
       <div class="nav-spacer"></div>
@@ -105,6 +106,7 @@
       <section id="view-monitoring" class="view" aria-label="Monitoring"></section>
       <section id="view-suppliers" class="view" aria-label="Supplier risk"></section>
       <section id="view-exposure" class="view" aria-label="Breach and dark-web exposure"></section>
+      <section id="view-remediation" class="view" aria-label="Remediation"></section>
       <section id="view-ratings" class="view" aria-label="Security ratings"></section>
       <section id="view-history" class="view" aria-label="History"></section>
       <section id="view-settings" class="view" aria-label="Settings"></section>
@@ -287,6 +289,52 @@
     </form>
   </div>
 
+  <!-- ================================================================ remediation -->
+  <div id="task-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="task-title" style="max-width:720px">
+      <div class="modal-head"><div><h2 id="task-title">Task</h2></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body" id="task-body"></div>
+    </div>
+  </div>
+  <div id="newtask-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="newtask-heading" id="newtask-form" novalidate>
+      <div class="modal-head"><div><h2 id="newtask-heading">New remediation task</h2><p>For work that did not come from a finding, e.g. an audit or a pentest report. Findings have a “Track fix” button of their own.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="newtask-title">What needs doing</label><input id="newtask-title" class="input" maxlength="300" placeholder="Enforce MFA on the VPN"></div>
+        <div class="grid two" style="gap:12px">
+          <div class="field"><label class="label" for="newtask-severity">Severity</label><select id="newtask-severity" class="select"><option value="critical">Critical</option><option value="high" selected>High</option><option value="medium">Medium</option><option value="low">Low</option></select></div>
+          <div class="field"><label class="label" for="newtask-target">System or domain <span class="muted small">optional</span></label><input id="newtask-target" class="input" maxlength="253" placeholder="vpn.acme.com"></div>
+          <div class="field"><label class="label" for="newtask-assignee">Owner <span class="muted small">optional</span></label><input id="newtask-assignee" class="input" maxlength="128"></div>
+          <div class="field"><label class="label" for="newtask-due">Due <span class="muted small">default: the policy</span></label><input id="newtask-due" class="input" type="date"></div>
+        </div>
+        <div class="field"><label class="label" for="newtask-description">Details <span class="muted small">optional</span></label><textarea id="newtask-description" class="input" rows="3" maxlength="4000"></textarea></div>
+        <div class="error-text" id="newtask-error" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Create task</button></div>
+    </form>
+  </div>
+  <div id="policy-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="policy-heading" id="policy-form" novalidate>
+      <div class="modal-head"><div><h2 id="policy-heading">Remediation policy</h2><p>How long each severity may stay open. Changes apply to new tasks.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body">
+        <div class="grid two" style="gap:12px">
+          <div class="field"><label class="label" for="sla-critical">Critical (days)</label><input id="sla-critical" class="input" type="number" min="1" max="365"></div>
+          <div class="field"><label class="label" for="sla-high">High (days)</label><input id="sla-high" class="input" type="number" min="1" max="365"></div>
+          <div class="field"><label class="label" for="sla-medium">Medium (days)</label><input id="sla-medium" class="input" type="number" min="1" max="365"></div>
+          <div class="field"><label class="label" for="sla-low">Low (days)</label><input id="sla-low" class="input" type="number" min="1" max="365"></div>
+        </div>
+        <div class="field"><label class="label" for="policy-auto">Open tasks automatically</label><select id="policy-auto" class="select">
+          <option value="off">Off: people decide what to track</option><option value="critical">For new critical findings</option><option value="high">For new critical and high findings</option></select>
+          <div class="hint">Covers attack paths on watched targets, exposure findings, and suppliers below their minimum grade.</div></div>
+        <div class="error-text" id="policy-error" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Save policy</button></div>
+    </form>
+  </div>
+
   <!-- ================================================================ exposure -->
   <div id="exposure-modal" class="modal-root" aria-hidden="true">
     <form class="modal" role="dialog" aria-labelledby="exposure-title" id="exposure-form" novalidate>
@@ -440,7 +488,7 @@
         <table class="table">
           <tbody>
             <tr><td><span class="kbd">N</span></td><td>New investigation</td></tr>
-            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Ratings · History</td></tr>
+            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">W</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Work (remediation) · Ratings · History</td></tr>
             <tr><td><span class="kbd">/</span></td><td>Find in graph</td></tr>
             <tr><td><span class="kbd">F</span></td><td>Fit graph to screen</td></tr>
             <tr><td><span class="kbd">T</span></td><td>Toggle light / dark theme</td></tr>

@@ -3,16 +3,21 @@
 import { empty, ico, pathCard, SEVERITIES } from "../components.js";
 import { html, on, setHTML } from "../dom.js";
 import { isRunning, on as onState, state } from "../state.js";
+import { trackFinding } from "./remediation.js";
 
 let root;
 let actions;
 let filter = "all";
+
+const canTrack = () => ["analyst", "admin"].includes(state.workspace?.role) && state.investigation && !isRunning();
 
 export function initPaths(el, appActions) {
   root = el;
   actions = appActions;
   ["paths", "reset", "investigation"].forEach((e) => onState(e, render));
   on(root, "click", "[data-filter]", (_e, btn) => { filter = btn.dataset.filter; render(); });
+  on(root, "click", "[data-action='track-path']", (_e, btn) =>
+    trackFinding({ type: "attack_path", investigation_id: state.investigation.id, path_id: btn.dataset.pathId }));
   on(root, "click", "[data-action='show-path']", (_e, btn) => actions.showPath(state.paths.paths[Number(btn.dataset.index)]));
   on(root, "click", "[data-action='newInvestigation'], [data-action='loadDemo']", (_e, btn) => actions[btn.dataset.action]());
   render();
@@ -45,7 +50,7 @@ function render() {
         </div>
         <span class="muted small">${data.summary.rules_evaluated} rules evaluated</span>
       </div>
-      ${shown.length ? shown.map(({ p, i }) => pathCard(p, i))
+      ${shown.length ? shown.map(({ p, i }) => pathCard(p, i, { track: canTrack() }))
         : html`<div class="card">${empty("shield", all.length ? "Nothing at this severity" : "No attack paths found",
           all.length ? "Try another filter." : "None of the rules found supporting evidence. That's good news — watch the target to catch future changes.")}</div>`}`
       : html`<div class="card">${empty("paths", isRunning() ? "Discovery in progress" : "Analysing…", "Attack paths are calculated once the scan has finished collecting findings.")}</div>`}

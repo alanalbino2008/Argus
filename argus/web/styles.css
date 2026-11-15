@@ -839,3 +839,9 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .card-head.wrap { flex-wrap: wrap; gap: 12px; }
 .card-head.wrap > div:first-child { flex: 1 1 280px; }
 .table-scroll { overflow-x: auto; }
+
+/* Remediation */
+.timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); }
+.timeline li { position: relative; padding: 0 0 12px 10px; font-size: 13px; }
+.timeline li::before { content: ""; position: absolute; left: -20px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent, #4f46e5); }
+@media (max-width: 1100px) { #rem-layout { grid-template-columns: minmax(0, 1fr) !important; } }

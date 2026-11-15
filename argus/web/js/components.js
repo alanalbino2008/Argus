@@ -51,7 +51,7 @@ export function ttpRoute(techniques) {
 }
 
 /** Full attack-path card. `compact` hides details for dashboard use. */
-export function pathCard(p, index, { compact = false } = {}) {
+export function pathCard(p, index, { compact = false, track = false } = {}) {
   return html`<article class="card path-card" data-index="${index}">
     <div class="path-top">
       <span class="score-badge ${p.severity}" data-tip="Risk ${p.score}/100 = impact ${p.impact}/5 × likelihood ${p.likelihood}">${p.score}</span>
@@ -71,6 +71,7 @@ export function pathCard(p, index, { compact = false } = {}) {
           </div>
         </details>`}
       <button class="btn sm" data-action="show-path" data-index="${index}">${ico("graph")}Show on graph</button>
+      ${track ? html`<button class="btn sm ghost" data-action="track-path" data-path-id="${p.id}" title="Give this fix an owner and a deadline">${ico("check")}Track fix</button>` : ""}
     </div>
   </article>`;
 }

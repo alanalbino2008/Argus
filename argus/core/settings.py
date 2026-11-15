@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     exposure_poll_seconds: float = Field(
         default=300.0, gt=0, description="How often due exposure checks are looked for"
     )
+    remediation_poll_seconds: float = Field(
+        default=300.0, gt=0, description="How often overdue remediation tasks and expired acceptances are checked"
+    )
     exposure_retention_days: int = Field(
         default=365, ge=30, description="Resolved exposure findings are deleted after this many days"
     )

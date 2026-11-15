@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.24.0"
+__version__ = "1.25.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -257,6 +257,21 @@ class ArgusClient:
         return self.post("/api/exposure/findings/status", {"ids": finding_ids, "status": status, "note": note})[
             "updated"
         ]
+
+    # ------------------------------------------------------------------ remediation
+    def tasks(self, *, status: str = "active", assignee: str | None = None, overdue: bool = False) -> dict[str, Any]:
+        """Remediation tasks (most urgent first) with metrics: MTTR, SLA compliance, overdue counts."""
+        return self.get("/api/remediation", status=status, assignee=assignee, overdue="true" if overdue else None)
+
+    def track(
+        self, source: dict[str, Any], *, assignee: str | None = None, external_ref: str | None = None
+    ) -> dict[str, Any]:
+        """Open a task for a finding, e.g. ``{"type": "attack_path", "investigation_id": …, "path_id": …}``."""
+        return self.post("/api/remediation", {"source": source, "assignee": assignee, "external_ref": external_ref})
+
+    def update_task(self, task_id: str, **changes: Any) -> dict[str, Any]:
+        """Change status, owner, due date or ticket; ``note=`` is recorded on the timeline."""
+        return self.patch(f"/api/remediation/{task_id}", changes)
 
     # ------------------------------------------------------------------ monitoring
     def monitors(self) -> list[dict[str, Any]]:

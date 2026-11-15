@@ -137,6 +137,29 @@ curl -X POST https://argus.example.com/api/exposure/findings/status \
 Exposure alerts arrive through the same destinations as drift alerts. Their `alert.exposure`
 object carries the counts and the scope, and never staff addresses.
 
+## Remediation
+
+Track a finding as a task, then move it through its lifecycle. Attack-path tasks are verified by
+scans, not by hand.
+
+```bash
+curl -X POST https://argus.example.com/api/remediation \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"source": {"type": "attack_path", "investigation_id": "inv_…", "path_id": "path_…"}, "assignee": "alice@acme.com", "external_ref": "SEC-142"}'
+```
+
+```bash
+curl -X PATCH https://argus.example.com/api/remediation/rem_… \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"status": "fixed", "note": "Port closed at the firewall, change CHG-881"}'
+```
+
+* `GET /api/remediation` lists tasks, most urgent first. It takes `status`, `assignee` (`me`,
+  `unassigned` or a name), `severity`, `source_type` and `overdue`, and also returns metrics (SLA
+  compliance, median time to verified fix, overdue counts, trend).
+* Tracking a finding that already has a task returns that task with HTTP 200.
+* Accepting a risk needs `accepted_until` (within a year) and a `note`.
+
 ## Webhooks
 
 A *Webhook* destination (*Monitoring → Notifications*) receives a JSON event for every alert at

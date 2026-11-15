@@ -178,6 +178,12 @@ on port 443.
 * Closed findings are deleted after `ARGUS_EXPOSURE_RETENTION_DAYS` (default 365, via
   `config.extraEnv`). Set it to your data-retention policy.
 
+### Remediation
+
+Remediation needs no setup. Its clock (overdue alerts, expiring risk acceptances) runs on every
+replica alongside the monitor scheduler (`config.monitorsEnabled`). Each overdue task is claimed
+once across replicas. Closed tasks are kept for two years of metrics, then deleted.
+
 ### Client reports
 
 Reports need no setup: the image includes the fonts, and every report's fingerprint is

@@ -5,6 +5,7 @@ import { api, download, enc } from "../api.js";
 import { empty, ico, severityPill } from "../components.js";
 import { $, closeModal, confirmDialog, formatDay, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
+import { trackFinding } from "./remediation.js";
 
 let root;
 let data = null;
@@ -61,7 +62,8 @@ function actions(ids, current) {
   if (!canEdit()) return "";
   const list = ids.join(",");
   return current === "open"
-    ? html`<button class="btn sm" data-act="triage" data-ids="${list}" data-status="resolved">${ico("check")}Resolved</button>
+    ? html`<button class="btn sm ghost" data-act="track" data-id="${ids[0]}" title="Give this fix an owner and a deadline">Track fix</button>
+           <button class="btn sm" data-act="triage" data-ids="${list}" data-status="resolved">${ico("check")}Resolved</button>
            <button class="btn sm ghost" data-act="triage" data-ids="${list}" data-status="accepted">Accept risk</button>`
     : html`<button class="btn sm ghost" data-act="triage" data-ids="${list}" data-status="open">Reopen</button>`;
 }
@@ -154,6 +156,7 @@ export function initExposure(el) {
       if (act === "add") { $("#exposure-form").reset(); $("#exp-error").textContent = ""; return openModal("exposure-modal"); }
       if (act === "reveal") { reveal = !reveal; if (reveal) toast("Full addresses shown. This is recorded in the audit log.", "info", 4000); return refresh(); }
       if (act === "export") return download("/api/exposure/export.csv", "exposure.csv");
+      if (act === "track") return trackFinding({ type: "exposure", finding_id: id });
       if (act === "triage") {
         triage = { ids: btn.dataset.ids.split(","), status: btn.dataset.status };
         if (triage.status === "open") { await api.post("/api/exposure/findings/status", { ids: triage.ids, status: "open" }); return refresh(); }

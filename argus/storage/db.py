@@ -471,6 +471,66 @@ class ExposureFindingRow(Base):
     note: Mapped[str] = mapped_column(String(500), default="")
 
 
+class RemediationTaskRow(Base):
+    """A piece of remediation work: from an attack path, an exposure finding, a supplier, or a person."""
+
+    __tablename__ = "remediation_tasks"
+    __table_args__ = (
+        Index("ux_remediation_source", "workspace_id", "source_type", "source_key", unique=True),
+        Index("ix_remediation_status", "workspace_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"))
+    source_type: Mapped[str] = mapped_column(String(16))  # attack_path | exposure | supplier | manual
+    source_key: Mapped[str | None] = mapped_column(String(300), nullable=True)  # one task per source finding
+    target: Mapped[str] = mapped_column(String(253), default="")
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(String(4000), default="")
+    severity: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16))  # open | in_progress | fixed | verified | accepted
+    assignee: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    accepted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    external_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)  # e.g. a Jira key
+    details: Mapped[dict[str, Any]] = mapped_column(JSON)
+    reopen_count: Mapped[int] = mapped_column(Integer, default=0)
+    verified_by: Mapped[str | None] = mapped_column(String(128), nullable=True)  # a scan id or a person
+    overdue_alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class RemediationEventRow(Base):
+    """A task's timeline: created, assigned, status changes, comments, scan verifications."""
+
+    __tablename__ = "remediation_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(32), ForeignKey("remediation_tasks.id", ondelete="CASCADE"), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    by: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(16))  # created | status | assigned | due | comment | verified | reopened
+    text: Mapped[str] = mapped_column(String(2000), default="")
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+
+
+class RemediationPolicyRow(Base):
+    """A workspace's remediation deadlines and automation."""
+
+    __tablename__ = "remediation_policies"
+
+    workspace_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    sla_days: Mapped[dict[str, Any]] = mapped_column(JSON)
+    auto_create: Mapped[str] = mapped_column(String(16), default="off")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str] = mapped_column(String(128))
+
+
 class Database:
     """Owns the async engine and session factory for one database URL."""
 

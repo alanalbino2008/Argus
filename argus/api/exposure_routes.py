@@ -15,6 +15,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
+from argus.api import remediation_hooks
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.core.models import EntityType
 from argus.intel.exposure import KIND_LABEL, SEVERITY_ORDER, summarise
@@ -160,13 +161,15 @@ async def set_status(body: StatusRequest, request: Request, ws: WorkspaceContext
     changed = await _repo(request).set_status(
         list(dict.fromkeys(body.ids)), workspace_id=ws.id, status=body.status, by=ws.principal.name, note=body.note
     )
+    await remediation_hooks.exposure_triaged(request.app, ws.id, list(dict.fromkeys(body.ids)), body.status,
+                                             ws.principal.name)  # fmt: skip
     await audit(request, ws.principal, "exposure.triage", None,
                 details={"status": body.status, "findings": changed, "note": body.note})  # fmt: skip
     return {"updated": changed}
 
 
 @router.get("/export.csv")
-async def export(request: Request, ws: WorkspaceContext = ANALYST, status: Literal["open", "all"] = "open"):
+async def export_exposure(request: Request, ws: WorkspaceContext = ANALYST, status: Literal["open", "all"] = "open"):
     """Exposed accounts with full addresses, e.g. to force password resets. Audited."""
     findings = await _repo(request).findings(workspace_id=ws.id, reveal=True)
     rows = _ordered([f for f in findings if status == "all" or f["status"] == "open"])
