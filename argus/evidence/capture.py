@@ -224,13 +224,18 @@ class _DevTools:
     async def call(self, method: str, params: dict[str, Any] | None = None, *, page: bool = True,
                    timeout: float = 20.0) -> dict[str, Any]:  # fmt: skip
         self._next += 1
-        message: dict[str, Any] = {"id": self._next, "method": method, "params": params or {}}
+        msg_id = self._next
+        message: dict[str, Any] = {"id": msg_id, "method": method, "params": params or {}}
         if page and self.session:
             message["sessionId"] = self.session
         future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
-        self._pending[self._next] = future
+        self._pending[msg_id] = future
         await self.ws.send_str(json.dumps(message))
-        reply = await asyncio.wait_for(future, timeout)
+        try:
+            reply = await asyncio.wait_for(future, timeout)
+        except asyncio.TimeoutError as exc:
+            self._pending.pop(msg_id, None)
+            raise CaptureError(f"The browser did not answer {method} within {timeout:g} seconds") from exc
         if "error" in reply:
             raise CaptureError(f"The browser refused {method}: {reply['error'].get('message', '')}"[:200])
         return dict(reply.get("result") or {})
@@ -256,7 +261,7 @@ async def _devtools_url(proc: asyncio.subprocess.Process) -> str:
         raise CaptureError("The browser did not start")
     seen: list[str] = []
     while True:
-        line = await asyncio.wait_for(proc.stderr.readline(), 15)
+        line = await asyncio.wait_for(proc.stderr.readline(), 30)  # full Chrome can be slow to start
         if not line:
             reason = next(
                 (t for t in reversed(seen) if "sandbox" in t.lower() or "FATAL" in t), seen[-1] if seen else ""
@@ -269,8 +274,24 @@ async def _devtools_url(proc: asyncio.subprocess.Process) -> str:
 
 
 async def _load(dt: _DevTools, url: str, notes: list[str]) -> None:
-    """Navigate and wait for the load event, dismissing pop-up dialogs a page uses to stall capture."""
-    await dt.call("Page.navigate", {"url": url})
+    """Navigate and wait for the load event, dismissing pop-up dialogs a page uses to stall capture.
+
+    The navigation request runs *alongside* the event loop: a page can open a dialog before the
+    browser answers ``Page.navigate``, and the answer may wait until the dialog is dealt with.
+    """
+    navigation = asyncio.create_task(dt.call("Page.navigate", {"url": url}, timeout=30))
+    try:
+        await _until_loaded(dt, notes)
+    finally:
+        if not navigation.done():
+            navigation.cancel()
+        with contextlib.suppress(asyncio.CancelledError, CaptureError, asyncio.TimeoutError):
+            result = await navigation
+            if result.get("errorText"):
+                notes.append(f"The browser reported a navigation error: {result['errorText']}")
+
+
+async def _until_loaded(dt: _DevTools, notes: list[str]) -> None:
     deadline = asyncio.get_running_loop().time() + 25
     while True:
         remaining = deadline - asyncio.get_running_loop().time()
