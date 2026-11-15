@@ -32,6 +32,7 @@ import json
 import os
 import secrets
 import shutil
+import signal
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -244,6 +245,12 @@ SANDBOX_HINT = ("if Argus runs in a container without user namespaces, set ARGUS
                 "(a security trade-off) or install chrome-headless-shell")  # fmt: skip
 
 
+def _stop(proc: asyncio.subprocess.Process) -> None:
+    """End the browser and every helper process it started (its whole process group)."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGKILL)
+
+
 async def _devtools_url(proc: asyncio.subprocess.Process) -> str:
     if proc.stderr is None:
         raise CaptureError("The browser did not start")
@@ -289,7 +296,8 @@ async def render(url: str, browser: str, settings: Settings) -> dict[str, Any]:
     """Full-page screenshot and rendered DOM, with every request forced through the guard proxy."""
     notes: list[str] = []
     async with GuardProxy(allow_private=settings.allow_private_targets) as proxy:
-        with tempfile.TemporaryDirectory(prefix="argus-capture-") as tmp:
+        # Late writes by Chrome's helper processes must not fail the capture.
+        with tempfile.TemporaryDirectory(prefix="argus-capture-", ignore_cleanup_errors=True) as tmp:
             mode = [] if is_headless_shell(browser) else ["--headless=new", *QUIET_FLAGS]
             argv = [
                 browser, *mode, "--disable-gpu", "--hide-scrollbars", "--mute-audio", "--disable-extensions",
@@ -300,7 +308,8 @@ async def render(url: str, browser: str, settings: Settings) -> dict[str, Any]:
             if os.geteuid() == 0 or not settings.capture_browser_sandbox:  # Chrome refuses its sandbox as root
                 argv.insert(1, "--no-sandbox")
             proc = await asyncio.create_subprocess_exec(*argv, stdout=asyncio.subprocess.DEVNULL,
-                                                        stderr=asyncio.subprocess.PIPE)  # fmt: skip
+                                                        stderr=asyncio.subprocess.PIPE,
+                                                        start_new_session=True)  # its own process group  # fmt: skip
             screenshot = dom = None
             version = os.path.basename(browser)
             try:
@@ -342,9 +351,9 @@ async def render(url: str, browser: str, settings: Settings) -> dict[str, Any]:
             except (CaptureError, asyncio.TimeoutError, aiohttp.ClientError, OSError, KeyError) as exc:
                 notes.append(f"The browser could not finish ({type(exc).__name__}: {str(exc)[:120]})")
             finally:
-                if proc.returncode is None:
-                    proc.kill()
+                _stop(proc)
                 await proc.wait()
+                _stop(proc)  # helpers (renderer, GPU, network) can outlive the main process
     return {
         "screenshot": screenshot or None,
         "dom": dom if dom and dom.strip() else None,
