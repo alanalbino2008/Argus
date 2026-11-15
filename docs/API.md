@@ -111,6 +111,32 @@ List endpoints take `limit` (and `offset` where the list can be long). Exports r
 events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then connect to
 `/ws/stream/{id}?ticket=…`.
 
+## Breach and dark-web exposure
+
+`GET /api/exposure` returns:
+* the watched domains, with each source's last status;
+* counts;
+* the findings (infostealer infections, ransomware leak-site posts, breaches of the organisation,
+  staff accounts in breaches).
+
+Staff addresses are masked (`account_masked`). An analyst can add `?reveal=true`, or download
+`GET /api/exposure/export.csv`. Both are recorded in the audit log.
+
+```bash
+curl -X POST https://argus.example.com/api/exposure/watches \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"domain": "acme.com", "organisation": "Acme Corporation", "basis": "Our corporate domain", "authorized": true}'
+```
+
+```bash
+curl -X POST https://argus.example.com/api/exposure/findings/status \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"ids": ["exf_…"], "status": "resolved", "note": "Password reset, sessions revoked"}'
+```
+
+Exposure alerts arrive through the same destinations as drift alerts. Their `alert.exposure`
+object carries the counts and the scope, and never staff addresses.
+
 ## Webhooks
 
 A *Webhook* destination (*Monitoring → Notifications*) receives a JSON event for every alert at

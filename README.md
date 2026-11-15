@@ -303,6 +303,17 @@ tier.
 
 ([`docs/explained/22-supplier-risk.md`](docs/explained/22-supplier-risk.md)).
 
+**Breach & dark-web exposure**: daily checks of your domains for staff credentials in
+**infostealer logs**, staff accounts in **breaches**, breaches of the organisation, and
+**ransomware leak-site posts**, and the same checks for every supplier in the register.
+
+- Alerts start with a baseline, then announce every new finding.
+- Findings carry remediation advice and can be triaged and exported for password resets.
+- Only metadata is collected, through legitimate sources (Have I Been Pwned for verified domains,
+  the ransomware.live research feed).
+- Staff addresses are masked unless an analyst reveals them, which is audited
+  ([`docs/explained/24-breach-and-dark-web-exposure.md`](docs/explained/24-breach-and-dark-web-exposure.md)).
+
 **API & integrations**: a documented REST API (OpenAPI 3.1 at `/docs`, with authentication,
 workspace header and required role on every operation), per-key rate limits with `RateLimit-*`
 headers, and an official Python client (`clients/python`).

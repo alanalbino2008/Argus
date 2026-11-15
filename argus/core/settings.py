@@ -49,6 +49,17 @@ class Settings(BaseSettings):
     # --- Optional intelligence sources (modules stay disabled until a key is set) ---------
     virustotal_api_key: SecretStr | None = Field(default=None, description="VirusTotal v3 API key")
     hibp_api_key: SecretStr | None = Field(default=None, description="Have I Been Pwned v3 API key")
+    ransomware_feed_url: str | None = Field(
+        default="https://api.ransomware.live/v2",
+        description="Ransomware leak-site research feed (ransomware.live API); empty turns it off",
+    )
+    exposure_monitoring_enabled: bool = Field(default=True, description="Run the breach and dark-web exposure loop")
+    exposure_poll_seconds: float = Field(
+        default=300.0, gt=0, description="How often due exposure checks are looked for"
+    )
+    exposure_retention_days: int = Field(
+        default=365, ge=30, description="Resolved exposure findings are deleted after this many days"
+    )
     shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
     github_token: SecretStr | None = Field(
         default=None, description="GitHub token: enables public code-leak search (GitHub requires auth for code search)"

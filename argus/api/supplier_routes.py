@@ -82,8 +82,11 @@ async def _add(request: Request, ws: WorkspaceContext, fields: dict[str, Any], b
         workspace_id=ws.id,
         passive_only=True,  # never contact a third party's systems
     )
-    return await _repo(request).create(workspace_id=ws.id, by=ws.principal.name, monitor_id=monitor["id"], basis=basis,
-                                       **fields)  # fmt: skip
+    supplier = await _repo(request).create(workspace_id=ws.id, by=ws.principal.name, monitor_id=monitor["id"],
+                                           basis=basis, **fields)  # fmt: skip
+    # Suppliers are also swept for public breach and ransomware leak-site reports.
+    await request.app.state.exposure.ensure_supplier_watch(workspace_id=ws.id, by=ws.principal.name)
+    return supplier
 
 
 async def _view(request: Request, ws_id: str, supplier: dict[str, Any]) -> dict[str, Any]:
@@ -119,6 +122,9 @@ async def _view(request: Request, ws_id: str, supplier: dict[str, Any]) -> dict[
 @router.get("")
 async def list_suppliers(request: Request, ws: WorkspaceContext = VIEWER):
     suppliers = [await _view(request, ws.id, s) for s in await _repo(request).list_suppliers(workspace_id=ws.id)]
+    exposure = await request.app.state.exposure.open_by_subject(workspace_id=ws.id)
+    for s in suppliers:
+        s["exposure"] = exposure.get(s["domain"], {})
     order = {"below_minimum": 0, "not_assessed": 2, "within_tolerance": 1}
     suppliers.sort(key=lambda s: (order[s["status"]], -(s["risk"]["score"] or 0), s["name"].lower()))
     matrix = {str(i): dict.fromkeys("ABCDF", 0) for i in range(1, 6)}  # impact -> grade -> count

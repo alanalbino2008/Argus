@@ -158,6 +158,22 @@ NOTIFICATIONS_PENDING = Gauge(
     "argus_notifications_pending", "Deliveries waiting to be sent, cluster-wide", registry=REGISTRY
 )
 
+# ------------------------------------------------------------------ breach and dark-web exposure
+EXPOSURE_CHECKS = Counter(
+    "argus_exposure_checks_total",
+    "Exposure checks by scope (domain, suppliers) and outcome (ok, partial, error)",
+    ["scope", "outcome"],
+    registry=REGISTRY,
+)
+EXPOSURE_FINDINGS = Counter(
+    "argus_exposure_findings_total",
+    "New exposure findings (breached accounts, infostealers, leak-site posts)",
+    registry=REGISTRY,
+)
+EXPOSURE_SOURCE_ERRORS = Counter(
+    "argus_exposure_source_errors_total", "Exposure source failures by source", ["source"], registry=REGISTRY
+)
+
 
 def init(instance: str, scan_capacity: int = 0) -> None:
     BUILD_INFO.labels(version=__version__, replica=instance).set(1)

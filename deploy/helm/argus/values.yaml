@@ -95,6 +95,10 @@ config:
   scansPerMinute: 10             # per API key, per replica
   apiRequestsPerMinute: 600      # per API key, per replica (0 = unlimited); browser sessions are not limited
   monitorsEnabled: true          # every replica runs a scheduler; due monitors are claimed atomically
+  # Breach and dark-web exposure: every replica runs the loop; each due check is claimed once.
+  # Breached staff accounts and infostealer logs also need secrets.hibpApiKey (verified domains only).
+  exposureMonitoring: true
+  ransomwareFeedUrl: https://api.ransomware.live/v2   # ransomware leak-site research feed; "" turns it off
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone
   corsOrigins: []

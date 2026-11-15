@@ -33,6 +33,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
 from typing import Any, Literal
@@ -48,6 +49,7 @@ from sqlalchemy import text
 from argus import __version__
 from argus.api.auth_routes import router as auth_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
+from argus.api.exposure_routes import router as exposure_router
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.notification_routes import router as notification_router
 from argus.api.onboarding_routes import router as onboarding_router
@@ -65,9 +67,11 @@ from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import Settings, get_settings
-from argus.demo import load_demo
+from argus.demo import DEMO_TARGET, load_demo
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
+from argus.intel.exposure import demo_findings
+from argus.intel.exposure_monitor import ExposureMonitor
 from argus.intel.identity import resolve_people
 from argus.intel.paths import find_attack_paths
 from argus.intel.stix import build_bundle
@@ -88,6 +92,7 @@ from argus.security.network import validate_scan_target
 from argus.security.oidc import OidcProvider
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
@@ -184,6 +189,12 @@ async def lifespan(app: FastAPI):
     app.state.reports = ReportRepository(db)
     app.state.ratings = RatingRepository(db)
     app.state.suppliers = SupplierRepository(db)
+    app.state.exposure = ExposureRepository(db)
+    app.state.exposure_monitor = ExposureMonitor(
+        app.state.exposure,
+        settings,
+        suppliers=lambda workspace_id: app.state.suppliers.list_suppliers(workspace_id=workspace_id),
+    )
     app.state.schedules = ScheduleRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
     app.state.notifications = NotificationRepository(db, app.state.secret_box)
@@ -214,6 +225,11 @@ async def lifespan(app: FastAPI):
         ),
         running_scans=lambda: cluster_running_scans(app),
     )
+    exposure_task = (
+        asyncio.create_task(app.state.exposure_monitor.run_forever(), name="exposure-monitor")
+        if settings.exposure_monitoring_enabled
+        else None
+    )
     janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
     scheduler_task = (
         asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
@@ -224,10 +240,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        background = [t for t in (scheduler_task, janitor_task, notifier_task, report_task) if t]
+        background = [t for t in (scheduler_task, janitor_task, notifier_task, report_task, exposure_task) if t]
         for task in background:
             task.cancel()
         await asyncio.gather(*background, return_exceptions=True)
+        if exposure_task is None:
+            await app.state.exposure_monitor.sources.close()
         event_bus.unsubscribe_all(ws_dispatcher)
         for engine in INVESTIGATIONS.values():
             engine.cancel()
@@ -321,6 +339,10 @@ API_TAGS = [
     {"name": "investigations", "description": "Launch scans; read graphs, attack paths, people and exports."},
     {"name": "ratings", "description": "A-F security ratings with factor breakdowns, benchmarks and history."},
     {"name": "supplier risk", "description": "The supplier register, passive assessments and the risk matrix."},
+    {
+        "name": "exposure",
+        "description": "Breached staff accounts, infostealer infections and ransomware leak-site posts.",
+    },
     {"name": "monitoring", "description": "Continuous monitoring of targets and the alerts it raises."},
     {"name": "notifications", "description": "Alert destinations and integrations, and the delivery log."},
     {"name": "reports", "description": "Signed PDF reports, verification and schedules."},
@@ -370,6 +392,7 @@ app.include_router(report_router)
 app.include_router(onboarding_router)
 app.include_router(rating_router)
 app.include_router(supplier_router)
+app.include_router(exposure_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -751,11 +774,28 @@ async def list_plugins(_: Principal = PLATFORM_ADMIN):
     return asdict(plugin_report())
 
 
+async def _seed_exposure_demo(app: FastAPI, workspace_id: str, by: str) -> None:
+    """Fictional exposure for the demo organisation (never checked against live sources)."""
+    repo: ExposureRepository = app.state.exposure
+    watch = await repo.create_watch(
+        workspace_id=workspace_id, scope="domain", domain=DEMO_TARGET, organisation="Acme Corp", by=by,
+        basis="Demonstration data (fictional)", demo=True,
+    )  # fmt: skip
+    if watch is None:  # already loaded
+        return
+    findings = demo_findings(DEMO_TARGET, datetime.now(timezone.utc))
+    sources = {"breach_catalogue": {"status": "ok", "found": 3}, "domain_search": {"status": "ok", "found": 5},
+               "stealer_logs": {"status": "ok", "found": 1}, "ransomware": {"status": "ok", "found": 1}}  # fmt: skip
+    await repo.record_check(watch, findings, status="ok", message="Demonstration data (fictional)", sources=sources,
+                            subject_names={DEMO_TARGET: "Acme Corp"})  # fmt: skip
+
+
 @app.post("/api/demo")
 async def load_demo_investigation(request: Request, ws: WorkspaceContext = ADMIN):
     """Load the built-in fictional demo investigation (reserved .example domains, TEST-NET IPs)."""
     principal = ws.principal
     inv_id = await load_demo(get_repo(request), ws.id)
+    await _seed_exposure_demo(request.app, ws.id, principal.name)
     await audit(request, principal, "demo.load", inv_id)
     return {"investigation_id": inv_id}
 
@@ -1251,8 +1291,6 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
 
 def _event_json(kind: str, inv_id: str, data: dict[str, Any]) -> str:
     """Same wire format as engine events relayed by :func:`ws_dispatcher`."""
-    from datetime import datetime, timezone
-
     return json.dumps(
         {"type": kind, "investigation_id": inv_id, "data": data, "timestamp": datetime.now(timezone.utc).isoformat()}
     )

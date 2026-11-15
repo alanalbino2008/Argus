@@ -163,6 +163,21 @@ The pods also need a route there: add the hosts' network to `networkPolicy.inter
 with a certificate the pods trust is required. Mount an internal CA bundle and set `SSL_CERT_FILE`
 through `config.extraEnv` if needed. Setup for each integration is in [`API.md`](API.md#integrations).
 
+### Breach and dark-web exposure
+
+Exposure monitoring runs on every replica and needs no setup for its public sources: the HIBP
+breach catalogue and the ransomware.live feed. The chart's network policy already allows the
+public internet. Behind your own egress firewall, allow `haveibeenpwned.com` and `api.ransomware.live`
+on port 443.
+
+* **Breached staff accounts and infostealer logs** need a Have I Been Pwned API key
+  (`secrets.hibpApiKey`). Stealer logs need a plan that includes them. HIBP only answers for
+  domains verified in its domain search dashboard. Verify each domain your teams will watch.
+* `config.ransomwareFeedUrl: ""` turns the ransomware feed off, and `config.exposureMonitoring:
+  false` stops the loop.
+* Closed findings are deleted after `ARGUS_EXPOSURE_RETENTION_DAYS` (default 365, via
+  `config.extraEnv`). Set it to your data-retention policy.
+
 ### Client reports
 
 Reports need no setup: the image includes the fonts, and every report's fingerprint is

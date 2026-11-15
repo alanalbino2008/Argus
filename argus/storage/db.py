@@ -416,6 +416,61 @@ class SupplierRow(Base):
     basis: Mapped[str] = mapped_column(String(300))  # why assessing this third party is legitimate
 
 
+class ExposureWatchRow(Base):
+    """A domain (or a workspace's whole supplier register) checked for breach and dark-web exposure."""
+
+    __tablename__ = "exposure_watches"
+    __table_args__ = (Index("ux_exposure_watches_scope", "workspace_id", "scope", "domain", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    scope: Mapped[str] = mapped_column(String(16))  # "domain" | "suppliers"
+    domain: Mapped[str] = mapped_column(String(253), default="")  # empty for the supplier sweep
+    organisation: Mapped[str] = mapped_column(String(200), default="")
+    basis: Mapped[str] = mapped_column(String(300))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checks: Mapped[int] = mapped_column(Integer, default=0)  # completed checks; the first is the baseline
+    last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)  # ok | partial | error
+    last_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    sources: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # what each source said last time
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(String(128))
+
+
+class ExposureFindingRow(Base):
+    """One piece of exposure (a breached account, an infostealer infection, a leak-site post...)."""
+
+    __tablename__ = "exposure_findings"
+    __table_args__ = (
+        Index("ux_exposure_findings_key", "workspace_id", "key_hash", unique=True),
+        Index("ix_exposure_findings_status", "workspace_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"))
+    watch_id: Mapped[str] = mapped_column(String(32), ForeignKey("exposure_watches.id", ondelete="CASCADE"), index=True)
+    key_hash: Mapped[str] = mapped_column(String(64))  # SHA-256 of the finding's stable key
+    subject: Mapped[str] = mapped_column(String(253))  # the domain concerned
+    subject_name: Mapped[str] = mapped_column(String(200), default="")
+    supplier_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    severity: Mapped[str] = mapped_column(String(16))
+    title: Mapped[str] = mapped_column(String(512))
+    account: Mapped[str | None] = mapped_column(String(320), nullable=True)  # personal data: masked in the API
+    occurred_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open | resolved | accepted
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+
+
 class Database:
     """Owns the async engine and session factory for one database URL."""
 

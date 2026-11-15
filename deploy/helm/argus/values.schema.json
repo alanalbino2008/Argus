@@ -171,6 +171,13 @@
         "apiRequestsPerMinute": {
           "type": "integer",
           "minimum": 0
+        },
+        "exposureMonitoring": {
+          "type": "boolean"
+        },
+        "ransomwareFeedUrl": {
+          "type": "string",
+          "pattern": "^(https://.+)?$"
         }
       }
     },

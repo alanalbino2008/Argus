@@ -681,11 +681,14 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 
 @media (max-width: 760px) {
   .app {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: var(--topbar-height) 1fr 64px;
     grid-template-areas: "top" "main" "nav";
   }
-  .nav { flex-direction: row; justify-content: space-around; padding: 6px; border-right: 0; border-top: 1px solid var(--border); }
+  /* Eleven destinations do not fit a phone's width: the bar scrolls sideways, the page does not. */
+  .nav { flex-direction: row; justify-content: flex-start; padding: 6px; border-right: 0; border-top: 1px solid var(--border);
+         overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; min-width: 0; }
+  .nav::-webkit-scrollbar { display: none; }
   .brand, .nav-spacer { display: none; }
   .nav-item { width: auto; flex: 1; }
   .page { padding: 20px 16px 32px; }
@@ -699,7 +702,7 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
   .context-meta, .hide-sm { display: none; }
   details.more .more-body { grid-template-columns: 1fr; }
   .floating .input { width: 130px; }
-  .nav-item { font-size: 10px; padding-left: 0; padding-right: 0; min-width: 0; }
+  .nav-item { font-size: 10px; padding-left: 0; padding-right: 0; flex: 0 0 auto; min-width: 58px; }
   .persona-grid { grid-template-columns: 1fr; }
   .dossier-head { flex-wrap: wrap; }
 }
@@ -835,3 +838,4 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .snippet .btn { position: absolute; top: 6px; right: 6px; }
 .card-head.wrap { flex-wrap: wrap; gap: 12px; }
 .card-head.wrap > div:first-child { flex: 1 1 280px; }
+.table-scroll { overflow-x: auto; }

@@ -19,6 +19,13 @@ const RISK = { critical: "critical", high: "high", medium: "medium", low: "low",
 const DATA = { none: "None", internal: "Internal", personal: "Personal data", sensitive: "Sensitive data" };
 const IMPACT = { 5: "Severe", 4: "Major", 3: "Moderate", 2: "Minor", 1: "Minimal" };
 
+function exposurePills(exposure = {}) {
+  const pills = [];
+  if (exposure.ransomware_post) pills.push(html`<a class="pill critical" href="#/exposure" title="Named on a ransomware leak site">Ransomware post</a>`);
+  if (exposure.domain_breach) pills.push(html`<a class="pill high" href="#/exposure" title="This supplier was breached">Breached</a>`);
+  return pills.length ? html`<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${pills}</div>` : "";
+}
+
 function cellLevel(impact, grade) {
   const score = impact * { A: 1, B: 2, C: 3, D: 4, F: 5 }[grade];
   return score >= 15 ? "critical" : score >= 10 ? "high" : score >= 5 ? "medium" : "low";
@@ -66,7 +73,7 @@ function render() {
             <td><span class="pill">${x.tier}</span><div class="muted small">${DATA[x.data_access]}</div></td>
             <td><div style="display:flex;gap:8px;align-items:center">${gradeBadge(x.grade)}${sparkline(x.trend, 60, 22)}</div>
               <div class="muted small">minimum ${x.min_grade || "none"}${x.last_assessed_at ? ` · ${formatDay(x.last_assessed_at)}` : ""}</div></td>
-            <td><span class="pill ${cls}">${label}</span></td>
+            <td><span class="pill ${cls}">${label}</span>${exposurePills(x.exposure)}</td>
             <td>${x.risk.level === "unknown" ? html`<span class="muted small">—</span>` : html`<span class="pill ${RISK[x.risk.level]}">${x.risk.level}</span><div class="muted small">${x.risk.score}/25</div>`}</td>
             <td class="actions">
               ${x.last_investigation_id ? html`<button class="btn sm ghost" data-act="open" data-id="${x.last_investigation_id}" title="Open the latest assessment">Open</button>` : ""}

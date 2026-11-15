@@ -9,6 +9,8 @@ data:
   ARGUS_SCANS_PER_MINUTE: {{ .Values.config.scansPerMinute | quote }}
   ARGUS_API_REQUESTS_PER_MINUTE: {{ .Values.config.apiRequestsPerMinute | quote }}
   ARGUS_MONITORS_ENABLED: {{ .Values.config.monitorsEnabled | quote }}
+  ARGUS_EXPOSURE_MONITORING_ENABLED: {{ .Values.config.exposureMonitoring | quote }}
+  ARGUS_RANSOMWARE_FEED_URL: {{ .Values.config.ransomwareFeedUrl | quote }}
   ARGUS_NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
   ARGUS_NOTIFY_MAX_ATTEMPTS: {{ .Values.notifications.maxAttempts | quote }}
   ARGUS_REPORT_SCHEDULES_ENABLED: {{ .Values.notifications.scheduledReports | quote }}

@@ -1,5 +1,47 @@
 # Changelog
 
+## [1.24.0] — Phase 24: Breach & dark-web exposure
+
+### Added
+- **Exposure monitoring** (migration `0013`): watched domains are checked daily for:
+  - staff credentials in **infostealer logs**;
+  - staff accounts in **data breaches**;
+  - **breaches of the organisation** itself;
+  - **ransomware leak-site posts** naming it.
+
+  Sources: Have I Been Pwned (breach catalogue; domain search and stealer logs for verified
+  domains with `ARGUS_HIBP_API_KEY`) and the ransomware.live research feed
+  (`ARGUS_RANSOMWARE_FEED_URL`).
+- **Supplier sweep**: every supplier in the register is checked for breaches and ransomware posts.
+  The register flags affected suppliers.
+- Severity rules weigh infostealers and recent domain-matched leak-site posts as critical, and
+  breaches by passwords exposed and recency. Name-only leak-site matches are marked for
+  verification.
+- **Alerts**: the first check is a baseline (high and critical only). After that, every new
+  finding goes into one alert per check, through notifications and integrations, linking to the
+  Exposure page.
+- **Triage**: resolve, accept risk or reopen findings, with a note. **CSV export** for password
+  resets.
+- **Exposure page** (shortcut **E**) with KPIs, watched domains and per-source status, findings by
+  urgency with remediation advice, and breached accounts grouped per person. The demo includes
+  fictional exposure.
+- API `/api/exposure` (overview, watches, check now, triage, `export.csv`), plus Python client
+  methods. Metrics: `argus_exposure_checks_total`, `argus_exposure_findings_total`,
+  `argus_exposure_source_errors_total`. Helm: `config.exposureMonitoring`,
+  `config.ransomwareFeedUrl`.
+- `docs/explained/24-breach-and-dark-web-exposure.md`.
+
+### Security and privacy
+- Only metadata is collected: no passwords, cookies or leaked files, and no visits to criminal
+  sites.
+- Staff addresses are masked by default. Revealing or exporting them requires the analyst role
+  and is audited with the number of addresses disclosed. Alerts never contain addresses.
+- Closed findings are deleted after `ARGUS_EXPOSURE_RETENTION_DAYS` (default 365).
+
+### Fixed
+- On phones, the bottom navigation stretched every page wider than the screen. It now scrolls on
+  its own and keeps the active page in view.
+
 ## [1.23.0] — Phase 23: API & integrations
 
 ### Added

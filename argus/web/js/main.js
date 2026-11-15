@@ -13,13 +13,14 @@ import { initReports, openReport } from "./views/reports.js";
 import { initGuide, markPathsReviewed, openGuide } from "./views/guide.js";
 import { initRatings, refresh as refreshRatings } from "./views/ratings.js";
 import { initSuppliers, refresh as refreshSuppliers } from "./views/suppliers.js";
+import { initExposure, refresh as refreshExposure } from "./views/exposure.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
 import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 
-const VIEWS = ["overview", "graph", "paths", "people", "monitoring", "suppliers", "ratings", "history", "settings"];
+const VIEWS = ["overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "ratings", "history", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -35,6 +36,7 @@ function route() {
   currentView = view;
   $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${view}`));
   $$(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
+  $(`.nav-item[data-view="${view}"]`)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); // phones: the bar scrolls
   if (view === "graph") setTimeout(graph.resizeCanvas, 50);
   if (view === "people") refreshPeople();
   if (view === "history") refreshHistory();
@@ -43,6 +45,7 @@ function route() {
   if (view === "paths") markPathsReviewed();
   if (view === "ratings") refreshRatings();
   if (view === "suppliers") refreshSuppliers();
+  if (view === "exposure") refreshExposure();
 }
 
 // ------------------------------------------------------------------ actions shared by views
@@ -152,7 +155,7 @@ function setupShortcuts() {
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing || e.metaKey || e.ctrlKey || e.altKey || !$("#signin").hidden || $(".modal-root.open")) return;
-    const map = { o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", r: "ratings", h: "history" };
+    const map = { o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", r: "ratings", h: "history" };
     if (map[e.key]) go(map[e.key]);
     else if (e.key === "n") { e.preventDefault(); actions.newInvestigation(); }
     else if (e.key === "/") { e.preventDefault(); go("graph"); setTimeout(() => $("#graph-search").focus(), 120); }
@@ -290,6 +293,7 @@ async function boot() {
   initHistory($("#view-history"), actions);
   initRatings($("#view-ratings"), actions);
   initSuppliers($("#view-suppliers"), actions);
+  initExposure($("#view-exposure"));
   initSettings($("#view-settings"));
 
   $$(".nav-item").forEach((el) => el.addEventListener("click", () => go(el.dataset.view)));

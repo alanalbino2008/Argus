@@ -59,7 +59,13 @@ def alert_event(alert: dict[str, Any], workspace: dict[str, Any], public_url: st
                 if k in counts
             },
             "new_paths": paths,
-            "url": _link(public_url, f"/?ws={workspace.get('id')}&inv={alert['investigation_id']}"),
+            "url": _link(
+                public_url,
+                f"/?ws={workspace.get('id')}#/exposure"
+                if summary.get("exposure")
+                else f"/?ws={workspace.get('id')}&inv={alert['investigation_id']}",
+            ),
+            **({"exposure": summary["exposure"]} if summary.get("exposure") else {}),
         },
     }
 

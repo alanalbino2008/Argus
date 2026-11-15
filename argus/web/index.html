@@ -25,6 +25,7 @@
       <button class="nav-item" data-view="people" title="People (U)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-persona"/></svg>People</button>
       <button class="nav-item" data-view="monitoring" title="Monitoring (M)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>Monitor<span class="nav-dot" id="alerts-dot" hidden></span></button>
       <button class="nav-item" data-view="suppliers" title="Supplier risk (S)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-organization"/></svg>Suppliers</button>
+      <button class="nav-item" data-view="exposure" title="Breach &amp; dark-web exposure (E)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-breach"/></svg>Exposure</button>
       <button class="nav-item" data-view="ratings" title="Security ratings (R)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rating"/></svg>Ratings</button>
       <button class="nav-item" data-view="history" title="History (H)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-history"/></svg>History</button>
       <div class="nav-spacer"></div>
@@ -103,6 +104,7 @@
       <section id="view-people" class="view" aria-label="People"></section>
       <section id="view-monitoring" class="view" aria-label="Monitoring"></section>
       <section id="view-suppliers" class="view" aria-label="Supplier risk"></section>
+      <section id="view-exposure" class="view" aria-label="Breach and dark-web exposure"></section>
       <section id="view-ratings" class="view" aria-label="Security ratings"></section>
       <section id="view-history" class="view" aria-label="History"></section>
       <section id="view-settings" class="view" aria-label="Settings"></section>
@@ -285,6 +287,34 @@
     </form>
   </div>
 
+  <!-- ================================================================ exposure -->
+  <div id="exposure-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="exposure-title" id="exposure-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="exposure-title">Watch a domain for exposure</h2><p>Argus checks breach databases and ransomware leak-site research feeds every day. It never visits criminal sites and never collects passwords.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="exp-domain">Domain</label><input id="exp-domain" class="input mono" placeholder="acme.com" autocomplete="off" spellcheck="false">
+          <div class="hint">Your organisation's email or website domain. Breached staff accounts appear only for domains verified in your Have I Been Pwned dashboard.</div></div>
+        <div class="field"><label class="label" for="exp-org">Organisation name <span class="muted small">optional</span></label><input id="exp-org" class="input" maxlength="200" placeholder="Acme Corporation Ltd" autocomplete="off">
+          <div class="hint">Ransomware groups often post a victim's name rather than its domain.</div></div>
+        <div class="field"><label class="label" for="exp-basis">Basis</label><input id="exp-basis" class="input" maxlength="300" value="Our organisation's domain, monitored by the security team"></div>
+        <label class="check"><input type="checkbox" id="exp-authorized"> <span>This is my organisation's domain, or one I am engaged to protect.</span></label>
+        <div class="error-text" id="exp-error" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start watching</button></div>
+    </form>
+  </div>
+  <div id="triage-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="triage-title" id="triage-form" novalidate>
+      <div class="modal-head"><div><h2 id="triage-title">Mark as resolved</h2><p>Recorded with your name in the audit log.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body"><div class="field"><label class="label" for="triage-note">What was done</label><textarea id="triage-note" class="input" rows="3" maxlength="500"></textarea></div></div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Save</button></div>
+    </form>
+  </div>
+
   <!-- ================================================================ suppliers -->
   <div id="supplier-modal" class="modal-root" aria-hidden="true">
     <form class="modal wide" role="dialog" aria-labelledby="supplier-title" id="supplier-form" novalidate>
@@ -410,7 +440,7 @@
         <table class="table">
           <tbody>
             <tr><td><span class="kbd">N</span></td><td>New investigation</td></tr>
-            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Suppliers · Ratings · History</td></tr>
+            <tr><td><span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Ratings · History</td></tr>
             <tr><td><span class="kbd">/</span></td><td>Find in graph</td></tr>
             <tr><td><span class="kbd">F</span></td><td>Fit graph to screen</td></tr>
             <tr><td><span class="kbd">T</span></td><td>Toggle light / dark theme</td></tr>

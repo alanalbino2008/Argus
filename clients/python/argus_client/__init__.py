@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.23.0"
+__version__ = "1.24.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -242,6 +242,21 @@ class ArgusClient:
 
     def import_suppliers(self, csv_text: str, *, basis: str) -> dict[str, Any]:
         return self.post("/api/suppliers/import", {"csv": csv_text, "basis": basis, "authorized": True})
+
+    # ------------------------------------------------------------------ breach and dark-web exposure
+    def exposure(self, *, status: str = "open", reveal: bool = False) -> dict[str, Any]:
+        """Watched domains and findings. ``reveal=True`` (analyst) includes staff addresses and is audited."""
+        return self.get("/api/exposure", status=status, reveal="true" if reveal else None)
+
+    def watch_exposure(self, domain: str, *, basis: str, organisation: str = "") -> dict[str, Any]:
+        """Check ``domain`` daily for breached accounts, infostealer logs and ransomware leak-site posts."""
+        return self.post("/api/exposure/watches", {"domain": domain, "organisation": organisation, "basis": basis,
+                                                   "authorized": True})  # fmt: skip
+
+    def resolve_exposure(self, finding_ids: list[str], *, note: str = "", status: str = "resolved") -> int:
+        return self.post("/api/exposure/findings/status", {"ids": finding_ids, "status": status, "note": note})[
+            "updated"
+        ]
 
     # ------------------------------------------------------------------ monitoring
     def monitors(self) -> list[dict[str, Any]]:

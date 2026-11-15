@@ -47,6 +47,8 @@ def make_client(tmp_path, monkeypatch):
     def _make(**env):
         monkeypatch.setenv("ARGUS_DATABASE_URL", database_url(tmp_path, "api.db"))
         monkeypatch.setenv("ARGUS_BOOTSTRAP_ADMIN_KEY", ADMIN_KEY)
+        # Tests never reach live breach sources unless they opt in.
+        monkeypatch.setenv("ARGUS_EXPOSURE_MONITORING_ENABLED", "false")
         for k, v in env.items():
             monkeypatch.setenv(f"ARGUS_{k.upper()}", str(v))
         get_settings.cache_clear()
