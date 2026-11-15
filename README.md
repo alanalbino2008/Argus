@@ -17,7 +17,7 @@
 
 Argus bridges the gap between fragmented CLI tools and expensive enterprise intelligence suites by fusing the best features of industry standards with modern web-scale engineering:
 
-* ⚡ **Sherlock-Class Identity Hunting:** Asynchronous, concurrent account hunting across 120+ platforms (developer, security, social, fediverse, creative, gaming…) with **self-calibration**: every hit is re-checked against a random, unregistered handle, so sites that answer "yes" to everything are discarded instead of producing false positives — then follows each account to learn more about the person behind it.
+* ⚡ **Sherlock-Class Identity Hunting:** Asynchronous, concurrent account hunting across 120+ hand-checked platforms plus the community-maintained WhatsMyName catalog (hundreds more sites), with optional handle variants (jane.roe → jane_roe, janeroe…), with **self-calibration**: every hit is re-checked against a random, unregistered handle, so sites that answer "yes" to everything are discarded instead of producing false positives — then follows each account to learn more about the person behind it.
 * 🕸️ **Spiderfoot-Style Recursive Infrastructure Mapping:** Automated multi-hop enrichment: Domain ➔ DNS ➔ IP ➔ GeoIP/ASN ➔ RDAP Registrant ➔ Subdomains via Certificate Transparency ➔ TLS SANs ➔ Web Tech Stack.
 * 🔮 **Maltego-Grade Visual Link Analysis:** Interactive physics-driven graph visualization built on **Cytoscape.js** with real-time WebSocket telemetry streaming. Nodes and relationships animate live onto the canvas as intelligence is discovered.
 * 🛡️ **Novel Innovation — Attack Surface Scoring & Pivot Analysis:** Topological analysis utilizing graph degree centrality to identify single-point-of-failure infrastructure hubs, detect missing defensive headers (HSTS, CSP), and calculate a quantitative exposure score.
@@ -121,7 +121,7 @@ Findings seen by several independent sources gain confidence automatically (and 
 
 ### People & Software Intelligence
 
-A username or email is a starting point, not an answer. When Argus finds an account it reads the platform's **official public API** for what the owner chose to publish — display name, bio, location, employer, website, join date and *linked accounts* — and follows those links. **Identity resolution** then groups the fragments into **people**, each with a dossier: accounts, emails, handles, locations, employer, a timeline (joined GitHub 2014 → password exposed in a 2023 breach) and the exposures and attack paths they are part of. Every link is graded **verified** (proven by Keybase or Mastodon), **strong** or **possible** (same handle — may be someone else), shared inboxes like `info@` are never treated as people, viewing a dossier is audited, and remote avatars are never loaded, so the analyst's IP doesn't leak to the subject's platforms.
+A username or email is a starting point, not an answer. When Argus finds an account it reads the platform's **official public API** for what the owner chose to publish — display name, bio, location, employer, website, join date and *linked accounts* — and follows those links. **Identity resolution** then groups the fragments into **people**, each with a dossier: accounts, emails, handles, locations, employer, a timeline (joined GitHub 2014 → password exposed in a 2023 breach) and the exposures and attack paths they are part of. Every link is graded **verified** (proven by Keybase or Mastodon), **strong** or **possible** (same handle — may be someone else), shared inboxes like `info@` are never treated as people, viewing a dossier is audited, and the analyst's browser never loads remote avatars (Argus fetches and fingerprints them on its server), so the analyst's IP doesn't leak to the subject's platforms. The **same profile picture** on two sites links the accounts as a strong match.
 
 Software gets the same treatment: `PHP/7.4.3` is checked against **endoflife.date** (*end-of-life since Nov 2022*), and every CVE against **CISA's Known Exploited Vulnerabilities** catalog, **FIRST EPSS** (probability of exploitation in the next 30 days) and **NIST NVD** (CVSS). A CVE that is being exploited in the wild raises its attack path to critical. See [`docs/explained/09-people-and-software-intelligence.md`](docs/explained/09-people-and-software-intelligence.md).
 
@@ -343,6 +343,17 @@ notes and scans. Restricted cases are invisible even to administrators.
 - Cases export as an evidence bundle anyone can verify
   ([`docs/explained/28-cases-and-evidence.md`](docs/explained/28-cases-and-evidence.md)).
 
+**People and account investigation**:
+
+- Usernames are searched across 120+ hand-checked sites and the community **WhatsMyName** catalog
+  (hundreds more), every hit double-checked against a made-up name; optionally also likely
+  **variations** of the handle, marked as leads only.
+- Accounts on different sites with the **same profile picture** are linked to one person.
+- **Watched accounts**: a case re-reads a subject's accounts on a schedule and records every change
+  (name, bio, location, links, picture, or the account disappearing) on its timeline, capturing
+  the profile as evidence each time
+  ([`docs/explained/30-people-and-accounts.md`](docs/explained/30-people-and-accounts.md)).
+
 **Investigator safety**: the people you investigate can see every visit in their logs.
 
 - Captures and scans can go out through **Tor, a VPN or a proxy**, chosen per case, per capture
@@ -414,7 +425,7 @@ Argus includes a **Rich** command-line interface with automatic entity type dete
 # Scan a domain (Recursion Depth: 1)
 python -m argus.cli.console example.com -d 1
 
-# Sherlock-style username hunting across 120+ platforms (self-calibrating)
+# Sherlock-style username hunting across hundreds of platforms (self-calibrating)
 python -m argus.cli.console torvalds -t username
 
 # Scan an IP address with JSON export

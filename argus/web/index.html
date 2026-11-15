@@ -154,6 +154,9 @@
           <label class="label" for="new-purpose">Purpose / engagement reference</label>
           <textarea id="new-purpose" class="textarea" maxlength="500" placeholder="e.g. Bug bounty programme ACME (report #1234) · CTF · our own infrastructure"></textarea>
         </div>
+        <div class="field" id="new-variants-field" hidden>
+          <label class="check"><input type="checkbox" id="new-variants"> <span><b>Also try variations</b> of this username (jane.roe, jane_roe, janeroe…). Accounts found this way are only <i>possible</i> matches.</span></label>
+        </div>
         <div class="field" id="new-egress-field" hidden>
           <label class="label" for="new-egress">Route <span class="tip-icon" tabindex="0" data-tip="Tor, a VPN or a proxy hides this server's address from the target. Direct connections can be seen in the target's logs.">?</span></label>
           <select id="new-egress" class="select"></select>
@@ -421,6 +424,28 @@
       </div>
       <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Link</button></div>
     </form>
+  </div>
+  <div id="watch-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="watch-modal-h" id="watch-form" novalidate>
+      <div class="modal-head"><div><h2 id="watch-modal-h">Watch an account</h2><p>Argus re-reads the account on a schedule, through this case's route, and records every change on the timeline: name, bio, location, website, employer, linked accounts and profile picture, or the account disappearing.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="watch-platform">Platform</label><select id="watch-platform" class="select"></select>
+          <p class="muted small" id="watch-detail" style="margin-top:6px"></p></div>
+        <div class="field"><label class="label" for="watch-handle">Username</label><input id="watch-handle" class="input mono" maxlength="128" placeholder="jane-roe" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label class="label" for="watch-interval">Check</label><select id="watch-interval" class="select"><option value="6">Every 6 hours</option><option value="24" selected>Every day</option><option value="168">Every week</option></select></div>
+        <label class="check"><input type="checkbox" id="watch-capture" checked> <span><b>Capture the profile as evidence</b> whenever it changes (fingerprinted, with chain of custody)</span></label>
+        <div class="error-text" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start watching</button></div>
+    </form>
+  </div>
+  <div id="history-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="history-modal-h">
+      <div class="modal-head"><div><h2 id="history-modal-h">Account history</h2><p id="history-sub"></p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body" id="history-body"></div>
+    </div>
   </div>
   <div id="tocase-modal" class="modal-root" aria-hidden="true">
     <form class="modal" role="dialog" aria-labelledby="tocase-modal-h" id="tocase-form" novalidate>

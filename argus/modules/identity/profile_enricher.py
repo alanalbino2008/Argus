@@ -29,6 +29,7 @@ from urllib.parse import quote, urlsplit
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel.avatars import fetch_fingerprint
 from argus.modules.base import BaseModule
 
 logger = logging.getLogger("argus.module.profile_enricher")
@@ -341,6 +342,7 @@ class ProfileEnricherModule(BaseModule):
         entity.metadata["profile"] = {
             k: (v[:400] if isinstance(v, str) else v) for k, v in facts.items() if k != "links"
         }
+        entity.metadata["avatar_hash"] = await fetch_fingerprint(session, facts.get("avatar_url"))
         depth = entity.depth + 1
 
         def make(etype: EntityType, value: str, label: str, confidence: float, **md: Any) -> Entity:

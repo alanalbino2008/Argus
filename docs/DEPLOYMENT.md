@@ -195,6 +195,18 @@ and the capture says so.
 * Evidence is stored in the database. Back it up like any other case material, and size the
   database for screenshots (typically 0.2–3 MB per capture).
 
+### People and accounts
+
+* **Community username catalog.** By default Argus downloads the WhatsMyName catalog
+  (`ARGUS_USERNAME_CATALOG_URL`, CC BY-SA 4.0) when a username is first searched, and caches it
+  for a week (`ARGUS_USERNAME_CATALOG_TTL_HOURS`). Offline installs can point
+  `ARGUS_USERNAME_CATALOG_FILE` at a downloaded copy; set the URL to `""` to use only the built-in
+  sites. If the catalog can't be loaded, the built-in sites are still searched.
+* **Watched accounts** are checked by every replica's background loop (each due watch is claimed
+  by exactly one). `ARGUS_ACCOUNT_WATCH_ENABLED` (default true) turns it off, and it also stops
+  when `ARGUS_MONITORS_ENABLED` is false. `ARGUS_ACCOUNT_WATCH_POLL_SECONDS` (default 60) is how
+  often due watches are looked for.
+
 ### Investigator safety (Tor, VPN, proxy routes)
 
 The people being investigated can see every request in their logs. Routes send captures and

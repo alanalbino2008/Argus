@@ -113,6 +113,12 @@ class CaseRepository:
             return None
         return _case(row)
 
+    async def info(self, case_id: str) -> dict[str, Any] | None:
+        """The case without a visibility check: for Argus's own background work, never for a person."""
+        async with self.db.session() as s:
+            row = await s.get(CaseRow, case_id)
+        return _case(row) if row is not None else None
+
     async def update(self, case_id: str, *, workspace_id: str, who: str, **changes: Any) -> dict[str, Any] | None:
         async with self.db.session() as s, s.begin():
             row = await s.get(CaseRow, case_id)

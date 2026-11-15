@@ -11,6 +11,8 @@ let root;
 let cases = null;
 let current = null; // the open case (with items and captures)
 let routes = []; // egress routes (names only), loaded with the case
+let watches = []; // accounts this case watches
+let watchable = null; // platforms that can be watched
 let actionsRef = null;
 let pendingEntity = null; // an entity sent from the graph, waiting for a case to be chosen
 const thumbs = new Map(); // capture id -> object URL of its screenshot
@@ -57,7 +59,7 @@ function timeline() {
     ...current.items.filter((i) => i.occurred_at).map((i) => ({ at: i.occurred_at, icon: "history", title: i.title, sub: i.body, kind: i.kind })),
     ...current.captures.map((c) => ({ at: c.captured_at, icon: "eye", title: `Captured: ${c.title || c.url || "evidence"}`, sub: c.url || c.note, kind: "capture" })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
-  return events.length ? html`<ol class="timeline">${events.map((e) => html`<li><b>${e.title}</b> <span class="muted small">${formatDate(e.at)}</span>${e.sub ? html`<div class="muted small">${e.sub.slice(0, 200)}</div>` : ""}</li>`)}</ol>`
+  return events.length ? html`<ol class="timeline">${events.map((e) => html`<li><b>${e.title}</b> <span class="muted small">${formatDate(e.at)}</span>${e.sub ? html`<div class="muted small" style="white-space:pre-line">${e.sub.slice(0, 600)}</div>` : ""}</li>`)}</ol>`
     : html`<p class="muted small">Events you add, and every capture, appear here in order.</p>`;
 }
 
@@ -100,6 +102,28 @@ function entities() {
   })}`;
 }
 
+const WATCH_STATUS = { active: ["ok", "Watching"], pending: ["", "First check due"], gone: ["critical", "Gone"], error: ["high", "Problem"] };
+const EVERY = { 6: "every 6 hours", 24: "daily", 168: "weekly" };
+
+function watchRow(w) {
+  const [cls, label] = WATCH_STATUS[w.status] || ["", w.status];
+  const s = w.snapshot || {};
+  const sub = [w.last_checked_at ? `checked ${timeAgo(w.last_checked_at)}` : "not checked yet", EVERY[w.interval_hours],
+    w.changes_count ? `${w.changes_count} change${w.changes_count === 1 ? "" : "s"}` : "no changes", w.capture_on_change ? "captures on change" : ""].filter(Boolean).join(" · ");
+  return html`<div class="list-row" style="flex-wrap:wrap">
+    <div class="list-main"><div class="list-title">${w.platform} <span class="muted">@${w.handle}</span></div>
+      ${s.display_name || s.bio ? html`<div class="list-sub">${[s.display_name, s.bio].filter(Boolean).join(" — ")}</div>` : ""}
+      <div class="list-sub">${sub}</div>
+      ${w.message ? html`<div class="list-sub">${ico("info")} ${w.message}</div>` : ""}</div>
+    <span class="pill ${cls}">${label}</span>
+    <span style="display:flex;gap:4px">
+      <button class="btn sm ghost" data-act="watch-history" data-id="${w.id}">History</button>
+      ${canEdit() ? html`<button class="btn sm ghost" data-act="watch-check" data-id="${w.id}" title="Check now">${ico("check")}</button>
+        <button class="btn sm ghost icon" data-act="watch-remove" data-id="${w.id}" aria-label="Stop watching">${ico("trash")}</button>` : ""}
+    </span>
+  </div>`;
+}
+
 function renderCase() {
   const c = current;
   const notes = c.items.filter((i) => i.kind === "note");
@@ -133,6 +157,8 @@ function renderCase() {
         <div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>Timeline</h2>${canEdit() ? html`<button class="btn sm ghost" data-act="event">${ico("plus")}Event</button>` : ""}</div>${timeline()}</div>
         <div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>Scans</h2>${canEdit() ? html`<button class="btn sm ghost" data-act="scan">${ico("plus")}Link a scan</button>` : ""}</div>
           ${scans.length ? scans.map((s) => html`<div class="list-row clickable" data-open-scan="${s.data.investigation_id}"><div class="list-main"><div class="list-title">${s.data.target}</div><div class="list-sub">linked ${timeAgo(s.created_at)}</div></div>${ico("external")}</div>`) : html`<p class="muted small">Link investigations that belong to this case.</p>`}</div>
+        <div class="card card-pad" style="margin-top:16px" id="watch-card"><div class="card-head"><h2>Watched accounts</h2>${canEdit() ? html`<button class="btn sm ghost" data-act="watch">${ico("eye")}Watch</button>` : ""}</div>
+          ${watches.length ? html`<div class="list">${watches.map(watchRow)}</div>` : html`<p class="muted small">Watch the subject's accounts: every change to their name, bio, links or picture lands on the timeline, and the profile can be captured as evidence each time.</p>`}</div>
       </div>
     </div>
   </div>`);
@@ -152,8 +178,14 @@ async function loadThumbs() {
   }
 }
 
+async function loadCase(id) {
+  const [c, w] = await Promise.all([api.get(`/api/cases/${enc(id)}`), api.get(`/api/cases/${enc(id)}/watches`).catch(() => [])]);
+  watches = w;
+  return c;
+}
+
 async function openCase(id) {
-  current = await api.get(`/api/cases/${enc(id)}`);
+  current = await loadCase(id);
   location.hash = `#/cases`;
   renderCase();
 }
@@ -162,7 +194,7 @@ export async function refresh() {
   if (!root) return;
   try {
     if (current) {
-      current = await api.get(`/api/cases/${enc(current.id)}`);
+      current = await loadCase(current.id);
       renderCase();
     } else {
       cases = await api.get("/api/cases");
@@ -258,6 +290,14 @@ const FORMS = {
     await item("scan", { data: { investigation_id: $("#scan-select").value } });
     closeModal("scan-modal");
   },
+  "watch-form": async () => {
+    const handle = $("#watch-handle").value.trim();
+    if (!handle) throw new Error("Enter the username to watch.");
+    await api.post(`/api/cases/${enc(current.id)}/watches`, { platform: $("#watch-platform").value, handle,
+      interval_hours: Number($("#watch-interval").value), capture_on_change: $("#watch-capture").checked });
+    closeModal("watch-modal");
+    toast("Watching: the first check runs within a minute", "success");
+  },
   "tocase-form": async () => {
     const caseId = $("#tocase-select").value;
     await api.post(`/api/cases/${enc(caseId)}/items`, { kind: "entity", data: pendingEntity });
@@ -268,7 +308,7 @@ const FORMS = {
 };
 
 async function openDialog(act) {
-  const ids = { safety: "safety-modal", capture: "capture-modal", upload: "upload-modal", entity: "entity-modal", link: "link-modal", event: "event-modal", note: "note-modal", scan: "scan-modal", "new-case": "case-modal" };
+  const ids = { watch: "watch-modal", safety: "safety-modal", capture: "capture-modal", upload: "upload-modal", entity: "entity-modal", link: "link-modal", event: "event-modal", note: "note-modal", scan: "scan-modal", "new-case": "case-modal" };
   const modal = ids[act];
   const form = $(`#${modal} form`);
   form.reset();
@@ -282,6 +322,12 @@ async function openDialog(act) {
     $("#link-to").selectedIndex = 1;
   }
   if (["capture", "safety", "new-case"].includes(act)) routes = await loadRoutes();
+  if (act === "watch") {
+    watchable ||= await api.get("/api/watchable-platforms");
+    setHTML($("#watch-platform"), html`<optgroup label="Full profile (name, bio, links, picture)">${watchable.detailed.map((p) => html`<option value="${p}">${p}</option>`)}</optgroup>
+      <optgroup label="Whether the account exists">${watchable.presence.map((p) => html`<option value="${p}">${p}</option>`)}</optgroup>`);
+    syncWatch();
+  }
   if (act === "capture") {
     setHTML($("#capture-egress"), routeOptions(routes, current.egress, { anonymousOnly: anonymous(current) }));
     if (anonymous(current) && !routes.some((r) => r.anonymous)) return toast("This case is anonymous but no anonymous route is set up", "error");
@@ -303,6 +349,29 @@ async function openDialog(act) {
     setHTML($("#scan-select"), html`${recent.map((r) => html`<option value="${r.id}">${r.target} · ${formatDate(r.created_at)}</option>`)}`);
   }
   openModal(modal);
+}
+
+function syncWatch() {
+  const full = watchable?.detailed.includes($("#watch-platform").value);
+  $("#watch-detail").textContent = full ? "Read through the platform's official public API: every profile field is compared."
+    : "On this site Argus can tell whether the account exists, deleted or not, but cannot read its profile.";
+}
+
+async function showHistory(id) {
+  const w = watches.find((x) => x.id === id);
+  const rows = await api.get(`/api/cases/${enc(current.id)}/watches/${enc(id)}/history`);
+  $("#history-sub").textContent = w ? `${w.platform} @${w.handle} · ${w.profile_url}` : "";
+  const fmt = (v) => (v == null || v === "" || (Array.isArray(v) && !v.length) ? "(none)" : Array.isArray(v) ? v.join(", ") : String(v));
+  const change = (c) => c.field === "exists" ? html`<div>${c.after}</div>`
+    : c.field === "avatar_hash" ? html`<div>Profile picture ${c.before && c.after ? "changed" : c.after ? "added" : "removed"}</div>`
+    : html`<div><b>${c.label}:</b> <s class="muted">${fmt(c.before)}</s> → ${fmt(c.after)}</div>`;
+  const facts = (r) => Object.entries(r.facts).filter(([k]) => !["exists", "avatar_hash"].includes(k)).map(([k, v]) => `${k.replace("_", " ")}: ${fmt(v)}`).join(" · ");
+  setHTML($("#history-body"), rows.length ? html`${rows.map((r, i) => html`<div class="note" style="${i ? "border-top:1px solid var(--border);padding-top:12px;margin-top:12px" : ""}">
+      <div style="display:flex;gap:8px;align-items:center"><b>${formatDate(r.taken_at)}</b>${r.changes.length ? "" : html`<span class="pill">first seen</span>`}${r.capture_id ? html`<span class="pill ok">${ico("report")}captured</span>` : ""}</div>
+      <div class="small" style="margin-top:6px;display:grid;gap:4px">${r.changes.length ? r.changes.map(change) : html`<div class="muted">${facts(r) || (r.exists === false ? "not found" : "exists")}</div>`}</div>
+    </div>`)}`
+    : html`<p class="muted">Not checked yet.</p>`);
+  openModal("history-modal");
 }
 
 function syncCapture() {
@@ -327,6 +396,7 @@ export function initCases(el, actions) {
   root = el;
   actionsRef = actions;
   $("#capture-egress").addEventListener("change", syncCapture);
+  $("#watch-platform").addEventListener("change", syncWatch);
   ["case", "safety"].forEach((prefix) => {
     $(`#${prefix}-anonymous`).addEventListener("change", () => syncSafety(prefix));
     $(`#${prefix}-egress`).addEventListener("change", () => prefix === "safety" && syncSafety(prefix));
@@ -343,6 +413,20 @@ export function initCases(el, actions) {
     const { act, id } = btn.dataset;
     try {
       if (act === "back") { current = null; return refresh(); }
+      if (act === "watch-history") return showHistory(id);
+      if (act === "watch-check") {
+        btn.disabled = true;
+        const r = await api.post(`/api/cases/${enc(current.id)}/watches/${enc(id)}/check`).finally(() => { btn.disabled = false; });
+        const found = r.changes_count - (watches.find((w) => w.id === id)?.changes_count || 0);
+        toast(r.status === "error" ? r.message : found > 0 ? `${found} change${found === 1 ? "" : "s"} recorded on the timeline` : r.message || "Checked: no changes",
+          r.status === "error" ? "error" : "success", 6000);
+        return refresh();
+      }
+      if (act === "watch-remove") {
+        if (!(await confirmDialog({ title: "Stop watching this account?", message: "Its history is deleted; changes already on the timeline and evidence captured are kept.", confirm: "Stop watching", danger: true }))) return;
+        await api.del(`/api/cases/${enc(current.id)}/watches/${enc(id)}`);
+        return refresh();
+      }
       if (act === "case-scan") return actionsRef.newInvestigation({ caseId: current.id, caseTitle: current.title, egress: current.egress, anonymous: anonymous(current) });
       if (act === "export") return download(`/api/cases/${enc(current.id)}/export`, `argus-case-${current.id}.zip`);
       if (act === "file") return download(`/api/evidence/${enc(id)}/files/${enc(btn.dataset.file)}?download=true`, btn.dataset.file);

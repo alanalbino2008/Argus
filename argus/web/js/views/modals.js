@@ -31,6 +31,9 @@ export function initModals(appActions) {
     setHTML($("#new-type-hint"), detected
       ? html`Detected as <b>${typeInfo(chosen || detected).label}</b>${chosen ? " (set manually)" : ""}.`
       : html`Type is detected automatically.`);
+    const isUsername = (chosen || detected) === "username";
+    $("#new-variants-field").hidden = !isUsername;
+    if (!isUsername) $("#new-variants").checked = false;
   };
   target.addEventListener("input", () => { updateHint(); $("#new-error").textContent = ""; });
   $("#new-type").addEventListener("change", updateHint);
@@ -59,6 +62,7 @@ export async function openNewInvestigation({ target = "", type = "", watch = fal
   $("#new-type").value = ["domain", "ip_address", "email", "username", "phone"].includes(type) ? type : "";
   try { $("#new-purpose").value = sessionStorage.getItem("argus_last_purpose") || ""; } catch { /* ignore */ }
   $("#new-authorized").checked = false;
+  $("#new-variants").checked = false;
   $("#new-passive").checked = anonymous;
   $("#new-passive").disabled = anonymous;
   $("#new-watch").checked = watch && !caseId;
@@ -80,6 +84,7 @@ async function submitNew(e) {
   try { sessionStorage.setItem("argus_last_purpose", purpose); } catch { /* ignore */ }
 
   const body = { target, target_type: $("#new-type").value || null, max_depth: Number($("#new-depth").value), passive_only: $("#new-passive").checked, purpose, authorized: true };
+  if ($("#new-variants").checked) body.handle_variants = true;
   const egress = $("#new-egress-field").hidden ? "" : $("#new-egress").value;
   if (egress || forCase) {
     if ($("#new-watch").checked) { error.textContent = "Scheduled re-scans connect directly. Untick Keep watching, or choose Direct."; return; }

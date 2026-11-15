@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.30.0] — Phase 30: People & account investigation
+
+### Added
+- **Hundreds more sites**: username searches also use the community **WhatsMyName** catalog,
+  downloaded and cached (`ARGUS_USERNAME_CATALOG_URL`, `_FILE`, `_TTL_HOURS`). Each entry's
+  "profile" and "missing" signatures are both checked; unsafe entries (POST probes, plain HTTP,
+  retired sites) are skipped; hand-checked signatures win name clashes. Every hit is still
+  double-checked against a random handle, and community hits get lower confidence.
+- **Username variants** (`handle_variants`): jane.roe also searches janeroe, jane_roe, jroe…; the
+  number is dropped from janeroe1987. Variant finds are graded `possible` ("lead").
+- **Profile-picture matching**: pictures are fetched on the server (through the route) and
+  fingerprinted (perceptual hash). The same photo on two platforms links the accounts into one
+  person and upgrades a possible match to strong. Blank and default pictures are ignored.
+- **Watched accounts** (migration `0017`): a case re-reads an account on a schedule (6 hours, a
+  day or a week), through the case's route.
+  - Nine platforms are read in full through their official APIs (GitHub, GitLab, Reddit, Hacker
+    News, Keybase, Dev.to, Mastodon, Docker Hub, Bluesky): name, bio, location, website,
+    employer, public email, linked accounts and picture. Every other catalog site is checked for
+    existence.
+  - Each change goes on the case timeline with before and after, and the profile page can be
+    captured as evidence automatically.
+  - Deletion is reported only after two misses in a row, and only if the site still finds a known
+    account, so a site blocking checks is not mistaken for a deletion.
+  - Anonymous cases never check directly.
+- Cases page: **Watched accounts** card, watch dialog and account history; scan dialog: "Also try
+  variations"; People dossiers show picture matches and variant leads.
+- Python client: `watch_account()`, `watches()`, `check_account()`, `account_history()`.
+- `docs/explained/30-people-and-accounts.md`.
+
+### Changed
+- Modules can declare a longer time limit (`timeout_factor`); the username search, now covering
+  hundreds of sites, gets four times the per-module limit and more parallel requests.
+
 ## [1.29.0] — Phase 29: Investigator safety
 
 ### Added

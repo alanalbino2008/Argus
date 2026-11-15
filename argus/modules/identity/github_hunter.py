@@ -11,6 +11,7 @@ import aiohttp
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel.avatars import fetch_fingerprint
 from argus.modules.base import BaseModule
 
 logger = logging.getLogger("argus.module.github_hunter")
@@ -72,6 +73,9 @@ class GitHubHunterModule(BaseModule):
                         source_module=self.name,
                         confidence=1.0,
                         depth=entity.depth + 1,
+                    )
+                    profile_entity.metadata["avatar_hash"] = await fetch_fingerprint(
+                        session, user_data.get("avatar_url")
                     )
                     yield profile_entity
                     yield Relation.create(

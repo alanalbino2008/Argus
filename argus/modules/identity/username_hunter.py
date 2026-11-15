@@ -1,4 +1,4 @@
-"""Sherlock-style username reconnaissance across 100+ platforms, with self-calibration.
+"""Sherlock-style username reconnaissance across hundreds of platforms, with self-calibration.
 
 Site signatures are data (``argus/data/platforms.json``). Every hit is double-checked
 against a random, certainly-unregistered *canary* handle on the same site: if the
@@ -21,7 +21,9 @@ import aiohttp
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.core.settings import get_settings
+from argus.intel.handles import variants
 from argus.modules.base import BaseModule
+from argus.modules.identity.catalog import community_platforms
 from argus.modules.identity.platforms import Platform, detect, load_platforms, needs_body
 
 logger = logging.getLogger("argus.module.username_hunter")
@@ -43,13 +45,21 @@ def get_platforms() -> list[Platform]:
     return load_platforms(get_settings().extra_platforms_file)
 
 
+async def all_platforms(session: HttpClient) -> list[Platform]:
+    """Hand-checked signatures plus the community catalog; a hand-checked site wins a name clash."""
+    curated = get_platforms()
+    names = {p.name.lower() for p in curated}
+    return curated + [p for p in await community_platforms(session) if p.name.lower() not in names]
+
+
 class UsernameHunterModule(BaseModule):
-    """Searches for a username across 100+ platforms concurrently."""
+    """Searches for a username across hundreds of platforms concurrently."""
 
     name = "username_hunter"
-    description = "Sherlock-style cross-platform account discovery (100+ sites, self-calibrating)"
+    description = "Sherlock-style cross-platform account discovery (hundreds of sites, self-calibrating)"
     supported_entity_types = [EntityType.USERNAME]
     attack_techniques = ("T1593.001",)
+    timeout_factor = 4.0  # hundreds of sites (and variants): more than the default per-module limit
 
     def __init__(self) -> None:
         self._canary = canary_username()
@@ -81,47 +91,61 @@ class UsernameHunterModule(BaseModule):
 
     async def run(self, entity: Entity, session: HttpClient, config: ScanConfig) -> AsyncIterator[Entity | Relation]:
         username = entity.value.strip()
-        platforms = [p for p in get_platforms() if p.accepts(username)]
-        sem = asyncio.Semaphore(config.concurrency_limit)
-        unreliable: list[str] = []
+        catalog = await all_platforms(session)
+        # Variants only for the handle the investigator asked about, never for ones found along the way.
+        handles = [username] + (variants(username) if config.handle_variants and entity.depth == 0 else [])
+        sem = asyncio.Semaphore(max(config.concurrency_limit * 3, 40))  # one request per site: different hosts
+        unreliable: set[str] = set()
         failed = 0
+        checked = 0
 
-        async def check(platform: Platform) -> tuple[Platform, dict[str, Any]] | None:
+        async def check(platform: Platform, handle: str) -> tuple[Platform, str] | None:
             nonlocal failed
             async with sem:
                 try:
-                    if not await self._exists(platform, username, session, config):
+                    if not await self._exists(platform, handle, session, config):
                         return None
                     if not await self._reliable(platform, session, config):
-                        unreliable.append(platform.name)
+                        unreliable.add(platform.name)
                         return None
                 except asyncio.CancelledError:
                     raise
                 except Exception as ex:
                     failed += 1
-                    logger.debug("Probe failed for %s on %s: %s", username, platform.name, ex)
+                    logger.debug("Probe failed for %s on %s: %s", handle, platform.name, ex)
                     return None
-            return platform, {
-                "platform": platform.name,
-                "username": username,
-                "category": platform.category,
-                "profile_url": platform.profile_url(username),
-                "detection": platform.detect,
-                "calibrated": True,
-            }
+            return platform, handle
 
-        for future in asyncio.as_completed([check(p) for p in platforms]):
+        jobs = []
+        for handle in handles:
+            usable = [p for p in catalog if p.accepts(handle)]
+            checked = max(checked, len(usable)) if handle == username else checked
+            jobs += [check(p, handle) for p in usable]
+        for future in asyncio.as_completed(jobs):
             found = await future
             if not found:
                 continue
-            platform, meta = found
+            platform, handle = found
+            variant = handle != username
+            meta: dict[str, Any] = {
+                "platform": platform.name,
+                "username": handle,
+                "category": platform.category,
+                "profile_url": platform.profile_url(handle),
+                "detection": platform.detect,
+                "calibrated": True,
+                "signature": platform.source,
+            }
+            if variant:
+                meta["variant_of"] = username
+            confidence = (0.8 if platform.detect == "status" else 0.85) - (0.1 if platform.source == "community" else 0)
             profile = Entity.create(
                 entity_type=EntityType.SOCIAL_PROFILE,
-                value=meta["profile_url"],
-                label=f"{platform.name}: {username}",
+                value=platform.profile_url(handle),
+                label=f"{platform.name}: {handle}",
                 metadata=meta,
                 source_module=self.name,
-                confidence=0.8 if platform.detect == "status" else 0.85,
+                confidence=round(confidence - (0.3 if variant else 0), 2),
                 depth=entity.depth + 1,
             )
             yield profile
@@ -129,11 +153,15 @@ class UsernameHunterModule(BaseModule):
                 source_id=entity.id,
                 target_id=profile.id,
                 rel_type=RelationType.HAS_ACCOUNT,
-                label=f"Registered on {platform.name}",
-                metadata={"platform": platform.name},
+                label=f"Possibly the same person: variant {handle} on {platform.name}"
+                if variant
+                else f"Registered on {platform.name}",
+                metadata={"platform": platform.name, **({"variant": handle} if variant else {})},
             )
 
-        entity.metadata["platforms_checked"] = len(platforms)
+        entity.metadata["platforms_checked"] = checked
+        if len(handles) > 1:
+            entity.metadata["variants_checked"] = handles[1:]
         if unreliable:
             entity.metadata["platforms_unreliable"] = sorted(unreliable)
         if failed:

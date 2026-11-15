@@ -553,6 +553,48 @@ class CaseRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class AccountWatchRow(Base):
+    """An online account a case keeps an eye on: its profile is re-read and changes are recorded."""
+
+    __tablename__ = "account_watches"
+    __table_args__ = (Index("ux_account_watches_case", "case_id", "platform", "handle", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
+    platform: Mapped[str] = mapped_column(String(80))
+    handle: Mapped[str] = mapped_column(String(128))
+    profile_url: Mapped[str] = mapped_column(String(512))
+    interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    capture_on_change: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | active | gone | error
+    message: Mapped[str] = mapped_column(String(512), default="")
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # the profile as last seen
+    missing_count: Mapped[int] = mapped_column(Integer, default=0)  # consecutive "not there" observations
+    changes_count: Mapped[int] = mapped_column(Integer, default=0)
+    next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AccountSnapshotRow(Base):
+    """A watched account's profile when first seen and each time it changed."""
+
+    __tablename__ = "account_snapshots"
+    __table_args__ = (Index("ix_account_snapshots_watch", "watch_id", "taken_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    watch_id: Mapped[str] = mapped_column(String(32), ForeignKey("account_watches.id", ondelete="CASCADE"))
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    exists: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    facts: Mapped[dict[str, Any]] = mapped_column(JSON)
+    changes: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    capture_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # evidence taken at the time
+
+
 class CaseItemRow(Base):
     """Something in a case: a note, a person or other entity, a link between two, a scan, an event."""
 

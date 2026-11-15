@@ -305,12 +305,14 @@ class ArgusEngine:
         try:
             await asyncio.wait_for(
                 self._consume_module(module, entity, stats, report),
-                timeout=self.config.module_timeout_seconds,
+                timeout=self.config.module_timeout_seconds * module.timeout_factor,
             )
         except asyncio.TimeoutError:
             stats.timed_out += 1
             report.outcome_override = "timeout"
-            await self._record_failure(module, entity, f"timed out after {self.config.module_timeout_seconds:.0f}s")
+            await self._record_failure(
+                module, entity, f"timed out after {self.config.module_timeout_seconds * module.timeout_factor:.0f}s"
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - a buggy module must never crash the whole scan

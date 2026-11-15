@@ -174,6 +174,10 @@ class ScanConfig(BaseModel):
     allow_private_targets: bool = Field(
         default=False, description="Permit connections to private/internal networks (authorised internal tests only)"
     )
+    handle_variants: bool = Field(
+        default=False,
+        description="For a username target, also search likely variants (jane.roe, jane_roe, janeroe...)",
+    )
     circuit_breaker_threshold: int = Field(
         default=5, ge=1, description="Consecutive failures before a module is disabled for the rest of the scan"
     )

@@ -12,6 +12,10 @@ Detection strategies
 ``json_key``      ... and the JSON response has a truthy ``key``
 ``json_nonempty`` ... and the JSON response (or its ``key``) is a non-empty list/object
 ``not_null``      ... and the body is not empty / ``null`` (Firebase-style APIs)
+
+Any strategy can also name a ``missing_text`` (with an optional ``missing_status``): a page that
+shows it is never an account, whatever else it says. Community signatures (WhatsMyName, see
+``catalog.py``) state both what a real profile shows and what a missing one shows.
 """
 
 from __future__ import annotations
@@ -45,6 +49,10 @@ class Platform:
     headers: dict[str, str] = field(default_factory=dict)
     redirects: bool = True
     exists: int = 200
+    missing_text: str | None = None
+    missing_status: int | None = None
+    strip: str | None = None  # characters the site drops from handles (e.g. "." on some sites)
+    source: str = "curated"  # "curated" (argus/data/platforms.json) or "community" (WhatsMyName)
 
     def accepts(self, username: str) -> bool:
         """Skip sites that cannot host this handle - saves requests and avoids false positives."""
@@ -54,11 +62,16 @@ class Platform:
             return bool(_SUBDOMAIN_SAFE.match(username))
         return bool(_PATH_SAFE.match(username))
 
+    def _handle(self, username: str) -> str:
+        if self.strip:
+            username = "".join(c for c in username if c not in self.strip)
+        return quote(username, safe="@._-")
+
     def profile_url(self, username: str) -> str:
-        return self.url.format(quote(username, safe="@._-"))
+        return self.url.format(self._handle(username))
 
     def probe_url(self, username: str) -> str:
-        return (self.probe or self.url).format(quote(username, safe="@._-"))
+        return (self.probe or self.url).format(self._handle(username))
 
 
 def _parse(raw: dict[str, Any]) -> Platform:
@@ -106,6 +119,8 @@ def detect(platform: Platform, status: int, body: str | None) -> bool:
     """Pure decision: does this response mean the account exists?"""
     if status != platform.exists:
         return False
+    if platform.missing_text and (platform.missing_status in (None, status)) and platform.missing_text in (body or ""):
+        return False
     if platform.detect == "status":
         return True
     body = body or ""
@@ -127,4 +142,4 @@ def detect(platform: Platform, status: int, body: str | None) -> bool:
 
 
 def needs_body(platform: Platform) -> bool:
-    return platform.detect != "status"
+    return platform.detect != "status" or bool(platform.missing_text)

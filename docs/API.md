@@ -165,6 +165,30 @@ Other endpoints:
 
 Evidence files are served for download only (never rendered by Argus), except raster images.
 
+## People and accounts
+
+* `POST /api/scan` with a username target takes `handle_variants: true` to also search likely
+  variations (jane.roe → jane_roe, janeroe…). Accounts found that way carry `variant_of` and are
+  graded `possible`.
+* `GET /api/investigation/{id}/people` dossiers list, for each account, `same_photo_as` (the
+  platforms showing the same profile picture) and its `link` grade.
+
+Watched accounts:
+
+```bash
+curl -X POST https://argus.example.com/api/cases/case_…/watches \
+  -H "Authorization: Bearer $ARGUS_API_KEY" -H "Content-Type: application/json" \
+  -d '{"platform": "GitHub", "handle": "jane-roe", "interval_hours": 24, "capture_on_change": true}'
+```
+
+* `GET /api/watchable-platforms`: `detailed` (profiles read in full) and `presence` (existence
+  only).
+* `GET /api/cases/{id}/watches`, `PATCH`/`DELETE /api/cases/{id}/watches/{watch_id}`.
+* `POST /api/cases/{id}/watches/{watch_id}/check` checks now; `GET …/history` returns the profile
+  when first seen and after each change, with `changes` (`field`, `before`, `after`).
+* Changes are added to the case timeline as events, and with `capture_on_change` the profile page
+  is captured as evidence (by `account-watcher`).
+
 ## Investigator safety (routes)
 
 ```bash

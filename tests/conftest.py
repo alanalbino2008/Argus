@@ -22,6 +22,19 @@ def database_url(tmp_path, name: str) -> str:
 
 
 @pytest.fixture(autouse=True)
+def _no_live_username_catalog(monkeypatch):
+    """Tests never download the community username catalog unless they opt in."""
+    from argus.modules.identity import catalog
+
+    monkeypatch.setenv("ARGUS_USERNAME_CATALOG_URL", "")
+    get_settings.cache_clear()
+    catalog.reset()
+    yield
+    catalog.reset()
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_postgres_schema() -> None:
     """With a PostgreSQL test database, start every test from an empty schema."""
     if PG_URL:

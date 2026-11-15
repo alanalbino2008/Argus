@@ -13,6 +13,7 @@ import dns.resolver
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel.avatars import fetch_fingerprint
 from argus.intel.identity import is_role_mailbox
 from argus.modules.base import BaseModule
 
@@ -137,6 +138,10 @@ class EmailReconModule(BaseModule):
                         source_module=self.name,
                         confidence=0.98,
                         depth=entity.depth + 1,
+                    )
+                    # d=404: no picture rather than Gravatar's generated default.
+                    grav_entity.metadata["avatar_hash"] = await fetch_fingerprint(
+                        session, f"https://www.gravatar.com/avatar/{email_hash}?d=404&s=200"
                     )
                     yield grav_entity
                     yield Relation.create(

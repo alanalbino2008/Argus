@@ -18,6 +18,7 @@ const STRENGTH = {
   verified: { label: "Verified link", cls: "ok", tip: "At least one account is confirmed by the platform or a cryptographic proof." },
   strong: { label: "Strong match", cls: "accent", tip: "Collected with high confidence, but not independently proven." },
   probable: { label: "Possible match", cls: "", tip: "Based on the same handle existing elsewhere: it may be a different person." },
+  possible: { label: "Lead only", cls: "", tip: "Found under a variation of the handle: quite possibly a different person." },
 };
 
 export function initPeople(el, appActions) {
@@ -107,7 +108,7 @@ function overview(inv) {
   if (!data) return html`${head}<div class="card card-pad"><div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:40%;margin-top:12px"></div></div>`;
   const people = data.personas;
   return html`${head}
-    <div class="callout" style="margin-bottom:16px">${ico("info")}<span>Only public information is shown. Links are graded: <b>verified</b> (proven by the platform), <b>strong</b> and <b>possible</b> (same handle — may be someone else). Viewing dossiers is recorded in the audit log.</span></div>
+    <div class="callout" style="margin-bottom:16px">${ico("info")}<span>Only public information is shown. Links are graded: <b>verified</b> (proven by the platform), <b>strong</b> (including the same profile picture on two sites), <b>possible</b> (same handle — may be someone else) and <b>lead</b> (a variation of the handle). Viewing dossiers is recorded in the audit log.</span></div>
     ${data.email_format ? html`<div class="card card-pad" style="margin-bottom:16px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
       ${ico("email")}<div style="flex:1;min-width:220px"><div class="list-title">Email format: <span class="mono">${data.email_format.example}</span></div>
       <div class="list-sub">Learned from ${plural(data.email_format.evidence, "known address", "known addresses")}. Likely addresses for people found without one are marked <i>inferred</i>.</div></div></div>` : ""}
@@ -189,13 +190,15 @@ function dossier(p) {
 function account(a) {
   const f = a.facts || {};
   const sub = [f.display_name, f.location, f.created_at && `joined ${formatDay(f.created_at)}`, f.followers != null && `${f.followers} followers`].filter(Boolean).join(" · ");
-  const grade = { verified: ["ok", "Verified"], strong: ["accent", "Strong"], probable: ["", "Possible"] }[a.link] || ["", a.link];
+  const grade = { verified: ["ok", "Verified"], strong: ["accent", "Strong"], probable: ["", "Possible"], possible: ["", "Lead"] }[a.link] || ["", a.link];
+  const why = [a.same_photo_as?.length && `Same profile picture as ${a.same_photo_as.join(", ")}`, a.variant_of && `Found as a variation of “${a.variant_of}”`].filter(Boolean);
   return html`<div class="list-row">
     ${entityIcon("social_profile")}
     <div class="list-main">
       <div class="list-title">${a.platform}${a.handle ? html` <span class="muted">@${a.handle}</span>` : ""}</div>
       ${sub ? html`<div class="list-sub">${sub}</div>` : ""}
       ${f.bio ? html`<div class="list-sub account-bio">${f.bio}</div>` : ""}
+      ${why.length ? html`<div class="list-sub">${ico("info")} ${why.join(" · ")}</div>` : ""}
     </div>
     <span class="pill ${grade[0]}">${grade[1]}</span>
     ${a.url ? html`<a class="btn ghost sm icon" href="${a.url}" target="_blank" rel="noopener noreferrer nofollow" referrerpolicy="no-referrer" title="Open profile (leaves Argus)">${ico("external")}</a>` : ""}

@@ -31,6 +31,8 @@ class BaseModule(ABC):
     # True if the module opens its own network connections (raw sockets) instead of using the shared
     # HTTP client. Such connections cannot go through an egress route, so routed scans skip it.
     direct_connections: ClassVar[bool] = False
+    # Multiplies the scan's per-module time limit for modules that legitimately take longer.
+    timeout_factor: ClassVar[float] = 1.0
     # Settings (attributes of argus.core.settings.Settings, e.g. "virustotal_api_key") that must be
     # set for the module to run. Modules with missing settings are not loaded.
     requires_settings: ClassVar[tuple[str, ...]] = ()

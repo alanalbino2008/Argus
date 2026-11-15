@@ -69,6 +69,7 @@ from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.supplier_routes import router as supplier_router
+from argus.api.watch_routes import router as watch_router
 from argus.api.workspace_routes import router as workspace_router
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
@@ -76,6 +77,7 @@ from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import EgressRoute, Settings, get_settings
 from argus.demo import DEMO_TARGET, load_demo
+from argus.intel.account_watch import AccountWatcher
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
 from argus.intel.exposure import demo_findings
@@ -114,6 +116,7 @@ from argus.storage.schedule_repo import ScheduleRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 from argus.storage.supplier_repo import SupplierRepository
 from argus.storage.user_repo import UserRepository
+from argus.storage.watch_repo import AccountWatchRepository
 from argus.storage.workspace_repo import WorkspaceRepository
 
 logger = logging.getLogger("argus.api")
@@ -203,6 +206,7 @@ async def lifespan(app: FastAPI):
     app.state.exposure = ExposureRepository(db)
     app.state.remediation = RemediationRepository(db)
     app.state.cases = CaseRepository(db)
+    app.state.account_watches = AccountWatchRepository(db)
     app.state.remediation_clock = RemediationClock(app.state.remediation, settings)
     app.state.rescan = partial(_rescan, app)
     app.state.exposure_monitor = ExposureMonitor(
@@ -252,6 +256,12 @@ async def lifespan(app: FastAPI):
         if settings.monitors_enabled
         else None
     )
+    app.state.account_watcher = AccountWatcher(app.state.account_watches, app.state.cases, settings, app.state.audit)
+    watch_task = (
+        asyncio.create_task(app.state.account_watcher.run_forever(), name="account-watcher")
+        if settings.account_watch_enabled and settings.monitors_enabled
+        else None
+    )
     janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
     scheduler_task = (
         asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
@@ -263,7 +273,17 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         background = [
-            t for t in (scheduler_task, janitor_task, notifier_task, report_task, exposure_task, remediation_task) if t
+            t
+            for t in (
+                scheduler_task,
+                janitor_task,
+                notifier_task,
+                report_task,
+                exposure_task,
+                remediation_task,
+                watch_task,
+            )
+            if t
         ]
         for task in background:
             task.cancel()
@@ -422,6 +442,7 @@ app.include_router(executive_router)
 app.include_router(compliance_router)
 app.include_router(case_router)
 app.include_router(opsec_router)
+app.include_router(watch_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -453,6 +474,9 @@ class StartScanRequest(BaseModel):
     )
     case_id: str | None = Field(
         default=None, description="Case the scan belongs to: it uses the case's route and is linked to the case"
+    )
+    handle_variants: bool = Field(
+        default=False, description="Username targets: also search likely variants (jane.roe, jane_roe, janeroe...)"
     )
 
 
@@ -950,6 +974,7 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
             target_type=ttype,
             max_depth=req.max_depth,
             passive_only=passive_only,
+            handle_variants=req.handle_variants and ttype == EntityType.USERNAME,
             enabled_modules=req.enabled_modules,
             concurrency_limit=req.concurrency_limit,
             allow_private_targets=settings.allow_private_targets,

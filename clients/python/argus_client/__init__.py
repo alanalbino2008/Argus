@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.29.0"
+__version__ = "1.30.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -282,6 +282,24 @@ class ArgusClient:
         if egress is not None:
             body["egress"] = egress
         return self.post(f"/api/cases/{case_id}/captures", body)
+
+    def watch_account(self, case_id: str, platform: str, handle: str, *, interval_hours: int = 24,
+                      capture_on_change: bool = True) -> dict[str, Any]:  # fmt: skip
+        """Watch an account: changes to it are recorded on the case's timeline (and captured)."""
+        return self.post(f"/api/cases/{case_id}/watches", {"platform": platform, "handle": handle,
+                                                           "interval_hours": interval_hours,
+                                                           "capture_on_change": capture_on_change})  # fmt: skip
+
+    def watches(self, case_id: str) -> list[dict[str, Any]]:
+        return self.get(f"/api/cases/{case_id}/watches")
+
+    def check_account(self, case_id: str, watch_id: str) -> dict[str, Any]:
+        """Check a watched account now instead of waiting for its schedule."""
+        return self.post(f"/api/cases/{case_id}/watches/{watch_id}/check")
+
+    def account_history(self, case_id: str, watch_id: str) -> list[dict[str, Any]]:
+        """The account when first seen and after each change, newest first."""
+        return self.get(f"/api/cases/{case_id}/watches/{watch_id}/history")
 
     def routes(self) -> list[dict[str, Any]]:
         """Egress routes (Tor, VPN, proxy) the operator set up: names and kinds, never addresses."""

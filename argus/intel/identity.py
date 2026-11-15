@@ -21,7 +21,12 @@ Every link is graded, because the same handle on two sites is a lead, not proof:
 * ``verified`` - the platform or a cryptographic proof confirms it (Keybase
   proofs, Mastodon ``rel="me"`` links, Gravatar keyed by the email hash);
 * ``strong``   - high-confidence collection (e.g. an email published on a profile);
-* ``probable`` - the same handle exists elsewhere; could be someone else.
+* ``probable`` - the same handle exists elsewhere; could be someone else;
+* ``possible`` - a *variant* of the handle (jane_roe for jane.roe): only a lead.
+
+A profile picture is evidence too: accounts on different platforms with the same photo (see
+``argus/intel/avatars.py``) are grouped together, and a probable or possible account with the
+same photo as another of the person's accounts is upgraded to ``strong``.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from typing import Any
 
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import Entity, EntityType
+from argus.intel.avatars import same_picture
 
 IDENTITY_TYPES = {
     EntityType.PERSON,
@@ -182,6 +188,8 @@ def _profile_facts(entity: Entity) -> dict[str, Any]:
 
 def _link_grade(entity: Entity) -> str:
     md = entity.metadata
+    if md.get("variant_of"):
+        return "possible"  # found under a variant of the handle: may well be someone else
     if md.get("verified") or entity.source_module == "email_recon" or md.get("origin", "").startswith("verified"):
         return "verified"
     if entity.source_module == "username_hunter" and entity.confidence < 0.99:
@@ -207,12 +215,20 @@ def resolve_people(graph: IntelligenceGraph, paths: list[dict[str, Any]] | None 
         if _is_bridge(a) and _is_bridge(b):
             uf.union(a.id, b.id)
 
+    pictures = picture_matches(entities.values())
+    for a_id, b_id in pictures:
+        uf.union(a_id, b_id)
+    same_photo: dict[str, list[str]] = defaultdict(list)
+    for a_id, b_id in pictures:
+        same_photo[a_id].append(_platform(entities[b_id]))
+        same_photo[b_id].append(_platform(entities[a_id]))
+
     groups: dict[str, list[Entity]] = defaultdict(list)
     for entity in entities.values():
         if _is_bridge(entity):
             groups[uf.find(entity.id)].append(entity)
 
-    personas = [_dossier(members, entities, adjacency, paths or []) for members in groups.values()]
+    personas = [_dossier(members, entities, adjacency, paths or [], same_photo) for members in groups.values()]
     # A lone handle that led nowhere is noise (unless an organisation-centric source found it).
     personas = [p for p in personas if p["summary"]["fragments"] > 1 or not p["lone_username"]]
     # A phone number on its own (e.g. a switchboard on the website) is a contact point, not a person.
@@ -256,12 +272,26 @@ def resolve_people(graph: IntelligenceGraph, paths: list[dict[str, Any]] | None 
     }
 
 
+def picture_matches(entities: Any) -> list[tuple[str, str]]:
+    """Pairs of accounts on different platforms showing the same profile picture."""
+    profiles = [e for e in entities if e.type == EntityType.SOCIAL_PROFILE and _is_bridge(e)
+                and e.metadata.get("avatar_hash")]  # fmt: skip
+    return [
+        (a.id, b.id)
+        for i, a in enumerate(profiles)
+        for b in profiles[i + 1 :]
+        if _platform(a) != _platform(b) and same_picture(a.metadata["avatar_hash"], b.metadata["avatar_hash"])
+    ]
+
+
 def _dossier(
     members: list[Entity],
     entities: dict[str, Entity],
     adjacency: dict[str, set[str]],
     paths: list[dict[str, Any]],
+    same_photo: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
+    same_photo = same_photo or {}
     by_type: dict[EntityType, list[Entity]] = defaultdict(list)
     for m in sorted(members, key=lambda e: (-e.confidence, e.value.lower())):
         by_type[m.type].append(m)
@@ -276,13 +306,19 @@ def _dossier(
     for profile in by_type[EntityType.SOCIAL_PROFILE]:
         facts = _profile_facts(profile)
         platform = _platform(profile)
+        link = _link_grade(profile)
+        photo = sorted(set(same_photo.get(profile.id, [])))
+        if photo and link in ("probable", "possible"):
+            link = "strong"  # the same photo as another of their accounts
         accounts.append(
             {
                 "entity_id": profile.id,
                 "platform": platform,
                 "url": profile.value if profile.value.startswith(("http://", "https://")) else None,
                 "handle": profile.metadata.get("username") or profile.metadata.get("handle"),
-                "link": _link_grade(profile),
+                "link": link,
+                "same_photo_as": photo,
+                "variant_of": profile.metadata.get("variant_of"),
                 "confidence": round(profile.confidence, 2),
                 "facts": facts,
             }
@@ -381,7 +417,10 @@ def _dossier(
     risk += sum(10 for p in related_paths if p["severity"] in ("critical", "high"))
 
     grades = {a["link"] for a in accounts}
-    strength = "verified" if "verified" in grades else "strong" if "strong" in grades or names else "probable"
+    strength = (
+        "verified" if "verified" in grades else "strong" if "strong" in grades or names
+        else "probable" if "probable" in grades or not grades else "possible"
+    )  # fmt: skip
 
     return {
         "id": _persona_id(sorted(member_ids)),

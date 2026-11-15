@@ -106,6 +106,8 @@ config:
   # Breached staff accounts and infostealer logs also need secrets.hibpApiKey (verified domains only).
   exposureMonitoring: true
   egressCheckUrl: https://check.torproject.org/api/ip   # IP-echo service the route test asks
+  usernameCatalogUrl: https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json  # "" = built-in sites only
+  accountWatching: true          # re-read watched accounts and record changes
   ransomwareFeedUrl: https://api.ransomware.live/v2   # ransomware leak-site research feed; "" turns it off
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone

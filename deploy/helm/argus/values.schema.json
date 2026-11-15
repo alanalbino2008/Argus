@@ -218,6 +218,12 @@
         },
         "egressCheckUrl": {
           "type": "string"
+        },
+        "usernameCatalogUrl": {
+          "type": "string"
+        },
+        "accountWatching": {
+          "type": "boolean"
         }
       }
     },

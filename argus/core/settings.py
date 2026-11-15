@@ -121,6 +121,16 @@ class Settings(BaseSettings):
     extra_platforms_file: str | None = Field(
         default=None, description="JSON file of extra username platforms (same format as argus/data/platforms.json)"
     )
+    username_catalog_url: str = Field(
+        default="https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json",
+        description="Community username catalog (WhatsMyName format) searched alongside the built-in sites; '' = off",
+    )
+    username_catalog_file: str | None = Field(
+        default=None, description="A local copy of the community catalog (offline installs); used instead of the URL"
+    )
+    account_watch_enabled: bool = Field(default=True, description="Re-read watched accounts and record changes")
+    account_watch_poll_seconds: float = Field(default=60.0, ge=5.0, description="How often due watches are looked for")
+    username_catalog_ttl_hours: int = Field(default=168, ge=1, le=2160, description="How long the catalog is cached")
     plugins: list[str] = Field(
         default_factory=list,
         description='Entry-point names of third-party plugin modules to load, e.g. ["crtsh_plus"]. Empty = none.',
