@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from argus.accounts.connectors import CATALOGUE, LABELS, ConnectError, build, call_source, operation
 from argus.accounts.licence import FULL_STATUSES, LicenceError, load_private_key, verify
 from argus.api.deps import audit, client_ip, require_platform_admin
+from argus.intel.analyst import BASE_CREDITS, TASKS, AnalystError, price, run_task
 from argus.security.auth import Principal
 from argus.security.ratelimit import SlidingWindowLimiter
 
@@ -42,6 +43,11 @@ class BalanceRequest(BaseModel):
     licence: str = Field(max_length=8192)
 
 
+class AnalystConnectRequest(BaseModel):
+    licence: str = Field(max_length=8192)
+    material: str = Field(max_length=2_100_000)
+
+
 class CreditsRequest(BaseModel):
     amount: int = Field(ge=-1_000_000, le=1_000_000)
     kind: str = Field(default="purchase", pattern="^(purchase|adjustment)$")
@@ -49,8 +55,10 @@ class CreditsRequest(BaseModel):
 
 
 def _price_list() -> dict[str, Any]:
-    return {provider: {"label": LABELS[provider], "lookups": {name: op.credits for name, op in ops.items()}}
-            for provider, ops in CATALOGUE.items()}  # fmt: skip
+    prices = {provider: {"label": LABELS[provider], "lookups": {name: op.credits for name, op in ops.items()}}
+              for provider, ops in CATALOGUE.items()}  # fmt: skip
+    prices["ai"] = {"label": "AI analyst (from; larger cases cost more)", "lookups": dict(BASE_CREDITS)}
+    return prices
 
 
 async def _customer(request: Request, token: str) -> dict[str, Any]:
@@ -114,6 +122,40 @@ async def connect_lookup(provider: str, body: ConnectRequest, request: Request):
     if result.get("not_found"):  # nothing found is still an answer, but costs nothing
         await request.app.state.credits.refund(account["id"], charge, f"{detail}: not found")
         charge = {**charge, "charged": 0, "available": charge["available"] + charge["charged"]}
+    return {
+        "result": result,
+        "credits": {k: charge[k] for k in ("charged", "available", "allowance_remaining", "purchased")},
+    }
+
+
+@router.post("/connect/ai/{task}")
+async def connect_ai(task: str, body: AnalystConnectRequest, request: Request):
+    """Run an AI analyst task with the operator's Claude key, paid for in credits.
+
+    The case material is passed straight to Anthropic and dropped when the answer comes back: it
+    is never written to the database or the log. The ledger records only "ai/<task>".
+    """
+    account = await _customer(request, body.licence)
+    if task not in TASKS:
+        raise HTTPException(status_code=404, detail=f"Unknown analyst task {task!r}")
+    settings = request.app.state.settings
+    key = settings.anthropic_api_key.get_secret_value() if settings.anthropic_api_key else ""
+    if not key:
+        raise HTTPException(status_code=503, detail="The AI analyst is not available on this service")
+    if not body.material.strip():
+        raise HTTPException(status_code=422, detail="This case has nothing for the analyst to read yet")
+    if len(body.material) > settings.analyst_max_chars + 10_000:
+        raise HTTPException(status_code=413, detail="Too much case material for one request")
+    detail = f"ai/{task}"
+    charge = await request.app.state.credits.charge(account["id"], price(task, len(body.material)), detail)
+    if charge is None:
+        raise HTTPException(status_code=402, detail="Not enough Argus credits for the AI analyst: your allowance "
+                                                    "renews on the 1st, or buy more credits")  # fmt: skip
+    try:
+        result = await run_task(task, body.material, key=key, settings=settings)
+    except AnalystError as exc:
+        await request.app.state.credits.refund(account["id"], charge, f"{detail} failed")
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
     return {
         "result": result,
         "credits": {k: charge[k] for k in ("charged", "available", "allowance_remaining", "purchased")},

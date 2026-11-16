@@ -152,6 +152,9 @@
         },
         "companiesHouseApiKey": {
           "type": "string"
+        },
+        "anthropicApiKey": {
+          "type": "string"
         }
       }
     },

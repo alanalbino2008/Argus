@@ -41,6 +41,7 @@ dependencies = [
     "reportlab>=4.2.0",
     "pillow>=10.3.0",
     "pypdf>=5.1.0",
+    "anthropic>=2.8.0",  # the AI analyst (Claude)
     "tzdata>=2024.1",  # IANA time zones for report schedules, independent of the OS image
 ]
 

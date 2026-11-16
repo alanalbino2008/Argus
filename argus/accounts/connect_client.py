@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import aiohttp
+
 from argus.accounts import personal
 from argus.accounts.connectors import LABELS, ConnectError, call_source
 from argus.core.settings import get_settings
@@ -45,3 +47,45 @@ async def lookup(session: Any, provider: str, name: str, params: dict[str, Any])
             raise ConnectError(resp.status, str(detail or f"Argus Connect answered {resp.status}"))
     licence.last_credits = data.get("credits")
     return data.get("result") or {}
+
+
+# ---------------------------------------------------------------------------- the AI analyst
+def ai_access() -> str | None:
+    """How the AI analyst is reached: "own_key", "connect" (credits), or None (not available)."""
+    settings = get_settings()
+    if settings.anthropic_api_key and settings.anthropic_api_key.get_secret_value():
+        return "own_key"
+    if settings.edition == "personal" and settings.account_server_url:
+        return "connect"
+    return None
+
+
+async def ai(task: str, material: str) -> dict[str, Any]:
+    """Run an AI analyst task: directly with the investigator's own key, else through Argus Connect.
+
+    Returns ``{"output", "model", "cut_off", "via", "credits"}``. Raises AnalystError.
+    """
+    from argus.intel.analyst import AnalystError, run_task
+
+    settings = get_settings()
+    via = ai_access()
+    if via == "own_key" and settings.anthropic_api_key is not None:
+        result = await run_task(task, material, key=settings.anthropic_api_key.get_secret_value(), settings=settings)
+        return {**result, "via": via, "credits": None}
+    licence = personal.CURRENT
+    if via is None or licence is None or not licence.token:
+        raise AnalystError(503, "The AI analyst needs an Argus account (Argus Connect) or your own Claude API key")
+    url = f"{settings.account_server_url.rstrip('/')}/api/connect/ai/{task}"
+    try:
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=1200)) as http,
+            http.post(url, json={"licence": licence.token, "material": material}) as resp,
+        ):
+            data = await resp.json(content_type=None) if resp.status != 204 else {}
+            if resp.status != 200:
+                detail = data.get("detail") if isinstance(data, dict) else None
+                raise AnalystError(resp.status, str(detail or f"Argus Connect answered {resp.status}"))
+    except (aiohttp.ClientError, TimeoutError, OSError, ValueError) as exc:
+        raise AnalystError(503, "The Argus account service could not be reached") from exc
+    licence.last_credits = data.get("credits")
+    return {**(data.get("result") or {}), "via": via, "credits": data.get("credits")}

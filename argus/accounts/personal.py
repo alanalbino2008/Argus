@@ -6,7 +6,10 @@ offline with the service's public key, and renews it in the background.
 
 Only these ever go to the account service: the email and password at sign-in, this computer's
 random device id and name, and the licence when renewing. Nothing about cases, evidence or
-searches.
+searches, unless the investigator uses Argus Connect: then the lookup itself (a company number,
+an officer's name), or for the AI analyst the case material they chose to send, passes through
+the service on its way to the source. The service keeps none of it; its ledger records only the
+kind of request. Investigators who set their own keys bypass the service entirely.
 """
 
 from __future__ import annotations

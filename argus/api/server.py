@@ -50,6 +50,7 @@ from argus import __version__
 from argus.accounts.personal import PersonalLicence
 from argus.api import remediation_hooks
 from argus.api.account_routes import router as account_router
+from argus.api.analyst_routes import router as analyst_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
@@ -471,6 +472,7 @@ app.include_router(map_router)
 app.include_router(account_router)
 app.include_router(connect_router)
 app.include_router(personal_router)
+app.include_router(analyst_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))

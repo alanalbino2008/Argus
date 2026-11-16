@@ -326,8 +326,9 @@ function subscriptionCard() {
     ${data.credits ? html`<div class="section-title" style="margin-top:14px">Argus credits</div>
       <p class="muted small">Premium sources (such as UK Companies House) are included through Argus Connect: no accounts or API keys of your own needed. Each lookup uses credits; this month's allowance renews on the 1st, and purchased credits never expire.</p>
       <dl class="kv"><dt>Available</dt><dd><b>${data.credits.credits.available}</b> credits</dd><dt>This month</dt><dd>${data.credits.credits.allowance_remaining} of ${data.credits.credits.allowance} left</dd><dt>Purchased</dt><dd>${data.credits.credits.purchased}</dd>
-        ${Object.values(data.credits.prices).map((p) => html`<dt>${p.label}</dt><dd>${Object.values(p.lookups)[0]} credit per lookup</dd>`)}</dl>
-      <p class="muted small" style="margin-top:6px">A brokered lookup tells the Argus account service what was looked up (a company number or name). To keep even that private, set your own key for the source; lookups then go directly and cost no credits.</p>` : ""}
+        ${Object.values(data.credits.prices).map((p) => { const costs = Object.entries(p.lookups); const same = costs.every(([, c]) => c === costs[0][1]);
+          return html`<dt>${p.label}</dt><dd>${same ? `${costs[0][1]} credit${costs[0][1] === 1 ? "" : "s"} per lookup` : costs.map(([n, c]) => `${n.replace(/_/g, " ")} ${c}`).join(" · ")}</dd>`; })}</dl>
+      <p class="muted small" style="margin-top:6px">A brokered lookup tells the Argus account service what was looked up (a company number or name). The AI analyst sends the case material you confirm through it to Anthropic; the service keeps none of it. To keep even that private, set your own key for the source (or your own Claude API key); requests then go directly and cost no credits.</p>` : ""}
     <p class="muted small" style="margin-top:10px">If a subscription ends, nothing is lost: your cases stay readable, verifiable and exportable, and only new work waits until it is renewed.</p>
   </div>`;
 }

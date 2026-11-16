@@ -129,6 +129,21 @@ class Settings(BaseSettings):
         default="https://offshoreleaks.icij.org", description="ICIJ Offshore Leaks Database; '' = off"
     )
     gleif_url: str = Field(default="https://api.gleif.org/api/v1", description="Global LEI register (GLEIF); '' = off")
+    # ---------------------------------------------------------------- AI analyst
+    anthropic_api_key: SecretStr | None = Field(
+        default=None,
+        description="Claude API key for the AI analyst: your own (case material goes straight to Anthropic and "
+        "costs no credits), or the account service's key that it uses for Argus Connect",
+    )
+    analyst_model: str = Field(
+        default="", max_length=100, description="Claude model for the AI analyst; '' = the newest Opus model available"
+    )
+    analyst_effort: Literal["low", "medium", "high", "xhigh", "max"] = Field(
+        default="high", description="How hard the AI analyst thinks: higher is more thorough, slower and dearer"
+    )
+    analyst_max_chars: int = Field(
+        default=400_000, ge=10_000, le=2_000_000, description="Most case material (characters) sent in one request"
+    )
     shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
     github_token: SecretStr | None = Field(
         default=None, description="GitHub token: enables public code-leak search (GitHub requires auth for code search)"

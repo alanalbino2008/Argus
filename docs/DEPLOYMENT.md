@@ -241,6 +241,17 @@ Free sources, no keys:
 * `ARGUS_COMPANIES_HOUSE_OFFICER_LIMIT` (default 8): directors whose other companies are looked up
   per company.
 
+**The AI analyst** (Claude, by Anthropic) needs a Claude API key (from console.anthropic.com):
+* on the **account service**, `ARGUS_ANTHROPIC_API_KEY` is the key Argus Connect uses for every
+  subscriber's analyst requests, paid for in credits (brief and extract 10, report 20, plus 2 per
+  50,000 characters beyond the first 50,000; refunded on failure). The case material passes
+  through and is never stored or logged;
+* on any **other** Argus (or Argus Personal), setting it sends case material straight to
+  Anthropic, without credits.
+* `ARGUS_ANALYST_MODEL` (default: the newest Claude Opus model the key can use),
+  `ARGUS_ANALYST_EFFORT` (`low` to `max`, default `high`), `ARGUS_ANALYST_MAX_CHARS` (default
+  400,000: the most case material sent in one request; documents beyond it are listed as left out).
+
 **Argus credits**: each plan's monthly allowance (trial 50, personal 500, professional 2,000)
 renews on the 1st; purchased credits never expire. A payment provider's webhook handler adds
 purchased credits with `POST /api/accounts/{id}/credits` (`kind: purchase`).

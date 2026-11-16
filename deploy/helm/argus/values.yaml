@@ -102,6 +102,9 @@ secrets:
   # UK Companies House API key: on the account service it pays for Argus Connect lookups; on any
   # other deployment it makes lookups direct (private, no credits).
   companiesHouseApiKey: ""
+  # Claude API key for the AI analyst: on the account service it pays for Argus Connect analyst
+  # requests (credits); on any other deployment case material goes straight to Anthropic.
+  anthropicApiKey: ""
 
 # ---------------------------------------------------------------------------- application
 config:

@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.35.0"
+__version__ = "1.36.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -336,6 +336,18 @@ class ArgusClient:
     def geocode(self, case_id: str, item_id: str) -> dict[str, Any]:
         """Look up an address entity's position (sends the address to the geocoder, via the case's route)."""
         return self.post(f"/api/cases/{case_id}/items/{item_id}/geocode")
+
+    def analyst_preview(self, case_id: str, task: str = "brief") -> dict[str, Any]:
+        """What an AI analyst request would send (size, sources, documents left out) and cost. Sends nothing."""
+        return self.get(f"/api/cases/{case_id}/analyst/preview", task=task)
+
+    def analyse_case(self, case_id: str, task: str, *, documents: list[str] | None = None) -> dict[str, Any]:
+        """Run the AI analyst ("brief", "extract" or "report"). Calling this confirms that the case's
+        material may be sent to Anthropic. Suggestions are returned for review, never added."""
+        body: dict[str, Any] = {"task": task, "acknowledged": True}
+        if documents is not None:
+            body["documents"] = documents
+        return self.post(f"/api/cases/{case_id}/analyst", body)
 
     def subscription_accounts(self) -> list[dict[str, Any]]:
         """Account service (platform admins): every subscription account."""

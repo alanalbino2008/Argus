@@ -398,6 +398,16 @@ the addresses published on a website) and it follows the money.
 - Premium sources come through **Argus Connect**: no keys needed, paid for in **Argus credits**
   ([`docs/explained/35-companies-sanctions-and-credits.md`](docs/explained/35-companies-sanctions-and-credits.md)).
 
+**The AI analyst**: Claude reads a case and helps the investigator think.
+
+- **Brief me**: what the case shows, what is missing, and the next steps worth taking.
+- **Find names & dates** in the evidence (pages, PDFs, text files), each checked against the exact
+  words it came from. You choose what to add.
+- **Draft a report**, citing its sources, to edit.
+- Nothing is sent without your confirmation, children are never profiled, and each document sent
+  is recorded in its chain of custody. Use your own Claude key, or Argus credits
+  ([`docs/explained/36-the-ai-analyst.md`](docs/explained/36-the-ai-analyst.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.36.0] — Phase 36: The AI analyst
+
+### Added
+- **AI analyst** in every case (new **AI analyst** tab), powered by Claude:
+  - **Brief me**: a summary of what the case shows, key findings with their sources and
+    confidence, gaps and open questions, next steps (what, why and how), and cautions;
+  - **Find names & dates**: people, organisations, accounts, emails, phones, domains, addresses,
+    places, vehicles, documents, wallets and dated events named in the evidence, each with the
+    exact words it came from; the investigator ticks what to add;
+  - **Draft a report**: an editable Markdown draft with cited sources, saved as a note or
+    downloaded.
+- **Grounded answers**: every part of the case material carries a reference (`[N1]`, `[D2]`...).
+  Citations to references that don't exist are dropped or flagged; each extracted name and date is
+  checked against its quoted words and marked *checked* or *unverified*.
+- **Evidence it reads**: notes, entities, links, events, linked scans, the text of captured pages,
+  and text, CSV, JSON, e-mail and PDF files added as evidence. Photos and other files are listed as
+  not readable. Up to 60,000 characters per document and `ARGUS_ANALYST_MAX_CHARS` (400,000) per
+  request; anything shortened or left out is listed, never cut silently.
+- **Safety**:
+  - nothing is sent without confirmation (`acknowledged: true`), every time; the dialog shows the
+    size, the documents, the cost, and a stronger warning for anonymous cases;
+  - the analyst is told to treat evidence as data and never follow instructions inside it, to keep
+    fact and inference apart, never to profile children (possible children it marks are removed),
+    and to suggest only lawful steps;
+  - each document sent is written to its **chain of custody** ("sent for AI analysis"); the audit
+    log records task, size and route, never the content;
+  - suggestions are never added automatically.
+- **Two ways to reach it**:
+  - your own Claude API key (`ARGUS_ANTHROPIC_API_KEY`): material goes straight to Anthropic;
+  - **Argus Connect** (Argus Personal, signed in): `POST /api/connect/ai/{task}` on the account
+    service runs it with the operator's key for **Argus credits** (brief and extract 10, report
+    20, plus 2 per 50,000 characters beyond the first 50,000), refunded on failure or refusal.
+    The material passes through and is never stored; the ledger records only `ai/<task>`.
+- **Model**: the newest Claude Opus model the key can use (or `ARGUS_ANALYST_MODEL`), adaptive
+  thinking, effort `ARGUS_ANALYST_EFFORT` (default `high`), structured output for briefs and
+  extraction, streaming, and server-side fallback if the model declines on safety grounds.
+- API: `GET /api/analyst`, `GET /api/cases/{id}/analyst/preview`, `POST /api/cases/{id}/analyst`.
+- Python client: `analyst_preview()`, `analyse_case()`.
+- Helm: `secrets.anthropicApiKey`.
+
+### Changed
+- The subscription card lists the AI analyst's prices and explains what passes through the
+  account service.
+- New dependency: the official Anthropic Python SDK.
+
 ## [1.35.0] — Phase 35: Companies, sanctions & leaks, and Argus credits
 
 ### Added
