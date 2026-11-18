@@ -9,6 +9,7 @@ from argus.modules.discovery.cloud_storage import CloudStorageModule
 from argus.modules.discovery.code_leaks import CodeLeaksModule
 from argus.modules.discovery.document_metadata import DocumentMetadataModule
 from argus.modules.discovery.passive_dns import PassiveDnsModule
+from argus.modules.discovery.site_crawler import SiteCrawlerModule
 from argus.modules.discovery.wayback import WaybackModule
 from argus.modules.discovery.web_recon import WebReconModule
 from argus.modules.identity.email_recon import EmailReconModule
@@ -62,6 +63,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     HttpFingerprintModule,
     SoftwareIntelModule,
     WebReconModule,
+    SiteCrawlerModule,
     CloudStorageModule,
     # Optional: enabled only when their API key is configured
     VirusTotalModule,

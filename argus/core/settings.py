@@ -128,6 +128,12 @@ class Settings(BaseSettings):
     offshore_leaks_url: str = Field(
         default="https://offshoreleaks.icij.org", description="ICIJ Offshore Leaks Database; '' = off"
     )
+    crawl_max_pages: int = Field(
+        default=40, ge=1, le=500, description="Most pages the website crawler reads on one site"
+    )
+    crawl_delay_seconds: float = Field(
+        default=0.5, ge=0.0, le=30.0, description="Pause between the website crawler's pages, to spare the site"
+    )
     gleif_url: str = Field(default="https://api.gleif.org/api/v1", description="Global LEI register (GLEIF); '' = off")
     # ---------------------------------------------------------------- AI analyst
     anthropic_api_key: SecretStr | None = Field(

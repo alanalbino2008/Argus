@@ -344,5 +344,6 @@ def test_passive_only_scans_skip_active_modules():
         "tls_analyzer",
         "http_fingerprint",
         "web_recon",
+        "site_crawler",
         "cloud_storage",
     }

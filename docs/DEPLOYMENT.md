@@ -241,6 +241,12 @@ Free sources, no keys:
 * `ARGUS_COMPANIES_HOUSE_OFFICER_LIMIT` (default 8): directors whose other companies are looked up
   per company.
 
+**The website crawler** (`site_crawler`) reads a target website's pages, obeying robots.txt:
+* `ARGUS_CRAWL_MAX_PAGES` (default 40, up to 500): the most pages read on one site;
+* `ARGUS_CRAWL_DELAY_SECONDS` (default 0.5): the pause between pages, so the site is never strained.
+It contacts the website itself, so passive-only scans and anonymous cases skip it. It never visits
+other websites the site links to.
+
 **The AI analyst** (Claude, by Anthropic) needs a Claude API key (from console.anthropic.com):
 * on the **account service**, `ARGUS_ANTHROPIC_API_KEY` is the key Argus Connect uses for every
   subscriber's analyst requests, paid for in credits (brief and extract 10, report 20, plus 2 per

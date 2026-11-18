@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.38.0] — Phase 38: Website crawling
+
+### Added
+- **Website crawler** (`site_crawler`): reads a whole website, not just its home page:
+  - starts from the home page and the site's sitemap, follows links within the site only, up to
+    `ARGUS_CRAWL_MAX_PAGES` (40) pages, pausing `ARGUS_CRAWL_DELAY_SECONDS` (0.5) between them;
+  - **obeys robots.txt** (rules for Argus, else for every crawler; the longest rule wins) and
+    counts the pages it skipped;
+  - follows redirects only within the site; never fetches images, scripts, login, cart or admin
+    pages; reads at most 600 KB per page;
+  - lists **email addresses** (including "name [at] site [dot] org"), marking addresses outside
+    the site's own domain, such as a personal Gmail;
+  - lists **phone numbers** (with a country code), **crypto wallets** (checksums verified) and
+    **social media accounts** linked (X, Facebook, Instagram, LinkedIn, YouTube, TikTok,
+    Telegram, GitHub, WhatsApp, Bluesky, Patreon, GoFundMe, PayPal…; share buttons ignored);
+  - lists **documents offered** (PDF, Word, Excel…); up to ten on the site itself are opened to
+    read their hidden author, company and software, and real author names become people in the
+    graph;
+  - records **analytics and advertising IDs** (Google Analytics, Tag Manager, AdSense, Meta
+    pixel) across every page;
+  - records the **other websites it links to** by name only: they are never visited or scanned;
+  - notes the page each item was found on.
+  - Active (it visits the site), so passive-only scans and anonymous cases skip it.
+- **Website background playbook** now reads the whole site, preserves the home page plus the
+  contact, about, team and legal pages, and reports:
+  - published contacts, with outside email addresses and wallets marked *worth checking*;
+  - document authors;
+  - analytics IDs.
+- **Graph**: a "Website read" panel (pages read, skipped by robots.txt, IDs, linked sites, the
+  page list) and "Where it was found" on everything the crawler found.
+
 ## [1.37.0] — Phase 37: Playbooks
 
 ### Added

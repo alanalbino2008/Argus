@@ -418,6 +418,15 @@ the addresses published on a website) and it follows the money.
   or stopped
   ([`docs/explained/37-playbooks.md`](docs/explained/37-playbooks.md)).
 
+**Website crawling**: Argus reads a whole website, not just its home page.
+
+- It lists the email addresses, phone numbers, crypto wallets, social media accounts, documents
+  and analytics IDs the site publishes, and the page each was found on.
+- Documents are opened to read their hidden author.
+- It obeys robots.txt, stays on the site, paces itself, and never visits the other sites it
+  links to
+  ([`docs/explained/38-website-crawling.md`](docs/explained/38-website-crawling.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

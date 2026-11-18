@@ -71,6 +71,22 @@ _ENTITIES: dict[str, tuple[EntityType, str, str, int, str, dict]] = {
                 "related": 2,
                 "likely": 1,
             },
+            "crawl": {
+                "pages": 27,
+                "limit_reached": False,
+                "blocked_by_robots": 3,
+                "page_list": [
+                    {"url": f"https://{DEMO_TARGET}/", "title": "Acme Corporation"},
+                    {"url": f"https://{DEMO_TARGET}/about", "title": "About Acme"},
+                    {"url": f"https://{DEMO_TARGET}/contact", "title": "Contact us"},
+                    {"url": f"https://{DEMO_TARGET}/investors/reports", "title": "Annual reports"},
+                ],
+            },
+            "tracking_ids": [
+                {"id": "G-ACME2026X1", "product": "Google Analytics 4"},
+                {"id": "GTM-ACM3C0R", "product": "Google Tag Manager"},
+            ],
+            "links_to_sites": [{"site": "linkedin.example", "links": 12}, {"site": "status.example", "links": 3}],
         },
     ),
     "www": (E.SUBDOMAIN, f"www.{DEMO_TARGET}", f"www.{DEMO_TARGET}", 1, "subdomain_finder", {}),

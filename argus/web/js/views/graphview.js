@@ -30,6 +30,7 @@ const HIDDEN_META = new Set([
   "business_address", "former_names", "recent_filings", "sec_url", "sanction_matches", "offshore_leaks",
   "offshore_leaks_credit", "source_registry", "role", "appointed", "resigned", "nationality", "occupation", "born",
   "country_of_residence", "ch_officer_id", "ch_company", "officer_matches", "appointments_total", "via_possible_match",
+  "crawl", "tracking_ids", "links_to_sites", "found_on", "on_site_domain", "hosted_elsewhere",
 ]);
 
 const CATEGORY_LABEL = {
@@ -259,6 +260,25 @@ function screeningBlock(md) {
   return out;
 }
 
+/** What reading the whole website found: its pages, analytics IDs, and the sites it links to. */
+function crawlBlock(md) {
+  const crawl = md.crawl;
+  if (!crawl) return [];
+  const safe = (u) => /^https?:\/\//.test(u || "");
+  return [html`<div class="section"><div class="section-title">Website read</div>
+    ${kvRows([["Pages read", `${crawl.pages}${crawl.limit_reached ? " (the page limit was reached)" : ""}`],
+      ["Skipped (robots.txt)", crawl.blocked_by_robots || null]])}
+    ${md.tracking_ids?.length ? html`<div class="section-title" style="margin-top:10px">Analytics and advertising IDs</div>
+      <p class="muted small">Sites that share one of these IDs are usually run by the same people.</p>
+      ${md.tracking_ids.map((t) => html`<div class="list-row"><span class="pill accent">${t.product}</span><div class="list-main"><div class="list-title">${t.id}</div></div></div>`)}` : ""}
+    ${md.links_to_sites?.length ? html`<div class="section-title" style="margin-top:10px">Links to other sites</div>
+      <p class="muted small">Named only: Argus did not visit or scan them.</p>
+      <div class="small">${md.links_to_sites.slice(0, 15).map((l) => `${l.site} (${l.links})`).join(" · ")}</div>` : ""}
+    ${crawl.page_list?.length ? html`<details style="margin-top:10px"><summary class="small">Pages read (${crawl.page_list.length})</summary>
+      ${crawl.page_list.map((p) => html`<div class="small">${safe(p.url) ? ext(p.url, p.title || p.url) : p.url}</div>`)}</details>` : ""}
+  </div>`];
+}
+
 function companyBlock(md) {
   const out = [];
   if (md.company_number) {
@@ -308,6 +328,8 @@ function intelBlocks(entity) {
   if (entity.type === "person") blocks.push(...officerBlock(md));
   if (entity.type === "organization" || entity.type === "person") blocks.push(...screeningBlock(md));
   if (entity.type === "crypto_wallet") blocks.push(walletBlock(entity));
+  if (entity.type === "domain" || entity.type === "subdomain") blocks.push(...crawlBlock(md));
+  if (md.found_on) blocks.push(html`<div class="section"><div class="section-title">Where it was found</div><p class="small">${/^https?:\/\//.test(md.found_on) ? ext(md.found_on, md.found_on) : md.found_on}</p></div>`);
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;
     const rows = [

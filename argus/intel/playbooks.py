@@ -23,6 +23,7 @@ failing step never stops the others.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -120,12 +121,15 @@ CATALOGUE: dict[str, Playbook] = {p.id: p for p in (
     Playbook(
         "website_background", "Website background",
         "Who registered a website and when, its history in the Wayback Machine, related domains and "
-        "look-alikes. The only visit to the website itself is to preserve its home page, through the case's route.",
+        "look-alikes; then the whole site is read (obeying robots.txt) for the emails, phone numbers, wallets, social "
+        "accounts, documents and analytics IDs it publishes. Reading the site visits it, through the case's route; "
+        "anonymous cases skip that part.",
         (EntityType.DOMAIN,),
         (Step("scan", "Registration, history and related sites",
               ("whois_lookup", "dns_recon", "passive_dns", "wayback", "subdomain_finder", "infrastructure_pivot",
                "lookalike_domains")),
-         Step("capture", "Preserve the home page", capture=("website",), limit=1),
+         Step("scan", "Read the whole website", ("site_crawler", "profile_enricher")),
+         Step("capture", "Preserve the home page and contact pages", capture=("website", "contacts"), limit=4),
          FINDINGS, BRIEF),
         when="A website, e.g. a fundraising page or a shop that may be fake.",
     ),
@@ -208,6 +212,38 @@ def highlights(graph: IntelligenceGraph, *, limit: int = 60) -> list[Highlight]:
         if e.type == EntityType.BREACH:
             out.append(Highlight("medium", f"Appears in a data breach: {e.label or e.value}",
                                  str(md.get("description") or md.get("date") or "")[:300]))  # fmt: skip
+        if md.get("origin") == "published on website" and e.type in (EntityType.EMAIL, EntityType.PHONE,
+                                                                       EntityType.CRYPTO_WALLET):  # fmt: skip
+            kind = {EntityType.EMAIL: "Email", EntityType.PHONE: "Phone number",
+                    EntityType.CRYPTO_WALLET: "Wallet"}[e.type]  # fmt: skip
+            outside = e.type == EntityType.EMAIL and md.get("on_site_domain") is False
+            out.append(Highlight(
+                "medium" if e.type == EntityType.CRYPTO_WALLET or outside else "info",
+                f"{kind} published on the website: {e.value}",
+                (f"found on {md['found_on']}" if md.get("found_on") else "")
+                + (". A personal or outside address, which can lead to the person behind the site" if outside else ""),
+                _suggest(e, found_on=md.get("found_on")), md.get("found_on"), tick=True,
+            ))  # fmt: skip
+        if e.type == EntityType.URL and md.get("category") == "document" and md.get("origin") == "published on website":
+            doc = md.get("document") or {}
+            written = "; ".join(
+                filter(
+                    None,
+                    [
+                        f"written by {', '.join(doc['authors'])}" if doc.get("authors") else "",
+                        f"for {doc['company']}" if doc.get("company") else "",
+                        f"created {doc['created']}" if doc.get("created") else "",
+                    ],
+                )
+            )
+            out.append(Highlight("medium" if doc.get("authors") or doc.get("company") else "info",
+                                 f"Document offered: {e.label or e.value}",
+                                 written or f"found on {md.get('found_on', '?')}", None, e.value))  # fmt: skip
+        out.extend(
+            Highlight("info", f"{t.get('product')} ID on {e.value}: {t.get('id')}",
+                      "Sites sharing this ID are usually run by the same people")
+            for t in md.get("tracking_ids") or []
+        )  # fmt: skip
         if e.type == EntityType.SOCIAL_PROFILE:
             out.append(Highlight("info", f"Account found: {e.label or e.value}",
                                  f"confidence {e.confidence:.0%}" + (f", {md['name']}" if md.get("name") else ""),
@@ -243,6 +279,9 @@ def highlights(graph: IntelligenceGraph, *, limit: int = 60) -> list[Highlight]:
     return unique[:limit]
 
 
+CONTACT_PAGE = re.compile(r"/(contact|about|impressum|imprint|legal|team|who-we-are|trustees|privacy)", re.I)
+
+
 def capture_urls(graph: IntelligenceGraph, what: tuple[str, ...], seed: str, limit: int) -> list[str]:
     """The pages a capture step preserves."""
     urls: list[str] = []
@@ -255,6 +294,11 @@ def capture_urls(graph: IntelligenceGraph, what: tuple[str, ...], seed: str, lim
         urls += [e.value for e in sorted(profiles, key=lambda e: -e.confidence) if e.value.startswith("https://")]
     if "website" in what:
         urls.append(f"https://{seed.strip().lower().removeprefix('https://').removeprefix('http://').strip('/')}/")
+    if "contacts" in what:  # pages the crawler read whose paths suggest who runs the site
+        for e in entities:
+            for page in (e.metadata.get("crawl") or {}).get("page_list") or []:
+                if CONTACT_PAGE.search(str(page.get("url", ""))):
+                    urls.append(str(page["url"]))
     return list(dict.fromkeys(urls))[:limit]
 
 
