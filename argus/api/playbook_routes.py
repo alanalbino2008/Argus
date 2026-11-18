@@ -26,6 +26,7 @@ from argus.api.analyst_routes import analyse
 from argus.api.case_routes import _case
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.api.opsec_routes import route_for
+from argus.api.people_routes import auto_import
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, ScanConfig
 from argus.evidence.capture import CaptureError, capture_url
@@ -245,6 +246,7 @@ class PlaybookRun:
             self.case["id"], by=self.principal.name, kind="scan", title=self.seed, body="",
             data={"investigation_id": investigation_id, "target": self.seed}, occurred_at=None,
         )  # fmt: skip
+        await auto_import(self.app, self.case["id"], investigation_id, self.principal, self.workspace_id)
         for entity in graph.get_all_entities():
             self.graph.add_entity(entity, is_seed=entity.depth == 0)
         for relation in graph.get_all_relations():

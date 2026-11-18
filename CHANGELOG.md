@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.44.0] — Phase 44: People from scans, and person profiles
+
+### Added
+- **People join the case from scans automatically.** When a scan linked to a case finishes (from
+  the case, or from a playbook), the people and organisations it is fairly sure of (80% or more)
+  are added to the case, with the relationships between them:
+  - officers become *director of*, people with significant control *owner of*, an account's owner
+    *uses*, wallets spent together *shares a wallet with*;
+  - start and end dates are kept;
+  - each entry notes the scan it came from and what the scan learned (role, date of birth,
+    nationality, a possible sanctions match…);
+  - nothing is added twice (the same kind and value, ignoring case and spacing). Things found
+    only about third parties, and very weak finds, are left out.
+- **"From scans"** in a case's People & entities card: everything a linked scan found that could
+  join the case (accounts, usernames, emails, phones, wallets, places, and less certain people),
+  ticked to add, with the relationships between them.
+- **Person profiles**: click a person or organisation (in the case, or "Open full profile" on the
+  link chart) for everything the case knows about them:
+  - details and notes;
+  - relationships, with kinds, dates and evidence;
+  - accounts and contacts, and places;
+  - their place in the network (key person, go-between, group);
+  - what linked scans found: date of birth, nationality, directorships with dates, possible
+    sanctions matches (with contradicting details), Offshore Leaks, public profile details;
+  - a timeline from events, relationships and company registers;
+  - every note, event and evidence document that names them or their usernames and contacts,
+    with the passage around each mention.
+- Protected people have no profile, and are blanked out of the passages shown in others'
+  profiles. Viewing a profile is recorded in the audit log.
+- API: `GET`/`POST /api/cases/{id}/scan-people`, `GET /api/cases/{id}/entities/{item}/profile`.
+  Python client: `profile()`, `scan_people()`, `add_scan_people()`.
+
 ## [1.43.0] — Phase 43: Relationship mapping and the link chart
 
 ### Added

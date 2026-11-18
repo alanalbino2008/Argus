@@ -70,6 +70,8 @@ from argus.api.onboarding_routes import scope_warnings
 from argus.api.openapi import build_openapi
 from argus.api.opsec_routes import route_for
 from argus.api.opsec_routes import router as opsec_router
+from argus.api.people_routes import auto_import
+from argus.api.people_routes import router as people_router
 from argus.api.personal_routes import licence_gate
 from argus.api.personal_routes import router as personal_router
 from argus.api.playbook_routes import RUNS as PLAYBOOK_RUNS
@@ -515,6 +517,7 @@ app.include_router(analyst_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
 app.include_router(network_router)
+app.include_router(people_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -1135,6 +1138,11 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
             case["id"], by=principal.name, kind="scan", title=target, body="",
             data={"investigation_id": engine.investigation_id, "target": target}, occurred_at=None,
         )  # fmt: skip
+        task = SCAN_TASKS.get(engine.investigation_id)
+        if task is not None:  # when it finishes, the people it is sure of join the case
+            app_ref, case_id, inv_id, workspace_id = request.app, case["id"], engine.investigation_id, ws.id
+            task.add_done_callback(lambda _t: _spawn(auto_import(app_ref, case_id, inv_id, principal, workspace_id),
+                                                     f"case-people-{inv_id}"))  # fmt: skip
     return {
         "status": "launched",
         "route": route.name if route else "direct",

@@ -239,6 +239,30 @@
     </form>
   </div>
 
+  <!-- ================================================================ person profile -->
+  <div id="profile-modal" class="modal-root" aria-hidden="true">
+    <div class="modal" role="dialog" aria-labelledby="profile-title" style="max-width:920px;width:calc(100vw - 32px)">
+      <div class="modal-head"><div><h2 id="profile-title">Profile</h2><p id="profile-sub" class="muted"></p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body" id="profile-body" style="max-height:70vh;overflow:auto"></div>
+    </div>
+  </div>
+
+  <!-- ================================================================ people from scans -->
+  <div id="import-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="import-title" id="import-form" style="max-width:760px;width:calc(100vw - 32px)" novalidate>
+      <div class="modal-head"><div><h2 id="import-title">Bring people in from scans</h2><p class="muted small">People and organisations a scan is fairly sure of are added automatically when it finishes. Tick anything else worth adding.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body" style="max-height:60vh;overflow:auto">
+        <div class="field"><label class="label" for="import-scan">Scan</label><select id="import-scan" class="select"></select></div>
+        <div id="import-list"><p class="muted small">Loading…</p></div>
+        <label class="small"><input type="checkbox" id="import-rels" checked> Also add the relationships between them</label>
+        <div class="error-text" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Add ticked</button></div>
+    </form>
+  </div>
+
   <!-- ================================================================ confirm -->
   <div id="confirm-modal" class="modal-root" aria-hidden="true">
     <div class="modal" role="alertdialog" aria-labelledby="confirm-title">

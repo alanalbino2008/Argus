@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.43.0"
+__version__ = "1.44.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -376,6 +376,20 @@ class ArgusClient:
     def suggested_relationships(self, case_id: str) -> dict[str, Any]:
         """Relationships the case's material shows that are not linked yet (nothing is added)."""
         return self.get(f"/api/cases/{case_id}/network/suggestions")
+
+    def profile(self, case_id: str, item_id: str) -> dict[str, Any]:
+        """Everything a case knows about one person or organisation."""
+        return self.get(f"/api/cases/{case_id}/entities/{item_id}/profile")
+
+    def scan_people(self, case_id: str, investigation_id: str) -> dict[str, Any]:
+        """What a linked scan found that could join the case (people, accounts, contacts, relationships)."""
+        return self.get(f"/api/cases/{case_id}/scan-people", investigation_id=investigation_id)
+
+    def add_scan_people(self, case_id: str, investigation_id: str, keys: list[str], *,
+                        relationships: bool = True) -> dict[str, Any]:  # fmt: skip
+        """Add the chosen finds of a linked scan to the case, with the relationships between them."""
+        return self.post(f"/api/cases/{case_id}/scan-people",
+                         {"investigation_id": investigation_id, "keys": keys, "relationships": relationships})  # fmt: skip
 
     def vault_status(self) -> dict[str, Any]:
         """Whether the case vault is set up, and whether it is locked."""

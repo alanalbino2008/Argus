@@ -470,6 +470,15 @@ the addresses published on a website) and it follows the money.
   between any two people. Children can be protected from all of it
   ([`docs/explained/43-relationship-mapping.md`](docs/explained/43-relationship-mapping.md)).
 
+**Person profiles, filled from scans**
+
+- The people and organisations a scan finds join the case automatically, with their
+  relationships.
+- Each person has a profile with everything the case knows about them: relationships, accounts,
+  places, register records, sanctions checks, a timeline, and every note and document that names
+  them
+  ([`docs/explained/44-person-profiles.md`](docs/explained/44-person-profiles.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

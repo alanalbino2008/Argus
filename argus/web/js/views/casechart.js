@@ -7,6 +7,7 @@ import { ico } from "../components.js";
 import { $, html, on, setHTML, toast } from "../dom.js";
 import { nodeGlyph, typeInfo } from "../icons.js";
 import { state } from "../state.js";
+import { openProfile } from "./profile.js";
 
 /* global cytoscape */
 
@@ -121,6 +122,7 @@ function details(id) {
       const other = out ? e.to : e.from;
       return html`<div class="small" style="margin-bottom:4px"><span style="color:${GROUP_COLOR[e.group]}">●</span> ${out || e.symmetric ? e.text : `${e.text} (from)`} ${personLink(other)} <span class="muted">· ${e.confidence}${e.since ? ` · since ${e.since}` : ""}${e.until ? ` · until ${e.until}` : ""}</span></div>`;
     })}` : ""}
+    ${n.protected ? "" : html`<button class="btn sm" data-chart="profile" style="margin-top:8px">${ico("person")}Open full profile</button>`}
     <h3 style="margin-top:12px">How are they connected to…</h3>
     <div style="display:flex;gap:6px"><select class="select" id="chart-route-to" aria-label="Connected to">${net.nodes.filter((x) => x.id !== id).map((x) => html`<option value="${x.id}">${x.label}</option>`)}</select>
       <button class="btn sm" data-chart="route">Trace</button></div>
@@ -189,6 +191,7 @@ export function initChart(root) {
     try {
       const act = btn.dataset.chart;
       if (act === "fit") return cy?.fit(undefined, 30);
+      if (act === "profile") return openProfile(caseRef, selected);
       if (act === "select") { selected = btn.dataset.id; routeResult = null; cy?.$(":selected").unselect(); cy?.getElementById(selected).select(); drawSide(); return highlight(); }
       if (act === "route") {
         routeResult = await api.get(`/api/cases/${enc(caseRef.id)}/network/path?source=${enc(selected)}&target=${enc($("#chart-route-to").value)}`);

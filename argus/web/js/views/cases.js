@@ -7,6 +7,7 @@ import { initCaseViews, renderMap, renderTimeline, teardownMap } from "./casemap
 import { initAnalyst, renderAnalyst } from "./analyst.js";
 import { initPlaybooks, renderPlaybooks } from "./playbooks.js";
 import { initChart, renderChart } from "./casechart.js";
+import { openProfile } from "./profile.js";
 import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
@@ -101,7 +102,7 @@ function entities() {
     const attrs = Object.entries(p.data.attributes || {});
     const mine = links.filter((l) => l.data.from === p.id);
     return html`<div class="entity-card">
-      <div style="display:flex;justify-content:space-between;gap:8px"><div><span class="pill">${p.data.type}</span> <b>${p.data.value}</b>${p.data.protected ? html` <span class="pill warn" title="Not named on the link chart, left out of suggestions and profiling, never sent to the AI analyst">${ico("shield")}Protected</span>` : ""}</div>
+      <div style="display:flex;justify-content:space-between;gap:8px"><div><span class="pill">${p.data.type}</span> <a href="#" data-act="profile" data-id="${p.id}" title="Open the full profile"><b>${p.data.value}</b></a>${p.data.protected ? html` <span class="pill warn" title="Not named on the link chart, left out of suggestions and profiling, never sent to the AI analyst">${ico("shield")}Protected</span>` : ""}</div>
         ${canEdit() ? html`<button class="btn sm ghost icon" data-act="del-item" data-id="${p.id}" aria-label="Remove ${p.data.value}">${ico("trash")}</button>` : ""}</div>
       ${attrs.length ? html`<dl class="kv small" style="margin-top:6px">${attrs.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>` : ""}
       ${p.body ? html`<p class="small" style="margin:6px 0 0">${p.body}</p>` : ""}
@@ -163,7 +164,7 @@ function renderCase() {
             <p style="white-space:pre-wrap;margin:4px 0">${n.body}</p><div class="muted small">${n.created_by} · ${timeAgo(n.created_at)}</div></div>`) : html`<p class="muted small">Leads, hypotheses, what was checked and what is still open.</p>`}</div>
       </div>
       <div>
-        <div class="card card-pad"><div class="card-head"><h2>People & entities</h2>${canEdit() ? html`<span><button class="btn sm ghost" data-act="entity">${ico("plus")}Entity</button><button class="btn sm ghost" data-act="link">Link</button></span>` : ""}</div>${entities()}</div>
+        <div class="card card-pad"><div class="card-head"><h2>People & entities</h2>${canEdit() ? html`<span><button class="btn sm ghost" data-act="entity">${ico("plus")}Entity</button><button class="btn sm ghost" data-act="link">Link</button><button class="btn sm ghost" data-act="import-people" title="People and accounts found by this case's scans">From scans</button></span>` : ""}</div>${entities()}</div>
         <div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>Timeline</h2>${canEdit() ? html`<button class="btn sm ghost" data-act="event">${ico("plus")}Event</button>` : ""}</div>${timeline()}</div>
         <div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>Scans</h2>${canEdit() ? html`<button class="btn sm ghost" data-act="scan">${ico("plus")}Link a scan</button>` : ""}</div>
           ${scans.length ? scans.map((s) => html`<div class="list-row clickable" data-open-scan="${s.data.investigation_id}"><div class="list-main"><div class="list-title">${s.data.target}</div><div class="list-sub">linked ${timeAgo(s.created_at)}</div></div>${ico("external")}</div>`) : html`<p class="muted small">Link investigations that belong to this case.</p>`}</div>
@@ -236,6 +237,32 @@ export async function addEntityToCase(entity, investigationId) {
   openModal("tocase-modal");
 }
 
+// ---------------------------------------------------------------------------- people from scans
+let importOffer = null;
+const TYPE_ORDER = ["person", "organisation", "account", "username", "email", "phone", "wallet", "location"];
+
+async function loadImport() {
+  const scanId = $("#import-scan").value;
+  setHTML($("#import-list"), html`<p class="muted small">Loading…</p>`);
+  importOffer = await api.get(`/api/cases/${enc(current.id)}/scan-people?investigation_id=${enc(scanId)}`);
+  const fresh = importOffer.entities.filter((p) => !p.existing);
+  if (!fresh.length) {
+    setHTML($("#import-list"), html`<p class="muted small">Everything this scan found is already in the case.</p>`);
+    return;
+  }
+  setHTML($("#import-list"), html`${TYPE_ORDER.filter((t) => fresh.some((p) => p.type === t)).map((t) => html`<h3 style="margin:10px 0 4px">${t}</h3>
+    ${fresh.filter((p) => p.type === t).map((p) => html`<label class="list-row" style="cursor:pointer;align-items:flex-start"><input type="checkbox" value="${p.key}" data-import ${p.confidence >= 0.8 ? "checked" : ""}>
+      <div class="list-main"><div class="list-title">${p.label}</div><div class="list-sub">${Math.round(p.confidence * 100)}% sure · found by ${p.found_by}${Object.keys(p.attributes).length ? ` · ${Object.entries(p.attributes).slice(0, 3).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}` : ""}</div></div></label>`)}`)}`);
+}
+
+async function openImport() {
+  const { scans } = await api.get(`/api/cases/${enc(current.id)}/scan-people`);
+  if (!scans.length) return toast("Link or run a scan for this case first", "error");
+  setHTML($("#import-scan"), html`${scans.map((s) => html`<option value="${s.investigation_id}">${s.target} (${s.status})</option>`)}`);
+  openModal("import-modal");
+  await loadImport();
+}
+
 // ---------------------------------------------------------------------------- dialogs
 function item(kind, body) {
   return api.post(`/api/cases/${enc(current.id)}/items`, { kind, ...body });
@@ -282,6 +309,13 @@ const FORMS = {
     await request(`/api/cases/${enc(current.id)}/uploads`, { method: "POST", body: form });
     closeModal("upload-modal");
     toast("Evidence added with its fingerprint", "success");
+  },
+  "import-form": async () => {
+    const keys = [...document.querySelectorAll("[data-import]:checked")].map((b) => b.value);
+    if (!keys.length) throw new Error("Tick at least one to add.");
+    const r = await api.post(`/api/cases/${enc(current.id)}/scan-people`, { investigation_id: $("#import-scan").value, keys, relationships: $("#import-rels").checked });
+    closeModal("import-modal");
+    toast(`Added ${r.entities} and ${r.relationships} relationship${r.relationships === 1 ? "" : "s"}`, "success");
   },
   "entity-form": async () => {
     await item("entity", { body: $("#entity-notes").value.trim(), data: { type: $("#entity-type").value, value: $("#entity-value").value.trim(), attributes: attributes($("#entity-attrs").value), ...($("#entity-protected").checked ? { protected: true } : {}) } });
@@ -421,6 +455,7 @@ export function initCases(el, actions) {
   initChart(root);
   on(root, "click", "[data-case-tab]", (_e, btn) => { caseTab = btn.dataset.caseTab; refresh(); });
   $("#capture-egress").addEventListener("change", syncCapture);
+  $("#import-scan").addEventListener("change", () => loadImport().catch((err) => toast(err.message, "error")));
   $("#watch-platform").addEventListener("change", syncWatch);
   ["case", "safety"].forEach((prefix) => {
     $(`#${prefix}-anonymous`).addEventListener("change", () => syncSafety(prefix));
@@ -440,6 +475,8 @@ export function initCases(el, actions) {
       if (act === "back") { current = null; return refresh(); }
       if (act === "watch-history") return showHistory(id);
       if (act === "inspect") return openInspector(current, id, btn.dataset.file);
+      if (act === "profile") return openProfile(current, id);
+      if (act === "import-people") return openImport();
       if (act === "watch-check") {
         btn.disabled = true;
         const r = await api.post(`/api/cases/${enc(current.id)}/watches/${enc(id)}/check`).finally(() => { btn.disabled = false; });
