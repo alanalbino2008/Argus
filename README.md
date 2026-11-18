@@ -408,6 +408,16 @@ the addresses published on a website) and it follows the money.
   is recorded in its chain of custody. Use your own Claude key, or Argus credits
   ([`docs/explained/36-the-ai-analyst.md`](docs/explained/36-the-ai-analyst.md)).
 
+**Playbooks**: the standard steps of an investigation, run for you in order, inside a case.
+
+- Seven playbooks: company due diligence, person background, online identity, email footprint,
+  crypto trail, website background and phone number.
+- Each one scans, preserves the pages that matter as evidence, writes down what stands out (most
+  serious first), and can end with an AI briefing.
+- Runs follow the case's safety settings, are recorded in the audit log, and can be followed live
+  or stopped
+  ([`docs/explained/37-playbooks.md`](docs/explained/37-playbooks.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

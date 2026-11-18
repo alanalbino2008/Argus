@@ -51,7 +51,8 @@ function header(answer) {
     <p class="muted small">${ico("info")} Written by AI from this case's material. Check every finding against its sources before relying on it.</p>`;
 }
 
-function briefView(answer) {
+/** A briefing, as shown here and in a playbook run (``save``: offer to save it as a note). */
+export function briefView(answer, { save = true } = {}) {
   const r = answer.result;
   return html`${header(answer)}
     <h3>Summary</h3><p style="white-space:pre-wrap">${r.summary}</p>
@@ -61,7 +62,7 @@ function briefView(answer) {
     <h3>Next steps</h3>${r.next_steps.length ? html`<ol>${r.next_steps.map((s) => html`<li style="margin-bottom:8px"><b>${s.action}</b><div class="small">${s.why}</div><div class="muted small">How: ${s.how}</div></li>`)}</ol>` : html`<p class="muted small">None suggested.</p>`}
     ${r.gaps.length ? html`<h3>Gaps and open questions</h3><ul>${r.gaps.map((g) => html`<li>${g}</li>`)}</ul>` : ""}
     ${r.cautions.length ? html`<h3>Cautions</h3><ul>${r.cautions.map((c) => html`<li>${c}</li>`)}</ul>` : ""}
-    ${canEdit() ? html`<button class="btn sm" data-analyst="save-brief">${ico("plus")}Save as a note</button>` : ""}`;
+    ${save && canEdit() ? html`<button class="btn sm" data-analyst="save-brief">${ico("plus")}Save as a note</button>` : ""}`;
 }
 
 function suggestionRow(kind, s, i) {

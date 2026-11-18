@@ -70,6 +70,8 @@ from argus.api.opsec_routes import route_for
 from argus.api.opsec_routes import router as opsec_router
 from argus.api.personal_routes import licence_gate
 from argus.api.personal_routes import router as personal_router
+from argus.api.playbook_routes import RUNS as PLAYBOOK_RUNS
+from argus.api.playbook_routes import router as playbook_router
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
@@ -116,6 +118,7 @@ from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
+from argus.storage.playbook_repo import PlaybookRepository
 from argus.storage.rating_repo import RatingRepository
 from argus.storage.remediation_repo import RemediationRepository
 from argus.storage.report_repo import ReportRepository
@@ -218,6 +221,11 @@ async def lifespan(app: FastAPI):
     app.state.account_watches = AccountWatchRepository(db)
     app.state.subscribers = SubscriberRepository(db)
     app.state.credits = CreditRepository(db)
+    app.state.playbooks = PlaybookRepository(db)
+    app.state.playbook_scan = _playbook_scan
+    interrupted = await app.state.playbooks.interrupt_running(settings.instance_id)
+    if interrupted:
+        logger.warning("%d playbook run(s) were left unfinished by the last shutdown: marked interrupted", interrupted)
     app.state.app_state = AppStateRepository(db)
     app.state.personal = PersonalLicence(settings, app.state.app_state)
     if settings.edition == "personal":
@@ -312,6 +320,10 @@ async def lifespan(app: FastAPI):
         if exposure_task is None:
             await app.state.exposure_monitor.sources.close()
         event_bus.unsubscribe_all(ws_dispatcher)
+        runs = [t for t in PLAYBOOK_RUNS.values() if not t.done()]
+        for task in runs:
+            task.cancel()  # each saves itself as interrupted
+        await asyncio.gather(*runs, return_exceptions=True)
         for engine in INVESTIGATIONS.values():
             engine.cancel()
         pending = [t for t in SCAN_TASKS.values() if not t.done()]
@@ -473,6 +485,7 @@ app.include_router(account_router)
 app.include_router(connect_router)
 app.include_router(personal_router)
 app.include_router(analyst_router)
+app.include_router(playbook_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -695,6 +708,23 @@ async def _rescan(app: FastAPI, config: ScanConfig, principal: Principal, purpos
     fresh = config.model_copy(update={"allow_private_targets": settings.allow_private_targets})
     engine = await launch_scan(app, fresh, created_by=principal.name, purpose=purpose, workspace_id=workspace_id)
     return engine.investigation_id
+
+
+async def _playbook_scan(app: FastAPI, config: ScanConfig, *, by: str, purpose: str, workspace_id: str,
+                         egress: EgressRoute | None) -> tuple[str, IntelligenceGraph]:  # fmt: skip
+    """A playbook's scan: wait for a free slot (the cluster-wide cap), run it, and wait for it to finish."""
+    settings = app.state.settings
+    for _ in range(120):  # up to ten minutes
+        if await cluster_running_scans(app) < settings.max_concurrent_scans:
+            break
+        await asyncio.sleep(5)
+    else:
+        raise RuntimeError(f"The server stayed at its limit of {settings.max_concurrent_scans} concurrent scans")
+    engine = await launch_scan(app, config, created_by=by, purpose=purpose, workspace_id=workspace_id, egress=egress)
+    task = SCAN_TASKS.get(engine.investigation_id)
+    if task is not None:
+        await asyncio.wait({task})
+    return engine.investigation_id, engine.graph
 
 
 async def _after_scan_remediation(app: FastAPI, engine: ArgusEngine) -> None:

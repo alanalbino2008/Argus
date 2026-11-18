@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.37.0] — Phase 37: Playbooks
+
+### Added
+- **Playbooks** (new **Playbooks** tab in every case): the standard steps of an investigation, run
+  in order from one starting point, inside a case:
+  - **Company due diligence**: registers, directors and owners, parent companies, sanctions and
+    offshore leaks; the register entries preserved as evidence;
+  - **Person background**: directorships, sanctions and leaks (name matches marked as
+    possibilities); never for children;
+  - **Online identity**: accounts for a username and its variants on hundreds of sites; each
+    profile found preserved;
+  - **Email footprint**: domain, breaches, published keys and the accounts behind the username;
+  - **Crypto trail**: payments, services, same-owner wallets and sanctioned counterparties;
+  - **Website background**: registration, history, related and look-alike domains; the home page
+    preserved through the case's route;
+  - **Phone number**: country, carrier and line type.
+- **Steps**:
+  - **scan**: linked to the case, through its route; anonymous cases use passive sources only;
+  - **capture**: preserves the pages that matter, with fingerprints and custody;
+  - **findings**: what stands out, most serious first, written to the case as a note;
+  - **brief**: an optional AI analyst briefing, only when asked for and confirmed.
+- **What stands out**: possible sanctions matches (downgraded when birth year or nationality
+  contradict), sanctioned wallets and counterparties, same-owner wallets, Offshore Leaks, breaches,
+  directors and owners, accounts found, and names with no exact register match. Ticked items are
+  added to the case as entities.
+- **Reliable runs**:
+  - progress is saved after every step and shown live;
+  - a step that can't run (a source needs a key, no capture browser) is skipped or fails without
+    stopping the others;
+  - one run per case at a time, and a run can be stopped;
+  - runs left unfinished by a restart are marked *interrupted*; in a cluster, only the restarted
+    server's own runs;
+  - playbook scans wait for a free slot under the cluster-wide scan limit.
+- **Accountability**: starting a run (with its purpose), every scan, capture and briefing it
+  makes are written to the audit log.
+- API: `GET /api/playbooks`; `GET`/`POST /api/cases/{id}/playbooks`;
+  `GET /api/cases/{id}/playbooks/{run}`; `POST .../{run}/cancel`. Migration `0020`.
+- Python client: `playbooks()`, `run_playbook()`, `playbook_run()`.
+
+### Changed
+- The AI analyst's work is shared by the button and the playbook step, so both record custody and
+  audit entries the same way.
+
 ## [1.36.0] — Phase 36: The AI analyst
 
 ### Added

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from argus.accounts.connect_client import ai, ai_access
-from argus.api.case_routes import _case, _repo
+from argus.api.case_routes import _case
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.intel.analyst import BASE_CREDITS, AnalystError, Material, build_material, check, document_text, price
 from argus.security.auth import Role
@@ -57,16 +57,16 @@ async def analyst_status(request: Request, ws: WorkspaceContext = VIEWER):
     return _status(request)
 
 
-async def _material(request: Request, ws: WorkspaceContext, case_id: str,
-                    selected: list[str] | None) -> tuple[dict[str, Any], list[dict[str, Any]], Material]:  # fmt: skip
-    case = await _case(request, ws, case_id)
-    repo = _repo(request)
-    items = await repo.items(case_id)
+async def case_material(app: Any, case: dict[str, Any],
+                        selected: list[str] | None) -> tuple[list[dict[str, Any]], Material]:  # fmt: skip
+    """The case's items, and its labelled material for the analyst."""
+    repo = app.state.cases
+    items = await repo.items(case["id"])
     documents = []
-    for capture in await repo.captures(case_id):
+    for capture in await repo.captures(case["id"]):
         if selected is not None and capture["id"] not in selected:
             continue
-        files = await repo.files(capture["id"])  # read for the analyst; sending is logged below
+        files = await repo.files(capture["id"])  # read for the analyst; sending is logged by analyse()
         text = None
         if capture["kind"] == "web":
             if "text.txt" in files:
@@ -78,14 +78,43 @@ async def _material(request: Request, ws: WorkspaceContext, case_id: str,
                     break
         documents.append({"id": capture["id"], "title": capture["title"], "url": capture.get("url"),
                           "captured_at": capture["captured_at"], "text": text})  # fmt: skip
-    material = build_material(case, items, documents, max_chars=request.app.state.settings.analyst_max_chars)
-    return case, items, material
+    return items, build_material(case, items, documents, max_chars=app.state.settings.analyst_max_chars)
+
+
+async def analyse(app: Any, case: dict[str, Any], task: str, *, by: str,
+                  documents: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:  # fmt: skip
+    """Run one analyst task over a case: (the checked answer, details for the audit log).
+
+    Each evidence document sent is written to its chain of custody first. Raises AnalystError, with
+    the audit details on ``exc.details``.
+    """
+    items, material = await case_material(app, case, documents)
+    sent = [s for s in material.sources.values() if s["kind"] == "document"]
+    via = ai_access()
+    for source in sent:  # the evidence leaves Argus: its chain of custody says where it went
+        await app.state.cases.log(source["id"], by=by, action="sent for AI analysis",
+                                  detail=f"{task} via {'Argus Connect' if via == 'connect' else 'own Anthropic key'}")  # fmt: skip
+    details = {"task": task, "via": via, "characters": len(material.text), "documents": len(sent),
+               "anonymous_case": case["opsec_mode"] == "anonymous"}  # fmt: skip
+    try:
+        answer = await ai(task, material.text)
+    except AnalystError as exc:
+        exc.details = {**details, "error": exc.detail[:200]}
+        raise
+    result = {
+        "task": task, "via": answer["via"], "model": answer.get("model"), "cut_off": answer.get("cut_off", False),
+        "credits": answer.get("credits"), "material": material.summary(),
+        "result": check(task, answer["output"], material, items),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }  # fmt: skip
+    return result, {**details, "model": answer.get("model")}
 
 
 @router.get("/cases/{case_id}/analyst/preview")
 async def analyst_preview(case_id: str, request: Request, task: Task = "brief", ws: WorkspaceContext = ANALYST):
     """What a request would send (size, sources, documents shortened or left out) and what it costs."""
-    case, _items, material = await _material(request, ws, case_id, None)
+    case = await _case(request, ws, case_id)
+    _items, material = await case_material(request.app, case, None)
     status = _status(request)
     return {
         **status, "task": task, "anonymous_case": case["opsec_mode"] == "anonymous", **material.summary(),
@@ -105,24 +134,11 @@ async def run_analyst(case_id: str, body: AnalystRequest, request: Request, ws: 
                                                     "your own Claude API key (ARGUS_ANTHROPIC_API_KEY)")  # fmt: skip
     if not _limiter.hit(ws.principal.key_id):
         raise HTTPException(status_code=429, detail="Too many analyst requests; wait a minute")
-    case, items, material = await _material(request, ws, case_id, body.documents)
-    sent = [s for s in material.sources.values() if s["kind"] == "document"]
-    via = ai_access()
-    repo = _repo(request)
-    for source in sent:  # the evidence leaves Argus: its chain of custody says where it went
-        await repo.log(source["id"], by=ws.principal.name, action="sent for AI analysis",
-                       detail=f"{body.task} via {'Argus Connect' if via == 'connect' else 'own Anthropic key'}")  # fmt: skip
-    details = {"task": body.task, "via": via, "characters": len(material.text), "documents": len(sent),
-               "anonymous_case": case["opsec_mode"] == "anonymous"}  # fmt: skip
+    case = await _case(request, ws, case_id)
     try:
-        answer = await ai(body.task, material.text)
+        result, details = await analyse(request.app, case, body.task, by=ws.principal.name, documents=body.documents)
     except AnalystError as exc:
-        await audit(request, ws.principal, "case.analyst", case_id, details={**details, "error": exc.detail[:200]})
+        await audit(request, ws.principal, "case.analyst", case_id, details=exc.details)
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
-    await audit(request, ws.principal, "case.analyst", case_id, details={**details, "model": answer.get("model")})
-    return {
-        "task": body.task, "via": answer["via"], "model": answer.get("model"), "cut_off": answer.get("cut_off", False),
-        "credits": answer.get("credits"), "material": material.summary(),
-        "result": check(body.task, answer["output"], material, items),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-    }  # fmt: skip
+    await audit(request, ws.principal, "case.analyst", case_id, details=details)
+    return result

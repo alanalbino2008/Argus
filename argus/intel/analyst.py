@@ -52,6 +52,7 @@ class AnalystError(Exception):
     def __init__(self, status: int, detail: str):
         super().__init__(detail)
         self.status, self.detail = status, detail
+        self.details: dict[str, Any] = {}  # for the audit log: what was being sent when it failed
 
 
 def price(task: str, chars: int) -> int:

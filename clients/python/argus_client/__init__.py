@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.36.0"
+__version__ = "1.37.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -348,6 +348,22 @@ class ArgusClient:
         if documents is not None:
             body["documents"] = documents
         return self.post(f"/api/cases/{case_id}/analyst", body)
+
+    def playbooks(self) -> list[dict[str, Any]]:
+        """The playbooks, their steps, and which of their sources need a key here."""
+        return self.get("/api/playbooks")
+
+    def run_playbook(self, case_id: str, playbook: str, seed: str, *, ai_brief: bool = False) -> dict[str, Any]:
+        """Start a playbook in a case (calling this confirms a legitimate purpose; with ``ai_brief``, also that
+        the case's material may be sent to Anthropic). Follow it with ``playbook_run()``."""
+        return self.post(
+            f"/api/cases/{case_id}/playbooks",
+            {"playbook": playbook, "seed": seed, "confirmed": True, "ai_brief": ai_brief, "ai_acknowledged": ai_brief},
+        )
+
+    def playbook_run(self, case_id: str, run_id: str) -> dict[str, Any]:
+        """A playbook run: its status, each step, and what stood out."""
+        return self.get(f"/api/cases/{case_id}/playbooks/{run_id}")
 
     def subscription_accounts(self) -> list[dict[str, Any]]:
         """Account service (platform admins): every subscription account."""

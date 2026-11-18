@@ -658,6 +658,25 @@ class AccountSnapshotRow(Base):
     capture_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # evidence taken at the time
 
 
+class PlaybookRunRow(Base):
+    """One run of a playbook in a case: its steps as they ran, and what stood out."""
+
+    __tablename__ = "playbook_runs"
+    __table_args__ = (Index("ix_playbook_runs_case", "case_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32))
+    case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
+    playbook: Mapped[str] = mapped_column(String(64))
+    seed: Mapped[str] = mapped_column(String(500))
+    seed_type: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))  # running | completed | failed | cancelled | interrupted
+    data: Mapped[dict[str, Any]] = mapped_column(JSON)  # steps, highlights, options
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class CaseItemRow(Base):
     """Something in a case: a note, a person or other entity, a link between two, a scan, an event."""
 
