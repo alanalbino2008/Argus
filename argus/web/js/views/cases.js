@@ -6,6 +6,7 @@ import { initInspector, inspectable, openInspector } from "./inspector.js";
 import { initCaseViews, renderMap, renderTimeline, teardownMap } from "./casemap.js";
 import { initAnalyst, renderAnalyst } from "./analyst.js";
 import { initPlaybooks, renderPlaybooks } from "./playbooks.js";
+import { initChart, renderChart } from "./casechart.js";
 import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
@@ -18,6 +19,7 @@ let routes = []; // egress routes (names only), loaded with the case
 let watches = []; // accounts this case watches
 let caseTab = "overview"; // overview | timeline | map | playbooks | analyst
 let watchable = null; // platforms that can be watched
+let kinds = null; // relationship kinds, loaded once
 let actionsRef = null;
 let pendingEntity = null; // an entity sent from the graph, waiting for a case to be chosen
 const thumbs = new Map(); // capture id -> object URL of its screenshot
@@ -99,11 +101,11 @@ function entities() {
     const attrs = Object.entries(p.data.attributes || {});
     const mine = links.filter((l) => l.data.from === p.id);
     return html`<div class="entity-card">
-      <div style="display:flex;justify-content:space-between;gap:8px"><div><span class="pill">${p.data.type}</span> <b>${p.data.value}</b></div>
+      <div style="display:flex;justify-content:space-between;gap:8px"><div><span class="pill">${p.data.type}</span> <b>${p.data.value}</b>${p.data.protected ? html` <span class="pill warn" title="Not named on the link chart, left out of suggestions and profiling, never sent to the AI analyst">${ico("shield")}Protected</span>` : ""}</div>
         ${canEdit() ? html`<button class="btn sm ghost icon" data-act="del-item" data-id="${p.id}" aria-label="Remove ${p.data.value}">${ico("trash")}</button>` : ""}</div>
       ${attrs.length ? html`<dl class="kv small" style="margin-top:6px">${attrs.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>` : ""}
       ${p.body ? html`<p class="small" style="margin:6px 0 0">${p.body}</p>` : ""}
-      ${mine.map((l) => html`<div class="small" style="margin-top:4px">→ ${l.data.label || "linked to"} <b>${byId[l.data.to].data.value}</b> <span class="muted">(${l.data.confidence})</span></div>`)}
+      ${mine.map((l) => html`<div class="small" style="margin-top:4px">→ ${l.data.label || (kinds?.kinds.find((k) => k.kind === l.data.relation)?.label) || "linked to"} <b>${byId[l.data.to].data.value}</b> <span class="muted">(${l.data.confidence})</span></div>`)}
     </div>`;
   })}`;
 }
@@ -150,7 +152,7 @@ function renderCase() {
           <select class="select" data-act-select="status" aria-label="Case status" style="max-width:130px">${["open", "closed", "archived"].map((s) => html`<option value="${s}" ${c.status === s ? "selected" : ""}>${s}</option>`)}</select>` : ""}
       </div>
     </div>
-    <div class="segmented" role="tablist" aria-label="Case views" style="margin-bottom:16px">${[["overview", "Overview"], ["timeline", "Timeline"], ["map", "Map"], ["playbooks", "Playbooks"], ["analyst", "AI analyst"]].map(([k, label]) => html`<button class="${caseTab === k ? "active" : ""}" role="tab" aria-selected="${caseTab === k}" data-case-tab="${k}">${label}</button>`)}</div>
+    <div class="segmented" role="tablist" aria-label="Case views" style="margin-bottom:16px">${[["overview", "Overview"], ["timeline", "Timeline"], ["chart", "Link chart"], ["map", "Map"], ["playbooks", "Playbooks"], ["analyst", "AI analyst"]].map(([k, label]) => html`<button class="${caseTab === k ? "active" : ""}" role="tab" aria-selected="${caseTab === k}" data-case-tab="${k}">${label}</button>`)}</div>
     ${caseTab !== "overview" ? html`<div id="case-view"><p class="muted">Loading…</p></div>` : html`
     <div class="grid" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start" id="case-layout">
       <div>
@@ -173,7 +175,7 @@ function renderCase() {
   if (caseTab === "overview") { teardownMap(); loadThumbs(); return; }
   const view = $("#case-view");
   if (caseTab !== "map") teardownMap();
-  const render = { timeline: renderTimeline, map: renderMap, playbooks: renderPlaybooks, analyst: renderAnalyst }[caseTab];
+  const render = { timeline: renderTimeline, map: renderMap, chart: renderChart, playbooks: renderPlaybooks, analyst: renderAnalyst }[caseTab];
   render(view, c).catch((err) => setHTML(view, html`<p class="error-text">${err.message}</p>`));
 }
 
@@ -282,11 +284,12 @@ const FORMS = {
     toast("Evidence added with its fingerprint", "success");
   },
   "entity-form": async () => {
-    await item("entity", { body: $("#entity-notes").value.trim(), data: { type: $("#entity-type").value, value: $("#entity-value").value.trim(), attributes: attributes($("#entity-attrs").value) } });
+    await item("entity", { body: $("#entity-notes").value.trim(), data: { type: $("#entity-type").value, value: $("#entity-value").value.trim(), attributes: attributes($("#entity-attrs").value), ...($("#entity-protected").checked ? { protected: true } : {}) } });
     closeModal("entity-modal");
   },
   "link-form": async () => {
-    await item("link", { data: { from: $("#link-from").value, to: $("#link-to").value, label: $("#link-label").value.trim(), confidence: $("#link-confidence").value } });
+    await item("link", { data: { from: $("#link-from").value, to: $("#link-to").value, relation: $("#link-kind").value, label: $("#link-label").value.trim(),
+      confidence: $("#link-confidence").value, ...($("#link-since").value.trim() ? { since: $("#link-since").value.trim() } : {}), ...($("#link-until").value.trim() ? { until: $("#link-until").value.trim() } : {}) } });
     closeModal("link-modal");
   },
   "event-form": async () => {
@@ -333,6 +336,9 @@ async function openDialog(act) {
     setHTML($("#link-from"), options);
     setHTML($("#link-to"), options);
     $("#link-to").selectedIndex = 1;
+    kinds ??= await api.get("/api/relationship-kinds");
+    const GROUP_NAMES = { family: "Family", work: "Work", business: "Business & money", social: "Social", shared: "Shared details", other: "Other" };
+    setHTML($("#link-kind"), html`${kinds.groups.map((g) => html`<optgroup label="${GROUP_NAMES[g] || g}">${kinds.kinds.filter((k) => k.group === g).map((k) => html`<option value="${k.kind}" ${k.kind === "associate" ? "selected" : ""}>${k.label}</option>`)}</optgroup>`)}`);
   }
   if (["capture", "safety", "new-case"].includes(act)) routes = await loadRoutes();
   if (act === "watch") {
@@ -412,6 +418,7 @@ export function initCases(el, actions) {
   initCaseViews(root);
   initAnalyst(root, () => refresh());
   initPlaybooks(root, () => refresh());
+  initChart(root);
   on(root, "click", "[data-case-tab]", (_e, btn) => { caseTab = btn.dataset.caseTab; refresh(); });
   $("#capture-egress").addEventListener("change", syncCapture);
   $("#watch-platform").addEventListener("change", syncWatch);

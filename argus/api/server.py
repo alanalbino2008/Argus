@@ -63,6 +63,7 @@ from argus.api.exposure_routes import router as exposure_router
 from argus.api.inspect_routes import router as inspect_router
 from argus.api.map_routes import router as map_router
 from argus.api.monitor_routes import router as monitor_router
+from argus.api.network_routes import router as network_router
 from argus.api.notification_routes import router as notification_router
 from argus.api.onboarding_routes import router as onboarding_router
 from argus.api.onboarding_routes import scope_warnings
@@ -513,6 +514,7 @@ app.include_router(personal_router)
 app.include_router(analyst_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
+app.include_router(network_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))

@@ -9,6 +9,7 @@ evidence files are only ever *downloaded* (``Content-Disposition: attachment``) 
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -19,6 +20,7 @@ from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.api.opsec_routes import find_route, route_for
 from argus.evidence.bundle import build_bundle
 from argus.evidence.capture import CaptureError, capture_upload, capture_url
+from argus.intel.relationships import KINDS
 from argus.security.auth import Role
 from argus.security.ratelimit import SlidingWindowLimiter
 
@@ -105,7 +107,9 @@ async def _validate_item(request: Request, ws: WorkspaceContext, case_id: str, k
         if not value:
             raise HTTPException(status_code=422, detail="Give the entity a value (a name, handle, address...)")
         attributes = {str(k)[:64]: str(v)[:1000] for k, v in (data.get("attributes") or {}).items()}
-        clean = {"type": etype, "value": value[:500], "attributes": dict(list(attributes.items())[:50])}
+        clean: dict[str, Any] = {"type": etype, "value": value[:500], "attributes": dict(list(attributes.items())[:50])}
+        if data.get("protected") is True:  # e.g. a child: never shown by name, never profiled
+            clean["protected"] = True
         for key in ("source_investigation_id", "source_entity_id"):
             if data.get(key):
                 clean[key] = str(data[key])[:64]
@@ -118,8 +122,24 @@ async def _validate_item(request: Request, ws: WorkspaceContext, case_id: str, k
             item = await _repo(request).get_item(end, case_id)
             if item is None or item["kind"] != "entity":
                 raise HTTPException(status_code=422, detail="Links join two entities of this case")
-        return {"from": ends[0], "to": ends[1], "label": str(data.get("label") or "")[:200],
-                "confidence": data.get("confidence") if data.get("confidence") in ("confirmed", "likely", "possible") else "likely"}  # fmt: skip
+        relation = str(data.get("relation") or "other")
+        if relation not in KINDS:
+            raise HTTPException(status_code=422, detail=f"Relationship kind must be one of: {', '.join(KINDS)}")
+        clean_link: dict[str, Any] = {
+            "from": ends[0], "to": ends[1], "label": str(data.get("label") or "")[:200], "relation": relation,
+            "confidence": data.get("confidence") if data.get("confidence") in ("confirmed", "likely", "possible") else "likely",
+        }  # fmt: skip
+        for key in ("since", "until"):  # when the relationship began and ended: 2019, 2019-03 or 2019-03-14
+            if data.get(key):
+                if not re.fullmatch(r"\d{4}(-\d{2}(-\d{2})?)?", str(data[key])):
+                    raise HTTPException(status_code=422, detail=f"'{key}' must be a year, year-month or date")
+                clean_link[key] = str(data[key])
+        evidence = [str(x)[:64] for x in data.get("evidence") or [] if str(x).strip()][:20]
+        if evidence:
+            clean_link["evidence"] = evidence  # the notes or evidence that show it
+        if data.get("why"):
+            clean_link["why"] = str(data["why"])[:300]  # how a suggested relationship was found
+        return clean_link
     if kind == "scan":
         inv_id = str(data.get("investigation_id") or "")
         inv = await request.app.state.repo.get_investigation(inv_id) if inv_id else None

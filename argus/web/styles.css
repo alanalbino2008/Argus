@@ -939,3 +939,7 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .map-credit { position: absolute; right: 0; bottom: 0; padding: 2px 6px; font-size: 11px; background: color-mix(in srgb, var(--surface) 85%, transparent); color: var(--text-2); }
 .map-pop { position: absolute; left: 0; top: 0; width: 220px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface);
   border: 1px solid var(--border); box-shadow: var(--shadow); z-index: 3; pointer-events: none; }
+
+/* Link chart: the network beside its details; stacked on narrow screens */
+.chart-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
+@media (max-width: 860px) { .chart-layout { grid-template-columns: 1fr; } #chart-canvas { height: 420px !important; } }

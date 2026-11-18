@@ -460,6 +460,16 @@ the addresses published on a website) and it follows the money.
   accounts are the same person, which are doubtful, and why
   ([`docs/explained/42-username-search.md`](docs/explained/42-username-search.md)).
 
+**Relationship mapping and the link chart**: who is connected to whom, how, and how surely.
+
+- Relationships have kinds (family, work, business and money, social, shared details), dates and
+  evidence.
+- Argus suggests relationships it finds in the case: company boards, shared phones and addresses,
+  common employers, people named together.
+- The link chart shows the network, its key people and go-betweens, its groups, and the chain
+  between any two people. Children can be protected from all of it
+  ([`docs/explained/43-relationship-mapping.md`](docs/explained/43-relationship-mapping.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

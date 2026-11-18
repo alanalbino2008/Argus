@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.42.0"
+__version__ = "1.43.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -364,6 +364,18 @@ class ArgusClient:
     def playbook_run(self, case_id: str, run_id: str) -> dict[str, Any]:
         """A playbook run: its status, each step, and what stood out."""
         return self.get(f"/api/cases/{case_id}/playbooks/{run_id}")
+
+    def case_network(self, case_id: str) -> dict[str, Any]:
+        """A case's people and organisations, their relationships, and the network analysis."""
+        return self.get(f"/api/cases/{case_id}/network")
+
+    def connection(self, case_id: str, source: str, target: str) -> dict[str, Any]:
+        """The best-supported chain of relationships between two entities of a case."""
+        return self.get(f"/api/cases/{case_id}/network/path", source=source, target=target)
+
+    def suggested_relationships(self, case_id: str) -> dict[str, Any]:
+        """Relationships the case's material shows that are not linked yet (nothing is added)."""
+        return self.get(f"/api/cases/{case_id}/network/suggestions")
 
     def vault_status(self) -> dict[str, Any]:
         """Whether the case vault is set up, and whether it is locked."""

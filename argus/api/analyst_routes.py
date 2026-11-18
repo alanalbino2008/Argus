@@ -21,6 +21,7 @@ from argus.accounts.connect_client import ai, ai_access
 from argus.api.case_routes import _case
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.intel.analyst import BASE_CREDITS, AnalystError, Material, build_material, check, document_text, price
+from argus.intel.relationships import redact_protected
 from argus.security.auth import Role
 from argus.security.ratelimit import SlidingWindowLimiter
 
@@ -59,11 +60,17 @@ async def analyst_status(request: Request, ws: WorkspaceContext = VIEWER):
 
 async def case_material(app: Any, case: dict[str, Any],
                         selected: list[str] | None) -> tuple[list[dict[str, Any]], Material]:  # fmt: skip
-    """The case's items, and its labelled material for the analyst."""
+    """The case's items, and its labelled material for the analyst (protected people left out)."""
+    documents = await case_documents(app, case["id"], selected)
+    items, documents = redact_protected(await app.state.cases.items(case["id"]), documents)
+    return items, build_material(case, items, documents, max_chars=app.state.settings.analyst_max_chars)
+
+
+async def case_documents(app: Any, case_id: str, selected: list[str] | None = None) -> list[dict[str, Any]]:
+    """The case's evidence with its readable text (``text`` None for photos and other files)."""
     repo = app.state.cases
-    items = await repo.items(case["id"])
     documents = []
-    for capture in await repo.captures(case["id"]):
+    for capture in await repo.captures(case_id):
         if selected is not None and capture["id"] not in selected:
             continue
         files = await repo.files(capture["id"])  # read for the analyst; sending is logged by analyse()
@@ -78,7 +85,7 @@ async def case_material(app: Any, case: dict[str, Any],
                     break
         documents.append({"id": capture["id"], "title": capture["title"], "url": capture.get("url"),
                           "captured_at": capture["captured_at"], "text": text})  # fmt: skip
-    return items, build_material(case, items, documents, max_chars=app.state.settings.analyst_max_chars)
+    return documents
 
 
 async def analyse(app: Any, case: dict[str, Any], task: str, *, by: str,

@@ -374,6 +374,7 @@
         <div class="field"><label class="label" for="entity-value">Name or value</label><input id="entity-value" class="input" maxlength="500" placeholder="Jane Roe, @handle, +44…, an address"></div>
         <div class="field"><label class="label" for="entity-attrs">Details <span class="muted small">one per line, as label: value</span></label><textarea id="entity-attrs" class="input mono" rows="4" placeholder="Home address: 12 Example Street&#10;Employer: Example Ltd&#10;Brother: John Roe"></textarea></div>
         <div class="field"><label class="label" for="entity-notes">Notes <span class="muted small">optional</span></label><textarea id="entity-notes" class="input" rows="2"></textarea></div>
+        <label class="small"><input type="checkbox" id="entity-protected"> Protect this person (for example, a child): not named on the link chart, left out of suggestions and profiling, never sent to the AI analyst</label>
         <div class="error-text" role="alert"></div>
       </div>
       <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Add</button></div>
@@ -385,8 +386,11 @@
         <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
       <div class="modal-body">
         <div class="field"><label class="label" for="link-from">From</label><select id="link-from" class="select"></select></div>
-        <div class="field"><label class="label" for="link-label">Relationship</label><input id="link-label" class="input" maxlength="200" placeholder="runs, owns, married to, uses"></div>
+        <div class="field"><label class="label" for="link-kind">Relationship</label><select id="link-kind" class="select"></select></div>
         <div class="field"><label class="label" for="link-to">To</label><select id="link-to" class="select"></select></div>
+        <div class="field"><label class="label" for="link-label">In your words <span class="muted small">optional</span></label><input id="link-label" class="input" maxlength="200" placeholder="married in 2015; runs the shop for him"></div>
+        <div class="field" style="display:flex;gap:8px"><div style="flex:1"><label class="label" for="link-since">Since <span class="muted small">optional</span></label><input id="link-since" class="input" maxlength="10" placeholder="2019 or 2019-03"></div>
+          <div style="flex:1"><label class="label" for="link-until">Until <span class="muted small">optional</span></label><input id="link-until" class="input" maxlength="10" placeholder="2022-11-30"></div></div>
         <div class="field"><label class="label" for="link-confidence">How sure</label><select id="link-confidence" class="select"><option value="confirmed">Confirmed</option><option value="likely" selected>Likely</option><option value="possible">Possible</option></select></div>
         <div class="error-text" role="alert"></div>
       </div>

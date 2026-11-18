@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.43.0] — Phase 43: Relationship mapping and the link chart
+
+### Added
+- **Kinds of relationship** for links between people and organisations, in six groups:
+  - **family**: spouse or partner, parent, sibling, relative;
+  - **work**: works for, colleague, director or officer, co-director;
+  - **business and money**: owns or controls, business partner, client, pays or funds;
+  - **social**: friend, associate, communicates with, follows online;
+  - **shared details**: shares a phone, email, address, wallet or website; uses;
+  - **other**.
+  - Each kind knows whether it reads the same both ways.
+  - Links can also record when the relationship began and ended, the evidence that shows it,
+    and how it was found.
+- **Suggested relationships**, found in the case's own material and never added automatically:
+  - **company registers** from linked scans: officers and owners of the case's companies, and
+    co-directors (marked when their appointments didn't overlap);
+  - **shared details**: people linked to the same phone, email, address, wallet or website, or
+    with the same detail recorded about them (labels such as "Mobile" or "Home address" are
+    understood);
+  - **same employer** recorded;
+  - **named together** in the same note or evidence document.
+  - Each suggestion says why and how sure it is.
+- **Network analysis** (`GET /api/cases/{id}/network`):
+  - the most connected people;
+  - go-betweens who link otherwise separate groups;
+  - the groups themselves;
+  - people not connected to anyone yet.
+- **How two people are connected** (`GET /api/cases/{id}/network/path`): the best-supported chain
+  of relationships, as strong as its weakest link, plus the connections they share.
+- **Link chart** tab in every case:
+  - an interactive map coloured by kind of relationship, with line style showing how sure each
+    link is;
+  - filters, and colouring by type or by group;
+  - details and relationships for each person;
+  - tracing the chain between two people;
+  - suggestions to add with one click.
+- **Protected people** (for example, children):
+  - shown on the link chart only as "Protected person";
+  - left out of suggestions and of the analysis lists;
+  - for the AI analyst, their entry is removed and their name blanked out of every note and
+    document it reads.
+- Python client: `case_network()`, `connection()`, `suggested_relationships()`.
+
 ## [1.42.0] — Phase 42: Bigger username search, and same-person checks
 
 ### Added
