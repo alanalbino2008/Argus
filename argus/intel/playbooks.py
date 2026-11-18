@@ -105,7 +105,8 @@ CATALOGUE: dict[str, Playbook] = {p.id: p for p in (
         "accounts behind its username.",
         (EntityType.EMAIL,),
         (Step("scan", "Domain, breaches, keys and accounts",
-              ("email_recon", "hibp", "pgp_keyserver", "username_hunter", "github_hunter", "profile_enricher"), depth=2),
+              ("email_recon", "hibp", "pgp_keyserver", "username_hunter", "github_hunter", "profile_enricher",
+               "web_mentions"), depth=2),
          Step("capture", "Preserve the profiles found", capture=("profiles",), limit=10),
          FINDINGS, BRIEF),
         when="An email address, e.g. from a scam message or a company filing.",
@@ -137,7 +138,9 @@ CATALOGUE: dict[str, Playbook] = {p.id: p for p in (
         "phone_lookup", "Phone number",
         "The country, carrier and line type of a phone number, and where it has been published.",
         (EntityType.PHONE,),
-        (Step("scan", "Number details", ("phone_recon",)), FINDINGS, BRIEF),
+        (Step("scan", "Number details and where it is published", ("phone_recon", "web_mentions")),
+         Step("capture", "Preserve the pages that mention it", capture=("mentions",), limit=5),
+         FINDINGS, BRIEF),
         when="A phone number, with its country code.",
     ),
 )}  # fmt: skip
@@ -167,6 +170,8 @@ CASE_TYPES = {
     EntityType.DOMAIN: "domain", EntityType.IP_ADDRESS: "ip", EntityType.LOCATION: "location",
     EntityType.CRYPTO_WALLET: "wallet",
 }  # fmt: skip
+MENTION_PLACES = {"nuisance report": "a nuisance-call report site", "paste site": "a paste site",
+                  "social media": "social media", "classifieds": "a classifieds site", "web page": "the web"}  # fmt: skip
 LEVEL_ORDER = {"high": 0, "medium": 1, "info": 2}
 
 
@@ -244,6 +249,24 @@ def highlights(graph: IntelligenceGraph, *, limit: int = 60) -> list[Highlight]:
                       "Sites sharing this ID are usually run by the same people")
             for t in md.get("tracking_ids") or []
         )  # fmt: skip
+        if md.get("category") == "mention":
+            kind = md.get("mention_kind", "web page")
+            out.append(Highlight(
+                "medium" if kind in ("nuisance report", "paste site") else "info",
+                f"Mentioned on {MENTION_PLACES.get(kind, 'the web')}: {e.label or e.value}"[:200],
+                str(md.get("snippet") or "")[:300], None, e.value,
+            ))  # fmt: skip
+        phone = md.get("phone") or {}
+        if e.type == EntityType.PHONE and phone.get("line_type"):
+            out.append(Highlight(
+                "medium" if phone.get("concealing_line") else "info",
+                f"{e.value}: {phone['line_type']}" + (f", {phone['carrier']}" if phone.get("carrier") else "")
+                + (f", {phone.get('area') or phone.get('country')}" if phone.get("area") or phone.get("country") else ""),
+                "VoIP and personal numbers are often used to hide who is behind them" if phone.get("concealing_line") else "",
+            ))  # fmt: skip
+        if e.type == EntityType.PHONE and md.get("phone_valid") is False:
+            out.append(Highlight("medium", f"{e.value} is not a real number range",
+                                 "Possibly mistyped, invented, or a range reserved for TV and film"))  # fmt: skip
         if e.type == EntityType.SOCIAL_PROFILE:
             out.append(Highlight("info", f"Account found: {e.label or e.value}",
                                  f"confidence {e.confidence:.0%}" + (f", {md['name']}" if md.get("name") else ""),
@@ -292,6 +315,10 @@ def capture_urls(graph: IntelligenceGraph, what: tuple[str, ...], seed: str, lim
     if "profiles" in what:
         profiles = [e for e in entities if e.type == EntityType.SOCIAL_PROFILE and e.confidence >= 0.6]
         urls += [e.value for e in sorted(profiles, key=lambda e: -e.confidence) if e.value.startswith("https://")]
+    if "mentions" in what:  # pages the web search confirmed, the most telling first
+        order = {"nuisance report": 0, "paste site": 1, "social media": 2, "classifieds": 3, "web page": 4}
+        mentions = [e for e in entities if e.metadata.get("category") == "mention"]
+        urls += [e.value for e in sorted(mentions, key=lambda e: order.get(e.metadata.get("mention_kind", ""), 5))]
     if "website" in what:
         urls.append(f"https://{seed.strip().lower().removeprefix('https://').removeprefix('http://').strip('/')}/")
     if "contacts" in what:  # pages the crawler read whose paths suggest who runs the site

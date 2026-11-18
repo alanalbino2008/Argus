@@ -427,6 +427,15 @@ the addresses published on a website) and it follows the money.
   links to
   ([`docs/explained/38-website-crawling.md`](docs/explained/38-website-crawling.md)).
 
+**Phone footprint**: what a phone number says about itself, and where it has been published.
+
+- Every country, offline: whether the number is real, the country and area, and the line type
+  (mobile, landline, VoIP, premium-rate…). VoIP lines, often used to hide who is behind a number,
+  are flagged.
+- Web mentions of a number or email address, each checked to really contain it. Reports on
+  nuisance-call sites and paste sites come first. Use your own search key, or Argus credits
+  ([`docs/explained/39-phone-footprint.md`](docs/explained/39-phone-footprint.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

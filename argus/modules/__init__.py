@@ -19,6 +19,7 @@ from argus.modules.identity.pgp_keyserver import PgpKeyserverModule
 from argus.modules.identity.phone_recon import PhoneReconModule
 from argus.modules.identity.profile_enricher import ProfileEnricherModule
 from argus.modules.identity.username_hunter import UsernameHunterModule
+from argus.modules.identity.web_mentions import WebMentionsModule
 from argus.modules.infrastructure.dns_recon import DnsReconModule
 from argus.modules.infrastructure.http_fingerprint import HttpFingerprintModule
 from argus.modules.infrastructure.ip_intelligence import IpIntelligenceModule
@@ -70,6 +71,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     HibpModule,
     ShodanHostModule,
     CodeLeaksModule,
+    WebMentionsModule,
 ]
 
 

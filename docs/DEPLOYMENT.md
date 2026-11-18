@@ -241,6 +241,13 @@ Free sources, no keys:
 * `ARGUS_COMPANIES_HOUSE_OFFICER_LIMIT` (default 8): directors whose other companies are looked up
   per company.
 
+**Web mentions** (where a phone number or email address appears on the web) use the Brave Search
+API (from api-dashboard.search.brave.com):
+* on the **account service**, `ARGUS_WEB_SEARCH_API_KEY` is the key Argus Connect uses for every
+  subscriber's searches, at 1 credit each (refunded when nothing is found);
+* on any **other** Argus (or Argus Personal), setting it makes searches go directly, privately and
+  without credits.
+
 **The website crawler** (`site_crawler`) reads a target website's pages, obeying robots.txt:
 * `ARGUS_CRAWL_MAX_PAGES` (default 40, up to 500): the most pages read on one site;
 * `ARGUS_CRAWL_DELAY_SECONDS` (default 0.5): the pause between pages, so the site is never strained.

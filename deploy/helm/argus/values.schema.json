@@ -155,6 +155,9 @@
         },
         "anthropicApiKey": {
           "type": "string"
+        },
+        "webSearchApiKey": {
+          "type": "string"
         }
       }
     },

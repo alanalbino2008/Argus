@@ -391,7 +391,7 @@ def test_extra_platforms_file_extends_and_overrides(tmp_path):
 async def test_phone_recon_country_attribution():
     phone = Entity.create(EntityType.PHONE, "+44 20 7946 0958")
     await collect(PhoneReconModule(), phone)
-    assert phone.metadata["country_code"] == "GB"
+    assert phone.metadata["phone"]["country_code"] == "GB" and phone.metadata["phone"]["area"] == "London"
 
 
 async def test_verify_platforms_classifies_signature_health():

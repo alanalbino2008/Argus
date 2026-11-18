@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import quote
 
 COMPANIES_HOUSE = "https://api.company-information.service.gov.uk"
+WEB_SEARCH = "https://api.search.brave.com/res/v1"
 _COMPANY_NUMBER = re.compile(r"^[A-Z0-9]{8}$")
 _OFFICER_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
@@ -59,8 +60,19 @@ CATALOGUE: dict[str, dict[str, Operation]] = {
         ),
     },
 }
-BASES = {"companies_house": COMPANIES_HOUSE}
-LABELS = {"companies_house": "UK Companies House"}
+CATALOGUE["web_search"] = {
+    # The web's mentions of an exact phone number or email address (Brave Search API).
+    "web": Operation("/web/search", {"q": None}, {"count": "20", "safesearch": "off", "text_decorations": "false"}, 1),
+}
+BASES = {"companies_house": COMPANIES_HOUSE, "web_search": WEB_SEARCH}
+LABELS = {"companies_house": "UK Companies House", "web_search": "Web search"}
+
+
+def _auth(provider: str, key: str) -> dict[str, str]:
+    if provider == "web_search":
+        return {"X-Subscription-Token": key}
+    token = base64.b64encode(f"{key}:".encode()).decode()  # HTTP Basic: the key is the user name
+    return {"Authorization": f"Basic {token}"}
 
 
 def operation(provider: str, name: str) -> Operation:
@@ -90,12 +102,11 @@ def build(provider: str, name: str, params: dict[str, Any]) -> tuple[str, dict[s
 async def call_source(http: Any, provider: str, name: str, params: dict[str, Any], key: str) -> dict[str, Any]:
     """Run a lookup against the source itself with ``key`` (the operator's, or the customer's own)."""
     url, query = build(provider, name, params)
-    token = base64.b64encode(f"{key}:".encode()).decode()  # HTTP Basic: the key is the user name
-    headers = {"Accept": "application/json", "Authorization": f"Basic {token}"}
+    headers = {"Accept": "application/json", **_auth(provider, key)}
     async with http.get(url, params=query, headers=headers) as resp:
         if resp.status == 404:
             return {"not_found": True}
-        if resp.status == 401:
+        if resp.status in (401, 403):
             raise ConnectError(502, f"{LABELS[provider]} refused the key")
         if resp.status == 429:
             raise ConnectError(503, f"{LABELS[provider]} is rate-limiting requests; try again shortly")

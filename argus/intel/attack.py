@@ -125,6 +125,11 @@ TECHNIQUES: dict[str, Technique] = {
         _T("T1593", "Search Open Websites/Domains", "Monitor what is publicly discoverable about the organisation."),
         _T("T1593.001", "Social Media", "Provide social media guidance to staff; audit corporate accounts."),
         _T(
+            "T1593.002",
+            "Search Engines",
+            "Search for your own phone numbers and addresses; ask sites to remove ones published without consent.",
+        ),
+        _T(
             "T1593.003",
             "Code Repositories",
             "Scan public repositories for secrets; set commit emails to private (GitHub noreply).",

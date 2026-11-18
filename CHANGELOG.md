@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.39.0] — Phase 39: Phone footprint
+
+### Added
+- **Phone numbers, properly**: `phone_recon` now uses Google's libphonenumber, covering every
+  country, offline:
+  - whether the number is **valid** (a real, allocated range), including ranges reserved for TV
+    and film;
+  - the country, and for landlines the **area**;
+  - the **line type**: mobile, landline, **VoIP**, toll-free, premium-rate, personal number…
+    VoIP and personal numbers are flagged as often used to hide who is behind a number;
+  - the original carrier, the time zones, and every way the number is written.
+  - It contacts nobody, so it runs in passive scans and anonymous cases, and as enrichment on
+    every number found.
+- **Web mentions** (`web_mentions`): where a phone number or email address appears on the web:
+  - searches for the number in all its written forms, or the exact email address;
+  - **keeps only results that really contain it** (near misses dropped);
+  - sorts pages into nuisance-call report sites, paste sites, social media, classifieds and other
+    pages. They are recorded as third-party pages, never scanned;
+  - invented or mistyped numbers are never searched, so they cost nothing.
+- **Web search in Argus Connect** (the Brave Search API): 1 credit per search, refunded when
+  nothing is found, or free with your own key (`ARGUS_WEB_SEARCH_API_KEY`).
+- **Phone number playbook**: number facts and web mentions, preserving the pages that mention it
+  (reports first), with findings for:
+  - VoIP and personal lines, and numbers that aren't real;
+  - mentions on nuisance-call report sites and paste sites.
+  The email footprint playbook searches for mentions too.
+- **Graph**: a "Phone number" panel (validity, line type, carrier, area, time zone) and an "On the
+  web" panel listing confirmed mentions.
+- Helm: `secrets.webSearchApiKey`.
+
+### Changed
+- The phone module no longer adds a "Telecom Region" organisation to the graph. It was not a real
+  organisation, and was screened against sanctions lists as if it were.
+
+### Not added, deliberately
+- **Checking which messaging apps a number is registered with.** This only works by misusing the
+  apps' contact matching. It breaks their terms, is unlawful in many places, and can alert the
+  person.
+
 ## [1.38.0] — Phase 38: Website crawling
 
 ### Added

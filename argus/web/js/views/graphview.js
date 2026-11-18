@@ -31,6 +31,7 @@ const HIDDEN_META = new Set([
   "offshore_leaks_credit", "source_registry", "role", "appointed", "resigned", "nationality", "occupation", "born",
   "country_of_residence", "ch_officer_id", "ch_company", "officer_matches", "appointments_total", "via_possible_match",
   "crawl", "tracking_ids", "links_to_sites", "found_on", "on_site_domain", "hosted_elsewhere",
+  "phone", "phone_valid", "web_mentions", "mention_kind", "snippet", "page_age",
 ]);
 
 const CATEGORY_LABEL = {
@@ -260,6 +261,34 @@ function screeningBlock(md) {
   return out;
 }
 
+/** What a phone number itself says, and where the web mentions it (phones and emails). */
+function phoneBlock(entity) {
+  const md = entity.metadata || {};
+  const p = md.phone;
+  const out = [];
+  if (entity.type === "phone" && (p || md.phone_valid === false)) {
+    out.push(html`<div class="section"><div class="section-title">Phone number</div>
+      ${md.phone_valid === false ? html`<div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>Not a real, allocated number range: possibly mistyped, invented, or reserved for TV and film.</span></div>` : ""}
+      ${p?.concealing_line ? html`<div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>A ${p.line_type} line: often used to hide who is behind a number or where they are.</span></div>` : ""}
+      ${p ? kvRows([["Line type", p.line_type], ["Country", p.country], ["Area", p.area], ["Original carrier", p.carrier ? `${p.carrier} (numbers can move to another network)` : null],
+        ["Time zone", p.time_zones], ["Written as", p.written_as]]) : ""}</div>`);
+  }
+  const m = md.web_mentions;
+  if (m) {
+    const pages = [...state.entities.values()].filter((e) => e.metadata?.category === "mention" && [...state.relations.values()].some((r) => r.source_id === entity.id && r.target_id === e.id));
+    out.push(html`<div class="section"><div class="section-title">On the web</div>
+      <p class="muted small">${m.confirmed} page${m.confirmed === 1 ? "" : "s"} confirmed to mention it (of ${m.results} search results; near misses dropped).</p>
+      ${pages.map((e) => html`<div class="list-row clickable" data-select="${e.id}"><span class="pill ${["nuisance report", "paste site"].includes(e.metadata.mention_kind) ? "warn" : ""}">${e.metadata.mention_kind}</span>
+        <div class="list-main"><div class="list-title">${e.label}</div><div class="list-sub">${e.metadata.snippet || ""}</div></div></div>`)}</div>`);
+  }
+  if (entity.metadata?.category === "mention") {
+    out.push(html`<div class="section"><div class="section-title">Mention</div>
+      <p class="small">${entity.metadata.snippet || ""}</p>
+      <p class="small">${/^https?:\/\//.test(entity.value) ? ext(entity.value, "Open the page") : ""} <span class="muted">(leaves Argus: the site sees your connection)</span></p></div>`);
+  }
+  return out;
+}
+
 /** What reading the whole website found: its pages, analytics IDs, and the sites it links to. */
 function crawlBlock(md) {
   const crawl = md.crawl;
@@ -329,6 +358,7 @@ function intelBlocks(entity) {
   if (entity.type === "organization" || entity.type === "person") blocks.push(...screeningBlock(md));
   if (entity.type === "crypto_wallet") blocks.push(walletBlock(entity));
   if (entity.type === "domain" || entity.type === "subdomain") blocks.push(...crawlBlock(md));
+  blocks.push(...phoneBlock(entity));
   if (md.found_on) blocks.push(html`<div class="section"><div class="section-title">Where it was found</div><p class="small">${/^https?:\/\//.test(md.found_on) ? ext(md.found_on, md.found_on) : md.found_on}</p></div>`);
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;

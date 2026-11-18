@@ -119,6 +119,11 @@ class Settings(BaseSettings):
         description="UK Companies House API key: your own (lookups stay private, no credits), or the account "
         "service's key that it uses for Argus Connect",
     )
+    web_search_api_key: SecretStr | None = Field(
+        default=None,
+        description="Brave Search API key for web mentions of phone numbers and emails: your own (searches stay "
+        "private, no credits), or the account service's key that it uses for Argus Connect",
+    )
     companies_house_officer_limit: int = Field(
         default=8, ge=0, le=35, description="Directors whose other companies are looked up per company (1 credit each)"
     )

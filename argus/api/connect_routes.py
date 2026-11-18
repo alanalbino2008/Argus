@@ -30,7 +30,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api", tags=["accounts"])
 _per_account = SlidingWindowLimiter(limit=120, window=60)
-KEYS = {"companies_house": "companies_house_api_key"}
+KEYS = {"companies_house": "companies_house_api_key", "web_search": "web_search_api_key"}
 
 
 class ConnectRequest(BaseModel):

@@ -410,6 +410,7 @@ def broker(make_client, monkeypatch):
     ch = FakeCompaniesHouse()
     monkeypatch.setitem(connectors.BASES, "companies_house", ch.url)
     monkeypatch.setattr(account_routes, "_per_ip", SlidingWindowLimiter(limit=50, window=60))
+    monkeypatch.setattr(account_routes, "_signups", SlidingWindowLimiter(limit=50, window=3600))
     monkeypatch.setattr(connect_routes, "_per_account", SlidingWindowLimiter(limit=500, window=60))
     private, _public = generate_keypair()
     c = make_client(account_service_enabled="true", licence_signing_key=private, account_signup_enabled="true",

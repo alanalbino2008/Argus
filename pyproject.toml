@@ -42,6 +42,7 @@ dependencies = [
     "pillow>=10.3.0",
     "pypdf>=5.1.0",
     "anthropic>=2.8.0",  # the AI analyst (Claude)
+    "phonenumbers>=8.13",  # phone number facts (libphonenumber)
     "tzdata>=2024.1",  # IANA time zones for report schedules, independent of the OS image
 ]
 

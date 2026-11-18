@@ -105,6 +105,9 @@ secrets:
   # Claude API key for the AI analyst: on the account service it pays for Argus Connect analyst
   # requests (credits); on any other deployment case material goes straight to Anthropic.
   anthropicApiKey: ""
+  # Brave Search API key for web mentions of phone numbers and emails: on the account service it
+  # pays for Argus Connect searches (credits); on any other deployment searches go direct.
+  webSearchApiKey: ""
 
 # ---------------------------------------------------------------------------- application
 config:
