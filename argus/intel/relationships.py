@@ -141,6 +141,32 @@ def link_edges(items: list[dict[str, Any]], nodes: dict[str, dict[str, Any]]) ->
     return edges
 
 
+def edges_at(edges: list[dict[str, Any]], when: str, *, undated: bool = True) -> list[dict[str, Any]]:
+    """The relationships that held at some point during ``when`` (a year, a month or a day): begun by
+    its end, not ended before its start. "2019" runs from 2019-01-01 to 2019-12-31."""
+
+    def start(value: str) -> str:
+        return (value + "-01-01")[:10] if len(value) == 4 else (value + "-01")[:10] if len(value) == 7 else value[:10]
+
+    def end(value: str) -> str:
+        return (value + "-12-31")[:10] if len(value) == 4 else (value + "-31")[:10] if len(value) == 7 else value[:10]
+
+    first, last = start(when), end(when)  # "2016" is the whole of 2016
+    kept = []
+    for e in edges:
+        since, until = e.get("since"), e.get("until")
+        if not since and not until:
+            if undated:
+                kept.append(e)
+            continue
+        if since and start(since) > last:
+            continue
+        if until and end(until) < first:
+            continue
+        kept.append(e)
+    return kept
+
+
 def _graph(nodes: dict[str, dict[str, Any]], edges: list[dict[str, Any]]) -> nx.Graph:
     g = nx.Graph()
     g.add_nodes_from(nodes)

@@ -1,9 +1,9 @@
 // A person's (or organisation's) profile in a case: everything the case knows about them, in one
 // place. Opened from the case's list of people or from the link chart.
 
-import { api, enc } from "../api.js";
+import { api, enc, request } from "../api.js";
 import { ico } from "../components.js";
-import { $, formatDate, html, openModal, setHTML } from "../dom.js";
+import { $, formatDate, html, openModal, setHTML, toast } from "../dom.js";
 
 const CONF = { confirmed: "ok", likely: "accent", possible: "warn", recorded: "" };
 const safeUrl = (u) => /^https?:\/\//.test(u || "");
@@ -55,7 +55,22 @@ export async function openProfile(caseObj, itemId) {
     const p = await api.get(`/api/cases/${enc(caseObj.id)}/entities/${enc(itemId)}/profile`);
     setHTML($("#profile-title"), html`${ico(p.type === "organisation" ? "organization" : "person")} ${p.name}`);
     $("#profile-sub").textContent = p.protected ? "" : `${p.type}${p.added_by ? ` · added by ${p.added_by}` : ""}${p.from_scan ? " · from a scan" : ""}`;
-    setHTML($("#profile-body"), render(p));
+    setHTML($("#profile-body"), html`${p.protected ? "" : html`<div style="text-align:right;margin-bottom:8px"><button class="btn sm" id="profile-pdf">${ico("download")}Download PDF</button></div>`}${render(p)}`);
+    $("#profile-pdf")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        const res = await request(`/api/cases/${enc(caseObj.id)}/entities/${enc(itemId)}/profile.pdf`, { method: "POST", body: {}, raw: true });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(await res.blob());
+        a.download = `argus-profile-${p.name.replace(/[^A-Za-z0-9]+/g, "-").slice(0, 40)}.pdf`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      } catch (err) {
+        toast(err.message, "error");
+      } finally {
+        e.target.disabled = false;
+      }
+    });
   } catch (err) {
     setHTML($("#profile-body"), html`<p class="error-text">${err.message}</p>`);
   }

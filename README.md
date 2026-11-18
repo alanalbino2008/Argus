@@ -479,6 +479,14 @@ the addresses published on a website) and it follows the money.
   them
   ([`docs/explained/44-person-profiles.md`](docs/explained/44-person-profiles.md)).
 
+**Relationships over time, and exports**
+
+- A time slider shows how a network changed: who joined, who left, and when the money started
+  flowing.
+- The link chart can be downloaded as a picture or a confidential PDF report.
+- Profiles can be downloaded as PDFs for editors, lawyers and courts
+  ([`docs/explained/45-time-and-exports.md`](docs/explained/45-time-and-exports.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

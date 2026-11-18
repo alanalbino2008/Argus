@@ -14,14 +14,18 @@ suggestions.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from pydantic import BaseModel, Field
 
 from argus.api.analyst_routes import case_documents
 from argus.api.case_routes import _case
-from argus.api.deps import WorkspaceContext, in_workspace
-from argus.intel.relationships import GROUPS, KINDS, analyse, discover, entity_nodes, link_edges, path
+from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.intel.relationships import GROUPS, KINDS, analyse, discover, edges_at, entity_nodes, link_edges, path
+from argus.reports.case_pdf import clean_chart, network_pdf
 from argus.security.auth import Role
 
 router = APIRouter(prefix="/api", tags=["network"])
@@ -48,6 +52,42 @@ async def case_network(case_id: str, request: Request, ws: WorkspaceContext = VI
     _items, nodes, edges = await _network(request, ws, case_id)
     analysis = analyse(nodes, edges)
     return {"nodes": list(nodes.values()), "edges": edges, "analysis": analysis, "groups": list(GROUPS)}
+
+
+class ExportRequest(BaseModel):
+    chart_png: str | None = Field(default=None, max_length=12_000_000, description="The link chart as a PNG data URL")
+    as_of: str | None = Field(
+        default=None, pattern=r"^\d{4}(-\d{2}(-\d{2})?)?$", description="The network on this date"
+    )
+
+
+def chart_image(value: str | None) -> bytes | None:
+    if not value:
+        return None
+    payload = value.split(",", 1)[1] if value.startswith("data:") else value
+    try:
+        return clean_chart(base64.b64decode(payload, validate=True))
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"The chart picture could not be used: {exc}") from exc
+
+
+def pdf_response(data: bytes, filename: str) -> Response:
+    return Response(data, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"', "Cache-Control": "no-store"})  # fmt: skip
+
+
+@router.post("/cases/{case_id}/network.pdf")
+async def network_report(case_id: str, body: ExportRequest, request: Request, ws: WorkspaceContext = VIEWER):
+    """The case's network as a PDF: the chart, key people, go-betweens, groups, and every relationship."""
+    case = await _case(request, ws, case_id)
+    _items, nodes, edges = await _network(request, ws, case_id)
+    if body.as_of:
+        edges = edges_at(edges, body.as_of)
+    network = {"nodes": list(nodes.values()), "edges": edges, "analysis": analyse(nodes, edges)}
+    data = network_pdf(network, case, chart_image(body.chart_png), as_of=body.as_of)
+    await audit(request, ws.principal, "case.export_network", case_id,
+                details={"relationships": len(edges), "as_of": body.as_of, "bytes": len(data)})  # fmt: skip
+    return pdf_response(data, f"argus-network-{case_id}.pdf")
 
 
 @router.get("/cases/{case_id}/network/path")

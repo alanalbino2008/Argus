@@ -20,9 +20,11 @@ from pydantic import BaseModel, Field
 from argus.api.analyst_routes import case_documents
 from argus.api.case_routes import _case
 from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.network_routes import ExportRequest, chart_image, pdf_response
 from argus.intel.dossier import build_profile
 from argus.intel.people_import import as_case_items, automatic, proposals
 from argus.intel.relationships import analyse, entity_nodes, link_edges
+from argus.reports.case_pdf import profile_pdf
 from argus.security.auth import Principal, Role
 
 logger = logging.getLogger("argus.people")
@@ -130,9 +132,7 @@ async def import_scan_people(case_id: str, body: ImportRequest, request: Request
     return counts
 
 
-@router.get("/cases/{case_id}/entities/{item_id}/profile")
-async def entity_profile(case_id: str, item_id: str, request: Request, ws: WorkspaceContext = VIEWER):
-    """Everything the case knows about one person or organisation."""
+async def _profile(request: Request, ws: WorkspaceContext, case_id: str, item_id: str) -> dict[str, Any]:
     await _case(request, ws, case_id)
     items = await request.app.state.cases.items(case_id)
     if not any(i["id"] == item_id and i["kind"] == "entity" for i in items):
@@ -147,5 +147,23 @@ async def entity_profile(case_id: str, item_id: str, request: Request, ws: Works
     documents = await case_documents(request.app, case_id)
     nodes = entity_nodes(items)
     analysis = analyse(nodes, link_edges(items, nodes))
-    await audit(request, ws.principal, "case.profile_view", case_id, details={"entity": item_id})
     return build_profile(items, item_id, documents, graphs, nodes, analysis)
+
+
+@router.get("/cases/{case_id}/entities/{item_id}/profile")
+async def entity_profile(case_id: str, item_id: str, request: Request, ws: WorkspaceContext = VIEWER):
+    """Everything the case knows about one person or organisation."""
+    profile = await _profile(request, ws, case_id, item_id)
+    await audit(request, ws.principal, "case.profile_view", case_id, details={"entity": item_id})
+    return profile
+
+
+@router.post("/cases/{case_id}/entities/{item_id}/profile.pdf")
+async def entity_profile_pdf(case_id: str, item_id: str, body: ExportRequest, request: Request,
+                             ws: WorkspaceContext = VIEWER):  # fmt: skip
+    """A person's profile as a PDF (with their part of the link chart, when the browser sends it)."""
+    case = await _case(request, ws, case_id)
+    profile = await _profile(request, ws, case_id, item_id)
+    data = profile_pdf(profile, case, None if profile.get("protected") else chart_image(body.chart_png))
+    await audit(request, ws.principal, "case.export_profile", case_id, details={"entity": item_id, "bytes": len(data)})
+    return pdf_response(data, f"argus-profile-{item_id}.pdf")

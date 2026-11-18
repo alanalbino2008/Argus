@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.45.0] — Phase 45: Relationships over time, and exports
+
+### Added
+- **Time slider on the link chart**: drag through the years to see the network as it stood:
+  - relationships appear in the year they began and disappear after they ended;
+  - people with no relationship that year fade;
+  - **Play** steps through the years;
+  - relationships with no dates can be shown or hidden.
+- **Picture**: download the link chart as a PNG.
+- **PDF report of the network**:
+  - the chart as on screen, the most connected people, go-betweens and groups, every
+    relationship (kind, how sure, when, how it was found), and who is not connected yet;
+  - with the slider set, the network as it stood that year.
+- **Profile PDF**: a person's or organisation's full profile, with a Download PDF button in the
+  profile window.
+- Both PDFs:
+  - are marked *CONFIDENTIAL: contains personal data* on every page, with the case, the time
+    generated and page numbers;
+  - say that likely and possible relationships and name matches are leads, not facts;
+  - never name protected people;
+  - are recorded in the audit log.
+  - The chart picture sent by the browser is checked and re-drawn as a clean PNG before it goes
+    into the PDF.
+- API: `POST /api/cases/{id}/network.pdf` (`as_of`, `chart_png`) and
+  `POST /api/cases/{id}/entities/{item}/profile.pdf`. Python client: `network_pdf()`,
+  `profile_pdf()`.
+
 ## [1.44.0] — Phase 44: People from scans, and person profiles
 
 ### Added

@@ -2,7 +2,7 @@
 // and what the network's shape says. Relationships the material shows can be added from the
 // suggestions; the chain between any two people can be traced.
 
-import { api, enc } from "../api.js";
+import { api, enc, request } from "../api.js";
 import { ico } from "../components.js";
 import { $, html, on, setHTML, toast } from "../dom.js";
 import { nodeGlyph, typeInfo } from "../icons.js";
@@ -25,7 +25,19 @@ let cy = null;
 let selected = null;
 let suggestions = null;
 let routeResult = null;
-const filters = { groups: new Set(Object.keys(GROUP_COLOR)), min: "possible", colour: "type" };
+const filters = { groups: new Set(Object.keys(GROUP_COLOR)), min: "possible", colour: "type", when: null, undated: true };
+let playing = null;
+
+// Relationships over time: which held at some point during a year (as the server's edges_at).
+const yearOf = (d) => (d ? Number(String(d).slice(0, 4)) : null);
+function heldIn(e, year) {
+  if (!e.since && !e.until) return filters.undated;
+  return (!e.since || yearOf(e.since) <= year) && (!e.until || yearOf(e.until) >= year);
+}
+function yearRange() {
+  const years = net.edges.flatMap((e) => [yearOf(e.since), yearOf(e.until)]).filter(Boolean);
+  return years.length ? [Math.min(...years), Math.max(...years, new Date().getFullYear())] : null;
+}
 
 export async function renderChart(target, caseObj) {
   el = target;
@@ -48,7 +60,8 @@ function elements() {
     return { data: { id: n.id, label: n.label.length > 26 ? `${n.label.slice(0, 25)}…` : n.label, color,
       icon: nodeGlyph(n.protected ? "shield" : TYPE_MAP[n.type] || "generic"), size: 30 + 26 * ((n.degree || 0) / maxDegree) } };
   });
-  const edges = net.edges.filter((e) => filters.groups.has(e.group) && rank[e.confidence] <= rank[filters.min]).map((e) => ({
+  const edges = net.edges.filter((e) => filters.groups.has(e.group) && rank[e.confidence] <= rank[filters.min]
+    && (filters.when == null || heldIn(e, filters.when))).map((e) => ({
     data: { id: e.id, source: e.from, target: e.to, label: e.text, color: GROUP_COLOR[e.group], width: e.confidence === "confirmed" ? 3 : e.confidence === "likely" ? 2 : 1.5,
       style: e.confidence === "possible" ? "dashed" : "solid", arrow: e.symmetric ? "none" : "triangle" },
   }));
@@ -75,6 +88,7 @@ function mountGraph() {
     ],
     layout: { name: "cose", animate: false, padding: 30, nodeRepulsion: 9000, idealEdgeLength: 110 },
   });
+  fadeIdle();
   cy.on("tap", "node", (e) => { selected = e.target.id(); routeResult = null; drawSide(); highlight(); });
   cy.on("tap", (e) => { if (e.target === cy) { selected = null; drawSide(); highlight(); } });
   cy.on("mouseover", "node", (e) => { if (!routeResult) e.target.connectedEdges().addClass("show"); });
@@ -148,6 +162,35 @@ function suggestionsView() {
       ${canEdit() ? html`<button class="btn sm ghost" data-chart="accept" data-i="${i}" style="margin-top:4px">${ico("plus")}Add</button>` : ""}</div>`)}`;
 }
 
+function timeBar() {
+  const range = yearRange();
+  if (!range) return html`<p class="muted small" style="margin:0 0 8px">Give relationships start and end dates to watch the network change over time.</p>`;
+  const [lo, hi] = range;
+  return html`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px" role="group" aria-label="Relationships over time">
+    <button class="btn sm ghost" data-chart="play" aria-label="${playing ? "Pause" : "Play through the years"}">${playing ? "❚❚" : "▶"}</button>
+    <input type="range" data-chart-time min="${lo}" max="${hi}" step="1" value="${filters.when ?? hi}" aria-label="Year" style="flex:1;min-width:160px">
+    <b id="chart-when" style="min-width:70px">${filters.when ?? "All time"}</b>
+    ${filters.when != null ? html`<button class="btn sm ghost" data-chart="alltime">All time</button>` : ""}
+    <label class="small"><input type="checkbox" data-chart-undated ${filters.undated ? "checked" : ""}> Show undated links</label></div>`;
+}
+
+function fadeIdle() {
+  if (!cy || filters.when == null) return;
+  cy.nodes().forEach((n) => { if (!n.connectedEdges().length) n.style("opacity", 0.25); });
+}
+
+async function downloadBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function chartPng() {
+  return cy ? cy.png({ full: true, scale: 2, bg: "#ffffff", maxWidth: 4000, maxHeight: 4000 }) : null;
+}
+
 function drawSide() {
   const side = $("#chart-side");
   if (!side) return;
@@ -162,7 +205,10 @@ function draw() {
       <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <select class="select sm" data-chart-filter="min" aria-label="How sure"><option value="possible" ${filters.min === "possible" ? "selected" : ""}>All links</option><option value="likely" ${filters.min === "likely" ? "selected" : ""}>Likely and confirmed</option><option value="confirmed" ${filters.min === "confirmed" ? "selected" : ""}>Confirmed only</option></select>
         <select class="select sm" data-chart-filter="colour" aria-label="Colour people by"><option value="type" ${filters.colour === "type" ? "selected" : ""}>Colour by type</option><option value="group" ${filters.colour === "group" ? "selected" : ""}>Colour by group</option></select>
-        <button class="btn sm ghost" data-chart="fit">${ico("fit")}Fit</button></span></div>
+        <button class="btn sm ghost" data-chart="fit">${ico("fit")}Fit</button>
+        <button class="btn sm ghost" data-chart="png" title="Download the chart as a picture">${ico("download")}Picture</button>
+        <button class="btn sm" data-chart="pdf" title="The chart, key people, groups and every relationship, as a PDF">${ico("report")}PDF report</button></span></div>
+    ${timeBar()}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px" role="group" aria-label="Kinds of relationship">${Object.entries(GROUP_LABEL).map(([g, label]) => html`<label class="pill" style="cursor:pointer;border:1px solid ${GROUP_COLOR[g]}"><input type="checkbox" data-chart-group="${g}" ${filters.groups.has(g) ? "checked" : ""}> <span style="color:${GROUP_COLOR[g]}">●</span> ${label}</label>`)}
       <span class="muted small" style="align-self:center">Solid: confirmed · thinner: likely · dashed: possible. Bigger: more connected.</span></div>
     <div class="chart-layout">
@@ -174,12 +220,30 @@ function draw() {
   drawSide();
 }
 
+function stopPlay() {
+  clearInterval(playing);
+  playing = null;
+}
+
 export function initChart(root) {
+  root.addEventListener("input", (e) => {  // the slider follows the finger, not just the release
+    if (e.target.dataset?.chartTime === undefined || !el?.contains(e.target)) return;
+    filters.when = Number(e.target.value);
+    $("#chart-when").textContent = filters.when;
+    mountGraph();
+  });
   root.addEventListener("change", (e) => {
     const t = e.target;
     if (!el || !el.contains(t)) return;
     if (t.dataset.chartGroup) {
       if (t.checked) filters.groups.add(t.dataset.chartGroup); else filters.groups.delete(t.dataset.chartGroup);
+      mountGraph();
+    } else if (t.dataset.chartTime !== undefined) {
+      filters.when = Number(t.value);
+      $("#chart-when").textContent = filters.when;
+      mountGraph();
+    } else if (t.hasAttribute("data-chart-undated")) {
+      filters.undated = t.checked;
       mountGraph();
     } else if (t.dataset.chartFilter) {
       filters[t.dataset.chartFilter] = t.value;
@@ -191,6 +255,30 @@ export function initChart(root) {
     try {
       const act = btn.dataset.chart;
       if (act === "fit") return cy?.fit(undefined, 30);
+      if (act === "png") return cy && downloadBlob(cy.png({ full: true, scale: 2, bg: "#ffffff", maxWidth: 4000, maxHeight: 4000, output: "blob" }), `argus-network-${caseRef.id}.png`);
+      if (act === "pdf") {
+        btn.disabled = true;
+        try {
+          const res = await request(`/api/cases/${enc(caseRef.id)}/network.pdf`, { method: "POST", raw: true,
+            body: { chart_png: chartPng(), ...(filters.when != null ? { as_of: String(filters.when) } : {}) } });
+          return downloadBlob(await res.blob(), `argus-network-${caseRef.id}.pdf`);
+        } finally { btn.disabled = false; }
+      }
+      if (act === "alltime") { stopPlay(); filters.when = null; return draw(); }
+      if (act === "play") {
+        if (playing) { stopPlay(); return draw(); }
+        const [lo, hi] = yearRange();
+        filters.when = filters.when == null || filters.when >= hi ? lo : filters.when;
+        playing = setInterval(() => {
+          if (!el?.isConnected || filters.when >= hi) { stopPlay(); return draw(); }
+          filters.when += 1;
+          $("#chart-when").textContent = filters.when;
+          const slider = el.querySelector("[data-chart-time]");
+          if (slider) slider.value = filters.when;
+          mountGraph();
+        }, 1100);
+        return draw();
+      }
       if (act === "profile") return openProfile(caseRef, selected);
       if (act === "select") { selected = btn.dataset.id; routeResult = null; cy?.$(":selected").unselect(); cy?.getElementById(selected).select(); drawSide(); return highlight(); }
       if (act === "route") {

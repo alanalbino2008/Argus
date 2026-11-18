@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.44.0"
+__version__ = "1.45.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -390,6 +390,16 @@ class ArgusClient:
         """Add the chosen finds of a linked scan to the case, with the relationships between them."""
         return self.post(f"/api/cases/{case_id}/scan-people",
                          {"investigation_id": investigation_id, "keys": keys, "relationships": relationships})  # fmt: skip
+
+    def network_pdf(self, case_id: str, *, as_of: str | None = None) -> bytes:
+        """The case's network as a PDF report (optionally as it stood in a year, month or on a day)."""
+        return self.request(
+            "POST", f"/api/cases/{case_id}/network.pdf", json={"as_of": as_of} if as_of else {}, raw=True
+        ).content
+
+    def profile_pdf(self, case_id: str, item_id: str) -> bytes:
+        """One person's profile as a PDF."""
+        return self.request("POST", f"/api/cases/{case_id}/entities/{item_id}/profile.pdf", json={}, raw=True).content
 
     def vault_status(self) -> dict[str, Any]:
         """Whether the case vault is set up, and whether it is locked."""
