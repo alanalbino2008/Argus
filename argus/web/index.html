@@ -49,6 +49,7 @@
       </div>
       <div class="topbar-actions">
         <button id="btn-stop" class="btn sm danger" hidden><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-stop"/></svg>Stop scan</button>
+        <button id="btn-vault-lock" class="btn ghost icon" hidden title="Lock the case vault now" aria-label="Lock the case vault"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-shield"/></svg></button>
         <button id="btn-theme" class="btn ghost icon" title="Toggle light / dark theme" aria-label="Toggle theme"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-moon"/></svg></button>
         <button id="btn-shortcuts" class="btn ghost icon hide-sm" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-keyboard"/></svg></button>
         <button id="btn-new" class="btn primary"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg><span class="hide-sm">New investigation</span></button>
@@ -724,6 +725,19 @@
       </div>
       <div class="error-text" id="signin-error" role="alert" style="margin-top:8px"></div>
       <button type="submit" class="btn primary" style="width:100%;margin-top:8px">Sign in</button>
+    </form>
+  </div>
+
+  <div id="vault-lock" class="signin-root" hidden>
+    <form id="vault-form" class="card signin" autocomplete="off">
+      <div class="brand"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield"/></svg></div>
+      <h1>Case vault locked</h1>
+      <p id="vault-hint">Your cases are encrypted on this computer. Enter your vault passphrase to open them.</p>
+      <div class="field" id="vault-pass-field"><label class="label" for="vault-passphrase">Vault passphrase</label><input id="vault-passphrase" class="input" type="password" autocomplete="current-password" maxlength="1024"></div>
+      <div class="field" id="vault-code-field" hidden><label class="label" for="vault-code">Recovery code</label><input id="vault-code" class="input mono" autocomplete="off" maxlength="64" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"></div>
+      <p class="small muted" style="margin:0 0 6px"><a href="#" id="vault-mode">Forgot the passphrase? Use the recovery code</a></p>
+      <div class="error-text" id="vault-error" role="alert" style="margin-top:8px"></div>
+      <button type="submit" class="btn primary" id="vault-submit" style="width:100%;margin-top:8px">Unlock</button>
     </form>
   </div>
 

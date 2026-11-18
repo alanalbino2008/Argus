@@ -31,6 +31,7 @@ import asyncio
 import hmac
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -79,6 +80,8 @@ from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.supplier_routes import router as supplier_router
+from argus.api.vault_routes import router as vault_router
+from argus.api.vault_routes import vault_gate
 from argus.api.watch_routes import router as watch_router
 from argus.api.workspace_routes import router as workspace_router
 from argus.core.engine import ArgusEngine
@@ -106,6 +109,7 @@ from argus.observability.middleware import ObservabilityMiddleware
 from argus.reports.data import ReportOptions
 from argus.reports.scheduler import ReportScheduler
 from argus.reports.service import issue_report
+from argus.security import vault
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.crypto import secret_box_from_settings
 from argus.security.headers import SecurityHeadersMiddleware
@@ -128,6 +132,7 @@ from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 from argus.storage.subscriber_repo import AppStateRepository, CreditRepository, SubscriberRepository
 from argus.storage.supplier_repo import SupplierRepository
 from argus.storage.user_repo import UserRepository
+from argus.storage.vault_store import VaultService
 from argus.storage.watch_repo import AccountWatchRepository
 from argus.storage.workspace_repo import WorkspaceRepository
 
@@ -190,13 +195,24 @@ async def lifespan(app: FastAPI):
     if settings.auto_migrate:
         await upgrade_database(db)
     repo = InvestigationRepository(db)
-    # Scans this instance was running before it restarted, legacy rows without an owner, and
-    # scans whose owner stopped sending heartbeats can never finish. Other replicas' live
-    # scans are left alone.
-    interrupted = await repo.mark_interrupted(owned_by=settings.instance_id, stale_seconds=settings.scan_stale_seconds)
-    if interrupted:
-        metrics.SCANS_INTERRUPTED.labels("restart").inc(interrupted)
-        logger.warning("Marked %d interrupted investigation(s) as failed", interrupted)
+    app.state.app_state = AppStateRepository(db)
+    app.state.vault = VaultService(db, app.state.app_state)
+    await app.state.vault.load()  # a vault set up here starts locked: the key is only in memory once unlocked
+
+    async def recover_scans() -> None:
+        # Scans this instance was running before it restarted, legacy rows without an owner, and
+        # scans whose owner stopped sending heartbeats can never finish. Other replicas' live
+        # scans are left alone.
+        interrupted = await repo.mark_interrupted(owned_by=settings.instance_id,
+                                                  stale_seconds=settings.scan_stale_seconds)  # fmt: skip
+        if interrupted:
+            metrics.SCANS_INTERRUPTED.labels("restart").inc(interrupted)
+            logger.warning("Marked %d interrupted investigation(s) as failed", interrupted)
+
+    if vault.locked():
+        app.state.vault.on_unlock.append(recover_scans)  # it reads encrypted scan records
+    else:
+        await recover_scans()
 
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
     app.state.keys = ApiKeyRepository(db)
@@ -223,10 +239,17 @@ async def lifespan(app: FastAPI):
     app.state.credits = CreditRepository(db)
     app.state.playbooks = PlaybookRepository(db)
     app.state.playbook_scan = _playbook_scan
-    interrupted = await app.state.playbooks.interrupt_running(settings.instance_id)
-    if interrupted:
-        logger.warning("%d playbook run(s) were left unfinished by the last shutdown: marked interrupted", interrupted)
-    app.state.app_state = AppStateRepository(db)
+    app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
+
+    async def recover_playbooks() -> None:
+        stale = await app.state.playbooks.interrupt_running(settings.instance_id)
+        if stale:
+            logger.warning("%d playbook run(s) were left unfinished by the last shutdown: marked interrupted", stale)
+
+    if vault.locked():
+        app.state.vault.on_unlock.append(recover_playbooks)
+    else:
+        await recover_playbooks()
     app.state.personal = PersonalLicence(settings, app.state.app_state)
     if settings.edition == "personal":
         await app.state.personal.load()
@@ -291,6 +314,7 @@ async def lifespan(app: FastAPI):
         else None
     )
     janitor_task = asyncio.create_task(_janitor(app), name="crashed-scan-janitor")
+    vault_task = asyncio.create_task(_vault_idle_lock(app), name="vault-idle-lock")
     scheduler_task = (
         asyncio.create_task(app.state.scheduler.run_forever(), name="monitor-scheduler")
         if settings.monitors_enabled
@@ -311,6 +335,7 @@ async def lifespan(app: FastAPI):
                 remediation_task,
                 watch_task,
                 licence_task,
+                vault_task,
             )
             if t
         ]
@@ -450,6 +475,7 @@ app = FastAPI(
 app.openapi = partial(build_openapi, app)  # type: ignore[method-assign]
 
 app.middleware("http")(licence_gate)  # personal edition: the subscription decides what is allowed
+app.middleware("http")(vault_gate)  # a locked case vault: nothing but unlocking until it is open
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(ObservabilityMiddleware)  # outermost: times and labels everything, incl. errors
 # Same-origin by default. The UI is served by this app, so CORS is only needed for
@@ -486,6 +512,7 @@ app.include_router(connect_router)
 app.include_router(personal_router)
 app.include_router(analyst_router)
 app.include_router(playbook_router)
+app.include_router(vault_router)
 
 # Tenant-scoped endpoints receive a WorkspaceContext: the caller, the workspace and their role there.
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -635,6 +662,8 @@ async def _janitor(app: FastAPI) -> None:
     settings: Settings = app.state.settings
     while True:
         await asyncio.sleep(max(15.0, settings.scan_stale_seconds / 4))
+        if not vault.ready():
+            continue  # scan records are encrypted and the vault is locked
         try:
             count = await app.state.repo.mark_interrupted(
                 stale_seconds=settings.scan_stale_seconds,
@@ -649,6 +678,31 @@ async def _janitor(app: FastAPI) -> None:
             raise
         except Exception:
             logger.exception("Janitor pass failed")
+
+
+VAULT_TIMER = Principal(key_id="vault-timer", name="vault timer", role=Role.VIEWER)
+
+
+async def _vault_idle_lock(app: FastAPI) -> None:
+    """Lock an unlocked vault after a quiet spell, unless work in progress still needs the key."""
+    from argus.api.playbook_routes import RUNS
+
+    while True:
+        await asyncio.sleep(30)
+        minutes = app.state.settings.vault_idle_minutes
+        if not minutes or not vault.STATE.enabled or vault.locked():
+            continue
+        if time.monotonic() - vault.STATE.last_activity < minutes * 60:
+            continue
+        if any(e.is_running for e in INVESTIGATIONS.values()) or any(not t.done() for t in RUNS.values()):
+            continue
+        try:
+            await app.state.audit.record(VAULT_TIMER, "vault.lock", None, "success", None,
+                                         {"by": f"no activity for {minutes} minutes"}, None)  # fmt: skip
+        except Exception:
+            logger.exception("Could not record the vault locking")
+        app.state.vault.lock()
+        logger.info("Case vault locked after %d minutes without activity", minutes)
 
 
 async def launch_scan(
@@ -1350,6 +1404,9 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
 
     Authenticate with ``?ticket=`` from ``POST /api/ws-ticket`` (single use, short-lived).
     """
+    if vault.locked():
+        await websocket.close(code=4423)  # the case vault is locked
+        return
     ticket = websocket.query_params.get("ticket")
     auth_enabled = websocket.app.state.settings.auth_enabled
     redeemed = await websocket.app.state.ws_tickets.redeem_for_workspace(ticket) if auth_enabled else None

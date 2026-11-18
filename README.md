@@ -444,6 +444,14 @@ the addresses published on a website) and it follows the money.
 - From the public registries only: listed, never scanned
   ([`docs/explained/40-network-ranges.md`](docs/explained/40-network-ranges.md)).
 
+**The case vault**: a lost or seized laptop doesn't expose sources.
+
+- Cases, evidence and scan results are encrypted on the investigator's computer with their own
+  passphrase (AES-256-GCM, with a key derived using scrypt), plus a one-time recovery code.
+- It locks itself when idle, and unlocks in the browser.
+- No readable copies are left on disk: a test reads the raw database files to prove it
+  ([`docs/explained/41-case-vault.md`](docs/explained/41-case-vault.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

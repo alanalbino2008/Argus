@@ -23,6 +23,7 @@ import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
 import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
+import { initVault, refreshVault } from "./vault.js";
 
 const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "compliance", "ratings", "history", "settings"];
 let currentView = null;
@@ -257,6 +258,7 @@ async function enterApp(me) {
   emit("onboarding-changed"); // signed in: load this workspace's getting-started progress
   $("#signin").hidden = true;
   $("#user-name").textContent = `${me.name}`;
+  await refreshVault();
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
   refreshMonitoring();
   clearInterval(pollTimer);
@@ -342,6 +344,7 @@ async function boot() {
   installSprite();
   setupModals();
   setupAuth();
+  initVault();
   setupShortcuts();
   initModals(actions);
   initGuide(actions);

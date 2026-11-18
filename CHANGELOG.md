@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.41.0] — Phase 41: The case vault
+
+### Added
+- **Case vault** (Argus Personal and other single-computer installations): cases, evidence and
+  scan results encrypted on disk with the investigator's passphrase.
+  - **Keys:**
+    - a random 256-bit data key encrypts the data with AES-256-GCM: a fresh nonce for every
+      value, and each value bound to its column;
+    - the data key is stored only wrapped, by a key derived from the passphrase with scrypt (128
+      MiB of memory per attempt), and separately by a one-time **recovery code** shown once at
+      set-up;
+    - changing the passphrase re-wraps the key without re-encrypting the data;
+    - a new recovery code can be issued, and the old one stops working.
+  - **Encrypted:**
+    - case titles, purposes and summaries;
+    - notes, entities, links and events;
+    - evidence addresses, titles, notes, manifests and files, and custody details;
+    - watched accounts' profiles and history;
+    - playbook runs;
+    - scan targets, and everything scans found;
+    - audit event details, alerts, monitors, reports and their files, and queued notifications.
+    Identifiers, dates, statuses and counts stay readable.
+  - **No leftovers on disk.** Deleted and overwritten data is zeroed (`secure_delete`), and after
+    encrypting or decrypting the database file is rebuilt and its write-ahead log emptied. A test
+    reads the raw files to prove the case's words are no longer there.
+  - **Locked:**
+    - every API request except unlocking, sign-in and health checks answers `423 Locked`, and the
+      web interface shows an unlock screen;
+    - background jobs (monitors, account watches, scheduled reports, the scan janitor) wait;
+    - start-up recovery of interrupted scans and playbooks runs once it is unlocked.
+  - **Auto-lock** after `ARGUS_VAULT_IDLE_MINUTES` (15) without activity, never during a scan or
+    playbook. A lock button sits in the top bar.
+  - **Unlocking:**
+    - attempts are rate-limited per caller and overall;
+    - failed attempts are written to the audit log at the next successful unlock (the audit log
+      is itself encrypted).
+  - **Turning it on or off** encrypts or decrypts everything, resumably: an interrupted pass
+    finishes at the next unlock.
+  - Search, history filters and comparisons with earlier scans keep working: with the vault on,
+    they match after decryption.
+- API: `/api/vault/status`, `/enable`, `/unlock`, `/lock`, `/passphrase`, `/recovery-code`,
+  `/disable`. Python client: `vault_status()`, `unlock_vault()`, `lock_vault()`.
+
 ## [1.40.0] — Phase 40: Network ranges
 
 ### Added

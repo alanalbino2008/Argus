@@ -13,8 +13,49 @@ let root;
 const checks = {}; // route name -> result of its last test
 let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null, members: null };
 
+const VAULT_FORMS = {
+  "vault-enable-form": async () => {
+    if ($("#vault-new").value !== $("#vault-new2").value) throw new Error("The two passphrases don't match");
+    const r = await api.post("/api/vault/enable", { passphrase: $("#vault-new").value, understood: $("#vault-understood").checked });
+    recoveryCode = r.recovery_code;
+    $("#btn-vault-lock").hidden = false;
+    toast("The vault is on: your cases are encrypted", "success", 6000);
+  },
+  "vault-pass-form": async () => {
+    await api.post("/api/vault/passphrase", { current: $("#vault-current").value, new: $("#vault-next").value });
+    toast("Passphrase changed", "success");
+  },
+  "vault-code-form": async () => {
+    recoveryCode = (await api.post("/api/vault/recovery-code", { passphrase: $("#vault-code-pass").value })).recovery_code;
+  },
+  "vault-off-form": async () => {
+    if (!(await confirmDialog({ title: "Turn the vault off?", message: "Everything will be decrypted and stored readable on this computer again.", confirm: "Decrypt and turn off", danger: true }))) return;
+    await api.post("/api/vault/disable", { passphrase: $("#vault-off-pass").value });
+    $("#btn-vault-lock").hidden = true;
+    toast("The vault is off", "success");
+  },
+};
+
 export function initSettings(el) {
   root = el;
+  root.addEventListener("submit", async (e) => {
+    const handler = VAULT_FORMS[e.target.id];
+    if (!handler) return;
+    e.preventDefault();
+    const error = e.target.querySelector(".error-text");
+    const button = e.target.querySelector("button[type=submit]");
+    error.textContent = "";
+    button.disabled = true;
+    try {
+      await handler();
+      data.vault = await api.get("/api/vault/status").catch(() => data.vault);
+      render();
+    } catch (err) {
+      error.textContent = err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
   onState("workspace", () => { data = { ...data, keys: null, audit: null, members: null }; refresh(); });
   on(root, "click", "[data-copy]", (_e, btn) => copyText(btn.dataset.copy));
   on(root, "click", "[data-goto]", (e, el2) => { e.preventDefault(); document.querySelector(`.nav-item[data-view="${el2.dataset.goto}"]`)?.click(); });
@@ -22,6 +63,12 @@ export function initSettings(el) {
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     try {
+      if (act === "vault-code-saved") { recoveryCode = null; render(); return; }
+      if (act === "vault-lock") {
+        await api.post("/api/vault/lock");
+        window.dispatchEvent(new CustomEvent("argus:vault-locked"));
+        return;
+      }
       if (act === "licence-check") {
         data.personal = await api.post("/api/personal/refresh");
         toast(data.personal.access === "full" ? "Your subscription is active" : data.personal.reason, data.personal.access === "full" ? "success" : "error", 6000);
@@ -179,10 +226,11 @@ export async function refresh() {
     wsAdmin ? api.get("/api/reports/branding").catch(() => null) : null,
     api.get("/api/opsec/routes").catch(() => null),
     fetch("/api/personal/status").then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    platform ? api.get("/api/vault/status").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault] = await Promise.all(tasks);
   const credits = personal?.signed_in ? await api.get("/api/personal/credits").catch(() => null) : null;
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, vault };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -307,6 +355,56 @@ function verifyCard() {
     <div class="card-head"><div><h2>Verify a report</h2><p class="muted small">Check that a PDF really was issued by this Argus and has not been altered. The file never leaves your browser: only its SHA-256 fingerprint is looked up. Recipients without an account can do the same with <code>sha256sum</code> and <code>/api/reports/verify/&lt;fingerprint&gt;</code>.</p></div>
       <label class="btn">${ico("shield")}Choose PDF<input type="file" id="verify-file" accept="application/pdf" hidden></label></div>
     <div id="verify-result"></div>
+  </div>`;
+}
+
+let recoveryCode = null; // shown once, right after it is created
+
+function vaultCard() {
+  const v = data.vault;
+  if (!v) return "";
+  const codeBlock = recoveryCode ? html`<div class="callout warn" style="margin:12px 0;display:block">
+      <b>Your recovery code. Write it down and keep it somewhere safe, away from this computer.</b>
+      <div class="key-reveal" style="margin:10px 0"><span class="mono">${recoveryCode}</span></div>
+      <p class="small">It opens the vault if you forget your passphrase. It is shown only now. If you lose both, nobody can recover your cases: not you, not us.</p>
+      <button class="btn sm" data-copy="${recoveryCode}">${ico("copy")}Copy</button> <button class="btn sm primary" data-act="vault-code-saved">I've saved it</button></div>` : "";
+  if (!v.available) {
+    return html`<div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>${ico("shield")}Case vault</h2></div>
+      <p class="muted small">The case vault encrypts cases on one computer's own database (Argus Personal). This installation uses a shared database server; protect it with the server's own encryption at rest.</p></div>`;
+  }
+  if (!v.enabled) {
+    return html`<div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>${ico("shield")}Case vault</h2><span class="pill">Off</span></div>
+      <p>Encrypt your cases, evidence and scan results on this computer with a passphrase. If this computer is lost, stolen or seized, they can't be read without it.</p>
+      <form id="vault-enable-form" style="display:grid;gap:8px;max-width:440px">
+        <label class="label" for="vault-new">Passphrase <span class="muted small">at least 12 characters; a short sentence works well</span></label>
+        <input class="input" type="password" id="vault-new" autocomplete="new-password" minlength="12" maxlength="1024" required>
+        <label class="label" for="vault-new2">Type it again</label>
+        <input class="input" type="password" id="vault-new2" autocomplete="new-password" maxlength="1024" required>
+        <label class="small"><input type="checkbox" id="vault-understood" required> I understand: if I lose both this passphrase and the recovery code I'm given next, my cases can't be recovered by anyone.</label>
+        <p class="error-text"></p>
+        <div><button class="btn primary" type="submit">${ico("shield")}Turn on the vault</button></div>
+      </form>
+      <p class="muted small" style="margin-top:8px">For the strongest protection, also turn on your computer's own disk encryption (FileVault, BitLocker or LUKS).</p></div>`;
+  }
+  return html`<div class="card card-pad" style="margin-top:16px"><div class="card-head"><h2>${ico("shield")}Case vault</h2><span class="pill ok">On</span></div>
+    ${codeBlock}
+    <p>Your cases, evidence and scan results are encrypted on this computer. ${v.idle_minutes ? `The vault locks itself after ${v.idle_minutes} minutes without activity (never during a scan).` : "It locks only when you lock it."}</p>
+    <button class="btn sm" data-act="vault-lock">${ico("shield")}Lock now</button>
+    <details style="margin-top:12px"><summary>Change the passphrase</summary>
+      <form id="vault-pass-form" style="display:grid;gap:8px;max-width:440px;margin-top:8px">
+        <input class="input" type="password" id="vault-current" placeholder="Current passphrase" autocomplete="current-password" required>
+        <input class="input" type="password" id="vault-next" placeholder="New passphrase (12+ characters)" autocomplete="new-password" minlength="12" required>
+        <p class="error-text"></p><div><button class="btn sm" type="submit">Change passphrase</button></div></form></details>
+    <details style="margin-top:8px"><summary>Get a new recovery code</summary>
+      <form id="vault-code-form" style="display:grid;gap:8px;max-width:440px;margin-top:8px">
+        <p class="muted small">The old code stops working.</p>
+        <input class="input" type="password" id="vault-code-pass" placeholder="Passphrase" autocomplete="current-password" required>
+        <p class="error-text"></p><div><button class="btn sm" type="submit">New recovery code</button></div></form></details>
+    <details style="margin-top:8px"><summary>Turn the vault off</summary>
+      <form id="vault-off-form" style="display:grid;gap:8px;max-width:440px;margin-top:8px">
+        <p class="muted small">Everything is decrypted and stored readable on this computer again.</p>
+        <input class="input" type="password" id="vault-off-pass" placeholder="Passphrase" autocomplete="current-password" required>
+        <p class="error-text"></p><div><button class="btn sm danger" type="submit">Decrypt and turn off</button></div></form></details>
   </div>`;
 }
 
@@ -438,6 +536,7 @@ function render() {
       </div>
     </div>
     ${subscriptionCard()}
+    ${vaultCard()}
     ${data.personal ? "" : workspacesCard()}
     ${safetyCard()}
     ${apiCard()}

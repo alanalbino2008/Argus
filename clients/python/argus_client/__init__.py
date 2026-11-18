@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.40.0"
+__version__ = "1.41.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -364,6 +364,17 @@ class ArgusClient:
     def playbook_run(self, case_id: str, run_id: str) -> dict[str, Any]:
         """A playbook run: its status, each step, and what stood out."""
         return self.get(f"/api/cases/{case_id}/playbooks/{run_id}")
+
+    def vault_status(self) -> dict[str, Any]:
+        """Whether the case vault is set up, and whether it is locked."""
+        return self.get("/api/vault/status")
+
+    def unlock_vault(self, passphrase: str) -> dict[str, Any]:
+        """Unlock the case vault (Argus answers 423 to everything else while it is locked)."""
+        return self.post("/api/vault/unlock", {"passphrase": passphrase})
+
+    def lock_vault(self) -> dict[str, Any]:
+        return self.post("/api/vault/lock")
 
     def subscription_accounts(self) -> list[dict[str, Any]]:
         """Account service (platform admins): every subscription account."""

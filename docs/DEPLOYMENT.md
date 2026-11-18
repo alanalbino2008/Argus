@@ -248,6 +248,12 @@ API (from api-dashboard.search.brave.com):
 * on any **other** Argus (or Argus Personal), setting it makes searches go directly, privately and
   without credits.
 
+**The case vault** (Argus Personal and other single-computer installations on SQLite) is turned
+on by the investigator in Settings, with their own passphrase; there is nothing to configure.
+`ARGUS_VAULT_IDLE_MINUTES` (default 15; 0 = never) sets how long it stays unlocked without
+activity. It is not offered on PostgreSQL: protect shared database servers with their own
+encryption at rest.
+
 **The website crawler** (`site_crawler`) reads a target website's pages, obeying robots.txt:
 * `ARGUS_CRAWL_MAX_PAGES` (default 40, up to 500): the most pages read on one site;
 * `ARGUS_CRAWL_DELAY_SECONDS` (default 0.5): the pause between pages, so the site is never strained.

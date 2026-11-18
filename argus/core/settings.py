@@ -140,6 +140,9 @@ class Settings(BaseSettings):
         default=0.5, ge=0.0, le=30.0, description="Pause between the website crawler's pages, to spare the site"
     )
     gleif_url: str = Field(default="https://api.gleif.org/api/v1", description="Global LEI register (GLEIF); '' = off")
+    vault_idle_minutes: int = Field(
+        default=15, ge=0, le=1440, description="Case vault: lock after this many minutes without activity; 0 = never"
+    )
     # ---------------------------------------------------------------- AI analyst
     anthropic_api_key: SecretStr | None = Field(
         default=None,

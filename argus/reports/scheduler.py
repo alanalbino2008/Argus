@@ -29,6 +29,7 @@ from argus.notify.render import board_event, report_event
 from argus.observability import metrics
 from argus.reports.data import ReportData, ReportOptions
 from argus.reports.service import issue_report
+from argus.security import vault
 from argus.security.auth import Principal, Role
 from argus.storage.notification_repo import enqueue_to_channels
 from argus.storage.report_repo import ReportRepository
@@ -78,7 +79,8 @@ class ReportScheduler:
     async def run_forever(self) -> None:
         while True:
             try:
-                await self.tick()
+                if vault.ready():  # with the case vault locked, its records cannot be read: wait
+                    await self.tick()
             except asyncio.CancelledError:
                 raise
             except Exception:

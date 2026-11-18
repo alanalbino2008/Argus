@@ -63,6 +63,11 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
     window.dispatchEvent(new CustomEvent("argus:read-only", { detail: info?.detail || "" }));
     throw new ApiError(402, info?.detail || "Your subscription does not allow new work right now");
   }
+  if (res.status === 423) {
+    const info = await res.json().catch(() => null);
+    if (info?.vault_locked) window.dispatchEvent(new CustomEvent("argus:vault-locked"));
+    throw new ApiError(423, info?.detail || "The case vault is locked");
+  }
   if (raw) {
     if (!res.ok) throw new ApiError(res.status, describe(await res.json().catch(() => null), res.status));
     return res;

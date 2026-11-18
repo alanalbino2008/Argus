@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import Entity, Investigation, InvestigationStatus, Relation
+from argus.security import vault
 from argus.storage.db import Database, EntityRow, InvestigationRow, RelationRow
 
 logger = logging.getLogger("argus.storage")
@@ -243,10 +244,14 @@ class InvestigationRepository:
         )
         if status:
             stmt = stmt.where(InvestigationRow.status == status)
-        if target:
+        if target and vault.STATE.enabled:  # encrypted targets: filtered here, after decryption
+            stmt = stmt.limit(None).offset(None)
+        elif target:
             stmt = stmt.where(func.lower(InvestigationRow.target).contains(target.lower()))
         async with self.db.session() as s:
-            rows = (await s.execute(stmt)).scalars().all()
+            rows: Any = (await s.execute(stmt)).scalars().all()
+        if target and vault.STATE.enabled:
+            rows = [r for r in rows if target.lower() in (r.target or "").lower()][offset : offset + limit]
         return [
             {
                 "id": r.id,
@@ -269,18 +274,30 @@ class InvestigationRepository:
             select(InvestigationRow)
             .where(
                 InvestigationRow.workspace_id == inv.workspace_id,
-                func.lower(InvestigationRow.target) == inv.config.target.lower(),
                 InvestigationRow.target_type == inv.config.target_type.value,
                 InvestigationRow.status == InvestigationStatus.COMPLETED.value,
                 InvestigationRow.id != inv.id,
                 InvestigationRow.created_at < inv.created_at,
             )
             .order_by(InvestigationRow.created_at.desc())
-            .limit(1)
         )
-        async with self.db.session() as s:
-            row = (await s.execute(stmt)).scalars().first()
+        row = await self._first_for_target(stmt, inv.config.target)
         return Investigation.model_validate(row.data) if row else None
+
+    async def _first_for_target(self, stmt: Any, target: str) -> InvestigationRow | None:
+        """The first row of ``stmt`` whose target is ``target`` (any case); by SQL, or after decryption."""
+        wanted = target.strip().lower()
+        async with self.db.session() as s:
+            if not vault.STATE.enabled:
+                return (
+                    (await s.execute(stmt.where(func.lower(InvestigationRow.target) == wanted).limit(1)))
+                    .scalars()
+                    .first()
+                )
+            for row in (await s.execute(stmt)).scalars():
+                if (row.target or "").strip().lower() == wanted:
+                    return row
+        return None
 
     async def latest_completed(self, target: str, *, workspace_id: str) -> Investigation | None:
         """The most recent completed investigation of ``target`` in this workspace (scheduled reports)."""
@@ -288,14 +305,11 @@ class InvestigationRepository:
             select(InvestigationRow)
             .where(
                 InvestigationRow.workspace_id == workspace_id,
-                func.lower(InvestigationRow.target) == target.strip().lower(),
                 InvestigationRow.status == InvestigationStatus.COMPLETED.value,
             )
             .order_by(InvestigationRow.created_at.desc())
-            .limit(1)
         )
-        async with self.db.session() as s:
-            row = (await s.execute(stmt)).scalars().first()
+        row = await self._first_for_target(stmt, target)
         return Investigation.model_validate(row.data) if row else None
 
     async def load_graph(self, investigation_id: str) -> IntelligenceGraph | None:
@@ -328,17 +342,17 @@ class InvestigationRepository:
         stmt = (
             select(EntityRow, InvestigationRow.target, InvestigationRow.created_at)
             .join(InvestigationRow, InvestigationRow.id == EntityRow.investigation_id)
-            .where(
-                InvestigationRow.workspace_id == workspace_id,
-                func.lower(EntityRow.value).contains(query.lower()),
-            )
+            .where(InvestigationRow.workspace_id == workspace_id)
             .order_by(InvestigationRow.created_at.desc())
-            .limit(limit)
         )
+        if not vault.STATE.enabled:  # encrypted values are matched after decryption instead
+            stmt = stmt.where(func.lower(EntityRow.value).contains(query.lower())).limit(limit)
         if entity_type:
             stmt = stmt.where(EntityRow.type == entity_type)
         async with self.db.session() as s:
-            rows = (await s.execute(stmt)).all()
+            rows: Any = (await s.execute(stmt)).all()
+        if vault.STATE.enabled:
+            rows = [r for r in rows if query.lower() in (r[0].value or "").lower()][:limit]
         return [
             {
                 "investigation_id": ent.investigation_id,

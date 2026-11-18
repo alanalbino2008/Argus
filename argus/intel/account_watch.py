@@ -44,6 +44,7 @@ from argus.intel.avatars import fetch_fingerprint
 from argus.modules.identity.platforms import Platform
 from argus.modules.identity.profile_enricher import EXTRACTORS, _facts
 from argus.modules.identity.username_hunter import UsernameHunterModule, all_platforms
+from argus.security import vault
 from argus.security.auth import Principal, Role
 from argus.security.network import GuardedResolver, configured_proxy_hosts
 
@@ -192,7 +193,8 @@ class AccountWatcher:
     async def run_forever(self) -> None:
         while True:
             try:
-                await self.tick()
+                if vault.ready():  # with the case vault locked, its records cannot be read: wait
+                    await self.tick()
             except asyncio.CancelledError:
                 raise
             except Exception:

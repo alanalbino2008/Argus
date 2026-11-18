@@ -27,6 +27,7 @@ from typing import Any
 from argus.core.models import EntityType, ScanConfig
 from argus.core.settings import Settings
 from argus.observability import metrics
+from argus.security import vault
 from argus.security.auth import Principal, Role
 from argus.security.network import validate_scan_target
 from argus.storage.monitor_repo import MonitorRepository
@@ -108,7 +109,8 @@ class MonitorScheduler:
     async def run_forever(self) -> None:
         while True:
             try:
-                await self.tick()
+                if vault.ready():  # with the case vault locked, its records cannot be read: wait
+                    await self.tick()
             except asyncio.CancelledError:
                 raise
             except Exception:

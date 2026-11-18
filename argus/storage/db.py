@@ -25,7 +25,6 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
-    Text,
     event,
     false,
     text,
@@ -33,6 +32,8 @@ from sqlalchemy import (
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from argus.security.vault import EncryptedBytes, EncryptedJSON, EncryptedLongText, EncryptedText
 
 SCHEMA_VERSION = 1
 
@@ -46,14 +47,14 @@ class InvestigationRow(Base):
     workspace_id: Mapped[str] = mapped_column(String(32), index=True, server_default="ws_default")
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    target: Mapped[str] = mapped_column(String(512), index=True)
+    target: Mapped[str] = mapped_column(EncryptedText(512, label="investigations.target"), index=True)
     target_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     node_count: Mapped[int] = mapped_column(Integer, default=0)
     edge_count: Mapped[int] = mapped_column(Integer, default=0)
-    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="investigations.data"))
     # Cluster coordination (several API replicas share one database):
     owner: Mapped[str | None] = mapped_column(String(128), nullable=True)  # instance running the scan
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -68,9 +69,9 @@ class EntityRow(Base):
     )
     entity_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     type: Mapped[str] = mapped_column(String(32))
-    value: Mapped[str] = mapped_column(String(2048))
-    label: Mapped[str] = mapped_column(String(2048))
-    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    value: Mapped[str] = mapped_column(EncryptedText(2048, label="entities.value"))
+    label: Mapped[str] = mapped_column(EncryptedText(2048, label="entities.label"))
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="entities.data"))
 
     __table_args__ = (
         Index("ix_entities_type_value", "type", "value"),
@@ -88,7 +89,7 @@ class RelationRow(Base):
     source_id: Mapped[str] = mapped_column(String(64))
     target_id: Mapped[str] = mapped_column(String(64))
     type: Mapped[str] = mapped_column(String(32))
-    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="relations.data"))
 
 
 class ApiKeyRow(Base):
@@ -268,7 +269,7 @@ class AuditEventRow(Base):
     resource: Mapped[str | None] = mapped_column(String(256), nullable=True)
     outcome: Mapped[str] = mapped_column(String(16))
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    details: Mapped[dict[str, Any]] = mapped_column(JSON)
+    details: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="audit_events.details"))
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
 
@@ -280,12 +281,12 @@ class MonitorRow(Base):
     workspace_id: Mapped[str] = mapped_column(String(32), index=True, server_default="ws_default")
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    target: Mapped[str] = mapped_column(String(512))
+    target: Mapped[str] = mapped_column(EncryptedText(512, label="monitors.target"))
     target_type: Mapped[str] = mapped_column(String(32))
     max_depth: Mapped[int] = mapped_column(Integer, default=2)
     passive_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     interval_hours: Mapped[int] = mapped_column(Integer)
-    purpose: Mapped[str] = mapped_column(String(500))
+    purpose: Mapped[str] = mapped_column(EncryptedText(500, label="monitors.purpose"))
     created_by: Mapped[str] = mapped_column(String(128))
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -304,10 +305,10 @@ class AlertRow(Base):
     monitor_id: Mapped[str | None] = mapped_column(String(32), index=True, nullable=True)
     investigation_id: Mapped[str] = mapped_column(String(64))
     previous_investigation_id: Mapped[str] = mapped_column(String(64))
-    target: Mapped[str] = mapped_column(String(512))
+    target: Mapped[str] = mapped_column(EncryptedText(512, label="alerts.target"))
     severity: Mapped[str] = mapped_column(String(16))
-    headline: Mapped[str] = mapped_column(String(1024))
-    summary: Mapped[dict[str, Any]] = mapped_column(JSON)
+    headline: Mapped[str] = mapped_column(EncryptedText(1024, label="alerts.headline"))
+    summary: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="alerts.summary"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -350,7 +351,7 @@ class NotificationDeliveryRow(Base):
     )
     event_type: Mapped[str] = mapped_column(String(64))
     event_id: Mapped[str] = mapped_column(String(64))
-    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+    payload: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="notification_deliveries.payload"))
     status: Mapped[str] = mapped_column(String(16))  # pending | sending | delivered | failed | cancelled
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -388,7 +389,7 @@ class ReportRow(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(32), index=True)
     investigation_id: Mapped[str] = mapped_column(String(64), index=True)
-    target: Mapped[str] = mapped_column(String(512))
+    target: Mapped[str] = mapped_column(EncryptedText(512, label="reports.target"))
     sha256: Mapped[str] = mapped_column(String(64), unique=True)
     size: Mapped[int] = mapped_column(Integer)
     tlp: Mapped[str] = mapped_column(String(16))
@@ -406,7 +407,7 @@ class ReportScheduleRow(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(128))
-    target: Mapped[str] = mapped_column(String(512))
+    target: Mapped[str] = mapped_column(EncryptedText(512, label="report_schedules.target"))
     frequency: Mapped[str] = mapped_column(String(16))
     weekday: Mapped[int | None] = mapped_column(Integer, nullable=True)
     day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -435,7 +436,7 @@ class ReportFileRow(Base):
     report_id: Mapped[str] = mapped_column(String(32), ForeignKey("reports.id", ondelete="CASCADE"), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(32), index=True)
     filename: Mapped[str] = mapped_column(String(255))
-    pdf: Mapped[bytes] = mapped_column(LargeBinary)
+    pdf: Mapped[bytes] = mapped_column(EncryptedBytes(label="report_files.pdf"))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
@@ -602,9 +603,9 @@ class CaseRow(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
-    title: Mapped[str] = mapped_column(String(200))
-    purpose: Mapped[str] = mapped_column(String(500))
-    summary: Mapped[str] = mapped_column(Text, default="")
+    title: Mapped[str] = mapped_column(EncryptedText(200, label="cases.title"))
+    purpose: Mapped[str] = mapped_column(EncryptedText(500, label="cases.purpose"))
+    summary: Mapped[str] = mapped_column(EncryptedLongText(label="cases.summary"), default="")
     status: Mapped[str] = mapped_column(String(16), default="open")  # open | closed | archived
     restricted: Mapped[bool] = mapped_column(Boolean, default=False)  # only the owner and members can open it
     members: Mapped[list[str]] = mapped_column(JSON)
@@ -627,13 +628,15 @@ class AccountWatchRow(Base):
     case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
     platform: Mapped[str] = mapped_column(String(80))
     handle: Mapped[str] = mapped_column(String(128))
-    profile_url: Mapped[str] = mapped_column(String(512))
+    profile_url: Mapped[str] = mapped_column(EncryptedText(512, label="account_watches.profile_url"))
     interval_hours: Mapped[int] = mapped_column(Integer, default=24)
     capture_on_change: Mapped[bool] = mapped_column(Boolean, default=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | active | gone | error
-    message: Mapped[str] = mapped_column(String(512), default="")
-    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)  # the profile as last seen
+    message: Mapped[str] = mapped_column(EncryptedText(512, label="account_watches.message"), default="")
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        EncryptedJSON(label="account_watches.snapshot"), nullable=True
+    )  # the profile as last seen
     missing_count: Mapped[int] = mapped_column(Integer, default=0)  # consecutive "not there" observations
     changes_count: Mapped[int] = mapped_column(Integer, default=0)
     next_check_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -653,8 +656,8 @@ class AccountSnapshotRow(Base):
     watch_id: Mapped[str] = mapped_column(String(32), ForeignKey("account_watches.id", ondelete="CASCADE"))
     taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     exists: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    facts: Mapped[dict[str, Any]] = mapped_column(JSON)
-    changes: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    facts: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="account_snapshots.facts"))
+    changes: Mapped[list[dict[str, Any]]] = mapped_column(EncryptedJSON(label="account_snapshots.changes"))
     capture_id: Mapped[str | None] = mapped_column(String(32), nullable=True)  # evidence taken at the time
 
 
@@ -668,10 +671,12 @@ class PlaybookRunRow(Base):
     workspace_id: Mapped[str] = mapped_column(String(32))
     case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
     playbook: Mapped[str] = mapped_column(String(64))
-    seed: Mapped[str] = mapped_column(String(500))
+    seed: Mapped[str] = mapped_column(EncryptedText(500, label="playbook_runs.seed"))
     seed_type: Mapped[str] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16))  # running | completed | failed | cancelled | interrupted
-    data: Mapped[dict[str, Any]] = mapped_column(JSON)  # steps, highlights, options
+    data: Mapped[dict[str, Any]] = mapped_column(
+        EncryptedJSON(label="playbook_runs.data")
+    )  # steps, highlights, options
     created_by: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -686,9 +691,9 @@ class CaseItemRow(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(16))  # note | entity | link | scan | event
-    title: Mapped[str] = mapped_column(String(300))
-    body: Mapped[str] = mapped_column(Text, default="")
-    data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    title: Mapped[str] = mapped_column(EncryptedText(300, label="case_items.title"))
+    body: Mapped[str] = mapped_column(EncryptedLongText(label="case_items.body"), default="")
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="case_items.data"))
     occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -704,13 +709,13 @@ class EvidenceCaptureRow(Base):
     case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"), index=True)
     workspace_id: Mapped[str] = mapped_column(String(32))
     kind: Mapped[str] = mapped_column(String(16))  # web | upload
-    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
-    title: Mapped[str] = mapped_column(String(300), default="")
-    note: Mapped[str] = mapped_column(String(1000), default="")
+    url: Mapped[str | None] = mapped_column(EncryptedText(2048, label="evidence_captures.url"), nullable=True)
+    title: Mapped[str] = mapped_column(EncryptedText(300, label="evidence_captures.title"), default="")
+    note: Mapped[str] = mapped_column(EncryptedText(1000, label="evidence_captures.note"), default="")
     digest: Mapped[str] = mapped_column(String(64), index=True)  # SHA-256 of the canonical manifest
-    manifest: Mapped[dict[str, Any]] = mapped_column(JSON)
+    manifest: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="evidence_captures.manifest"))
     timestamp_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)  # RFC 3161 reply
-    warnings: Mapped[list[str]] = mapped_column(JSON)
+    warnings: Mapped[list[str]] = mapped_column(EncryptedJSON(label="evidence_captures.warnings"))
     captured_by: Mapped[str] = mapped_column(String(128))
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -725,7 +730,7 @@ class EvidenceFileRow(Base):
     media_type: Mapped[str] = mapped_column(String(128))
     sha256: Mapped[str] = mapped_column(String(64))
     size: Mapped[int] = mapped_column(Integer)
-    data: Mapped[bytes] = mapped_column(LargeBinary)
+    data: Mapped[bytes] = mapped_column(EncryptedBytes(label="evidence_files.data"))
 
 
 class EvidenceCustodyRow(Base):
@@ -741,7 +746,7 @@ class EvidenceCustodyRow(Base):
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     by: Mapped[str] = mapped_column(String(128))
     action: Mapped[str] = mapped_column(String(32))  # captured | viewed | downloaded | exported | verified
-    detail: Mapped[str] = mapped_column(String(500), default="")
+    detail: Mapped[str] = mapped_column(EncryptedText(500, label="evidence_custody.detail"), default="")
     prev_hash: Mapped[str] = mapped_column(String(64))
     hash: Mapped[str] = mapped_column(String(64))
 
@@ -795,6 +800,7 @@ class Database:
 def _sqlite_pragmas(dbapi_conn, _record) -> None:
     cur = dbapi_conn.cursor()
     cur.execute("PRAGMA foreign_keys=ON")  # enforce ON DELETE CASCADE
+    cur.execute("PRAGMA secure_delete=ON")  # deleted and overwritten data is zeroed, not left in free pages
     cur.execute("PRAGMA journal_mode=WAL")  # readers don't block the writer
     cur.execute("PRAGMA synchronous=NORMAL")  # safe with WAL, much faster
     cur.close()
