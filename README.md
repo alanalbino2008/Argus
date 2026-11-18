@@ -436,6 +436,14 @@ the addresses published on a website) and it follows the money.
   nuisance-call sites and paste sites come first. Use your own search key, or Argus credits
   ([`docs/explained/39-phone-footprint.md`](docs/explained/39-phone-footprint.md)).
 
+**Network ranges**: who owns the addresses behind a target, and every other range they run.
+
+- For an address: its block, who it is registered to, and the network announcing it. Cloud and
+  hosting addresses are marked as shared.
+- For a company: the networks registered in its name and every address range they announce.
+- From the public registries only: listed, never scanned
+  ([`docs/explained/40-network-ranges.md`](docs/explained/40-network-ranges.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

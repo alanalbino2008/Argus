@@ -32,6 +32,7 @@ const HIDDEN_META = new Set([
   "country_of_residence", "ch_officer_id", "ch_company", "officer_matches", "appointments_total", "via_possible_match",
   "crawl", "tracking_ids", "links_to_sites", "found_on", "on_site_domain", "hosted_elsewhere",
   "phone", "phone_valid", "web_mentions", "mention_kind", "snippet", "page_age",
+  "network", "network_ranges", "networks_checked", "shared_provider", "holder", "matched_by",
 ]);
 
 const CATEGORY_LABEL = {
@@ -261,6 +262,31 @@ function screeningBlock(md) {
   return out;
 }
 
+/** Who owns an address block, and every range a network announces. */
+function networkBlock(entity) {
+  const md = entity.metadata || {};
+  const out = [];
+  const n = md.network;
+  if (n) {
+    out.push(html`<div class="section"><div class="section-title">Address block</div>
+      ${n.shared_provider ? html`<p class="muted small">${ico("info")} A cloud or hosting provider's address, shared with many unrelated customers: it says little about who runs the site.</p>` : ""}
+      ${kvRows([["Block", n.block], ["Registered to", n.registered_to], ["Network name", n.name], ["Announced as", n.announced_as],
+        ["Country", n.country], ["Registry", n.registry], ["Abuse contact", n.abuse_contact]])}</div>`);
+  }
+  const r = md.network_ranges;
+  if (r) {
+    out.push(html`<div class="section"><div class="section-title">Network ${entity.value}</div>
+      ${md.matched_by ? html`<div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>Found by matching the company's name in the registry: confirm it is the same company.</span></div>` : ""}
+      ${r.shared_provider ? html`<p class="muted small">${r.note || "A provider's network: its ranges belong to its customers, so they are not listed."}</p>`
+        : html`${kvRows([["Holder", r.holder], ["Address ranges", r.range_count], ["IPv4 addresses", r.addresses_v4?.toLocaleString()]])}
+          <p class="muted small">Listed from the public routing registry, never scanned.</p>
+          ${r.ranges_v4?.length || r.ranges_v6?.length ? html`<details><summary class="small">Ranges (${(r.ranges_v4?.length || 0) + (r.ranges_v6?.length || 0)})</summary>
+            <div class="small" style="font-family:var(--mono, monospace);column-width:160px">${[...(r.ranges_v4 || []), ...(r.ranges_v6 || [])].map((x) => html`<div>${x}</div>`)}</div></details>` : ""}`}
+    </div>`);
+  }
+  return out;
+}
+
 /** What a phone number itself says, and where the web mentions it (phones and emails). */
 function phoneBlock(entity) {
   const md = entity.metadata || {};
@@ -359,6 +385,7 @@ function intelBlocks(entity) {
   if (entity.type === "crypto_wallet") blocks.push(walletBlock(entity));
   if (entity.type === "domain" || entity.type === "subdomain") blocks.push(...crawlBlock(md));
   blocks.push(...phoneBlock(entity));
+  blocks.push(...networkBlock(entity));
   if (md.found_on) blocks.push(html`<div class="section"><div class="section-title">Where it was found</div><p class="small">${/^https?:\/\//.test(md.found_on) ? ext(md.found_on, md.found_on) : md.found_on}</p></div>`);
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;

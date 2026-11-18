@@ -73,7 +73,7 @@ CATALOGUE: dict[str, Playbook] = {p.id: p for p in (
         "named in offshore leaks.",
         (EntityType.ORGANIZATION,),
         (Step("scan", "Registers, owners, sanctions and leaks",
-              ("companies_house", "gleif", "sec_edgar", "offshore_leaks", "sanctions_screen"), depth=2),
+              ("companies_house", "gleif", "sec_edgar", "offshore_leaks", "sanctions_screen", "network_ranges"), depth=2),
          Step("capture", "Preserve the register entries", capture=("register",), limit=5),
          FINDINGS, BRIEF),
         when="A company name, e.g. a supplier, a charity's trading arm, or a company in a story.",
@@ -128,7 +128,7 @@ CATALOGUE: dict[str, Playbook] = {p.id: p for p in (
         (EntityType.DOMAIN,),
         (Step("scan", "Registration, history and related sites",
               ("whois_lookup", "dns_recon", "passive_dns", "wayback", "subdomain_finder", "infrastructure_pivot",
-               "lookalike_domains")),
+               "lookalike_domains", "network_ranges")),
          Step("scan", "Read the whole website", ("site_crawler", "profile_enricher")),
          Step("capture", "Preserve the home page and contact pages", capture=("website", "contacts"), limit=4),
          FINDINGS, BRIEF),
@@ -267,6 +267,19 @@ def highlights(graph: IntelligenceGraph, *, limit: int = 60) -> list[Highlight]:
         if e.type == EntityType.PHONE and md.get("phone_valid") is False:
             out.append(Highlight("medium", f"{e.value} is not a real number range",
                                  "Possibly mistyped, invented, or a range reserved for TV and film"))  # fmt: skip
+        net = md.get("network") or {}
+        if e.type == EntityType.IP_ADDRESS and net:
+            owner = net.get("registered_to") or net.get("name") or "?"
+            out.append(Highlight("info", f"{e.value}: " + (f"shared hosting ({owner})" if net.get("shared_provider")
+                                                            else f"in {net.get('block', 'a block')} registered to {owner}"),
+                                 "A provider's address, shared with many customers" if net.get("shared_provider")
+                                 else f"Registry: {net.get('registry', '?')}, country {net.get('country', '?')}"))  # fmt: skip
+        ranges = md.get("network_ranges") or {}
+        if e.type == EntityType.ASN and ranges and not ranges.get("shared_provider"):
+            out.append(Highlight("info", f"Network {e.value} ({ranges.get('holder') or '?'}): {ranges.get('range_count', 0)} "
+                                         f"address ranges, {ranges.get('addresses_v4', 0):,} IPv4 addresses",
+                                 "Everything this network announces. Listed, not scanned"
+                                 + (". Matched by registry name: confirm it is the same company" if md.get("matched_by") else "")))  # fmt: skip
         if e.type == EntityType.SOCIAL_PROFILE:
             out.append(Highlight("info", f"Account found: {e.label or e.value}",
                                  f"confidence {e.confidence:.0%}" + (f", {md['name']}" if md.get("name") else ""),

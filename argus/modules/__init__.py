@@ -23,6 +23,7 @@ from argus.modules.identity.web_mentions import WebMentionsModule
 from argus.modules.infrastructure.dns_recon import DnsReconModule
 from argus.modules.infrastructure.http_fingerprint import HttpFingerprintModule
 from argus.modules.infrastructure.ip_intelligence import IpIntelligenceModule
+from argus.modules.infrastructure.network_ranges import NetworkRangesModule
 from argus.modules.infrastructure.shodan_internetdb import ShodanInternetDbModule
 from argus.modules.infrastructure.software_intel import SoftwareIntelModule
 from argus.modules.infrastructure.subdomain_finder import SubdomainFinderModule
@@ -72,6 +73,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     ShodanHostModule,
     CodeLeaksModule,
     WebMentionsModule,
+    NetworkRangesModule,
 ]
 
 

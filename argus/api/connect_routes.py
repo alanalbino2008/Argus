@@ -15,6 +15,7 @@ credits on without their searches being kept.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import aiohttp
@@ -116,7 +117,7 @@ async def connect_lookup(provider: str, body: ConnectRequest, request: Request):
     except ConnectError as exc:
         await request.app.state.credits.refund(account["id"], charge, f"{detail} failed")
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
-    except (aiohttp.ClientError, TimeoutError, OSError) as exc:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
         await request.app.state.credits.refund(account["id"], charge, f"{detail} failed")
         raise HTTPException(status_code=503, detail=f"{LABELS[provider]} could not be reached") from exc
     if result.get("not_found"):  # nothing found is still an answer, but costs nothing

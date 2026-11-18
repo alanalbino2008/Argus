@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import aiohttp
@@ -85,7 +86,7 @@ async def ai(task: str, material: str) -> dict[str, Any]:
             if resp.status != 200:
                 detail = data.get("detail") if isinstance(data, dict) else None
                 raise AnalystError(resp.status, str(detail or f"Argus Connect answered {resp.status}"))
-    except (aiohttp.ClientError, TimeoutError, OSError, ValueError) as exc:
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as exc:
         raise AnalystError(503, "The Argus account service could not be reached") from exc
     licence.last_credits = data.get("credits")
     return {**(data.get("result") or {}), "via": via, "credits": data.get("credits")}

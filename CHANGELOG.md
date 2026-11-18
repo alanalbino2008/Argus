@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.40.0] — Phase 40: Network ranges
+
+### Added
+- **Network ranges** (`network_ranges`), from the official internet registries (RIPEstat and
+  RDAP, free and public; the target is never contacted):
+  - **for an IP address**: the address block it belongs to, who it is registered to, the
+    country, the registry, the abuse contact, and the network (ASN) announcing it;
+  - **for a network (ASN)**: its holder and every address range it announces, IPv4 and IPv6,
+    with the number of IPv4 addresses;
+  - **for a company**: networks registered in its name, matched name against name. A match is
+    marked as likely, to be confirmed.
+  - Addresses and networks of **cloud and hosting providers** (Amazon, Cloudflare, Google,
+    Microsoft, OVH, Hetzner…) are marked *shared*, and their ranges aren't listed: they belong
+    to thousands of unrelated customers.
+  - Ranges are listed, **never scanned**.
+- **Playbooks**: company due diligence finds the company's own networks and their ranges; website
+  background shows who owns each address the site uses.
+- **Graph**: "Address block" and "Network" panels, with every range listed.
+
+### Fixed
+- Timeouts in Argus Connect lookups and the AI analyst's Connect route are now caught on
+  Python 3.10 too, where a timeout is a different kind of error from later versions.
+
 ## [1.39.0] — Phase 39: Phone footprint
 
 ### Added
