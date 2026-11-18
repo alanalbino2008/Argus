@@ -31,6 +31,7 @@ from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.intel.avatars import fetch_fingerprint
 from argus.modules.base import BaseModule
+from argus.modules.identity.page_profile import read_profile_page
 
 logger = logging.getLogger("argus.module.profile_enricher")
 
@@ -331,17 +332,28 @@ class ProfileEnricherModule(BaseModule):
     attack_techniques = ("T1593.001", "T1589.003", "T1591.001")
 
     def can_handle(self, entity: Entity) -> bool:
-        return super().can_handle(entity) and entity.metadata.get("platform") in EXTRACTORS
+        if not super().can_handle(entity) or entity.metadata.get("profile"):
+            return False
+        if entity.metadata.get("platform") in EXTRACTORS:
+            return True
+        # Any other site: its public profile page, when the account is reasonably likely to exist.
+        return entity.value.startswith("https://") and entity.confidence >= 0.5
 
     async def run(self, entity: Entity, session: HttpClient, config: ScanConfig) -> AsyncIterator[Entity | Relation]:
-        platform = entity.metadata["platform"]
+        platform = str(entity.metadata.get("platform") or entity.label.split(":", 1)[0].strip() or "Profile")
         handle = entity.metadata.get("username") or entity.value.rstrip("/").rsplit("/", 1)[-1].split("=")[-1]
-        facts = await EXTRACTORS[platform](session, handle)
+        if platform in EXTRACTORS:
+            facts = await EXTRACTORS[platform](session, handle)
+        else:
+            facts = await read_profile_page(session, entity.value, str(handle), platform, config.timeout_seconds)
         if not facts:
             return
         entity.metadata["profile"] = {
             k: (v[:400] if isinstance(v, str) else v) for k, v in facts.items() if k != "links"
         }
+        linked = [str(item.get("url")) for item in facts.get("links") or [] if item.get("url")]
+        if linked:  # kept for comparing accounts: a profile linking to another is strong evidence
+            entity.metadata["profile"]["links"] = list(dict.fromkeys(linked))[:10]
         entity.metadata["avatar_hash"] = await fetch_fingerprint(session, facts.get("avatar_url"))
         depth = entity.depth + 1
 

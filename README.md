@@ -452,6 +452,14 @@ the addresses published on a website) and it follows the money.
 - No readable copies are left on disk: a test reads the raw database files to prove it
   ([`docs/explained/41-case-vault.md`](docs/explained/41-case-vault.md)).
 
+**Bigger username search, with same-person checks**
+
+- A username is checked on thousands of sites from two community lists, each checked once and
+  calibrated against a made-up name.
+- Accounts' public profiles (name, photo, bio, place, links) are compared. Argus says which
+  accounts are the same person, which are doubtful, and why
+  ([`docs/explained/42-username-search.md`](docs/explained/42-username-search.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

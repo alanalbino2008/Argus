@@ -40,6 +40,7 @@ from typing import Any
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import Entity, EntityType
 from argus.intel.avatars import same_picture
+from argus.intel.profiles import compare
 
 IDENTITY_TYPES = {
     EntityType.PERSON,
@@ -284,6 +285,42 @@ def picture_matches(entities: Any) -> list[tuple[str, str]]:
     ]
 
 
+def corroborate(accounts: list[dict[str, Any]], profiles: dict[str, Entity]) -> None:
+    """Compare each account's public profile with the person's other accounts.
+
+    Accounts found only because the handle exists (``probable``) or under a variant (``possible``)
+    are upgraded to ``strong`` when another account's profile clearly matches (a link between them,
+    or two independent agreements), and marked ``doubtful`` when every comparison points to a
+    different person. The reasons are kept, so the investigator can judge for themselves.
+    """
+    entries = []
+    for account in accounts:
+        entity = profiles.get(account["entity_id"])
+        facts = account["facts"]
+        if entity is None or not (facts or entity.metadata.get("avatar_hash")):
+            continue
+        entries.append(
+            (account, {"facts": facts, "url": account["url"], "avatar_hash": entity.metadata.get("avatar_hash")})
+        )
+    for i, (account, mine) in enumerate(entries):
+        matches, against = [], []
+        for j, (other, theirs) in enumerate(entries):
+            if i == j or other["platform"] == account["platform"]:
+                continue
+            result = compare(mine, theirs)
+            if result["verdict"] in ("same", "likely"):
+                matches.append(
+                    {"platform": other["platform"], "verdict": result["verdict"], "reasons": result["agree"]}
+                )
+            elif result["verdict"] == "different":
+                against.append({"platform": other["platform"], "reasons": result["conflict"]})
+        account["matches"] = matches
+        if any(m["verdict"] == "same" for m in matches) and account["link"] in ("probable", "possible"):
+            account["link"] = "strong"
+        if against and not matches:
+            account["doubtful"] = against
+
+
 def _dossier(
     members: list[Entity],
     entities: dict[str, Entity],
@@ -327,6 +364,8 @@ def _dossier(
             timeline.append(
                 {"date": str(facts["created_at"])[:10], "event": f"Joined {platform}", "entity_id": profile.id}
             )
+
+    corroborate(accounts, {p.id: p for p in by_type[EntityType.SOCIAL_PROFILE]})
 
     emails = by_type[EntityType.EMAIL]
     breaches = neighbours(emails, EntityType.BREACH)

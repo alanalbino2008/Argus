@@ -159,12 +159,17 @@ async def test_reddit_hackernews_devto_dockerhub_bluesky():
     assert any("dana.bsky.social" in u for u in session.requested)
 
 
-async def test_missing_profile_yields_nothing_and_unknown_platform_is_skipped():
+async def test_missing_profile_yields_nothing_and_unlikely_accounts_are_skipped():
     mod = ProfileEnricherModule()
     entity = profile("Keybase", "ghost")
     assert await collect(mod, entity, FakeSession({})) == ([], [])
     assert "profile" not in entity.metadata
-    assert not mod.can_handle(profile("Instagram", "dana"))
+    # Sites without an official API are read from their public profile page (page_profile), when
+    # the account is reasonably likely to be theirs.
+    assert mod.can_handle(profile("Instagram", "dana"))
+    unlikely = profile("Instagram", "dana")
+    unlikely.confidence = 0.3
+    assert not mod.can_handle(unlikely)
 
 
 def test_name_and_html_helpers():

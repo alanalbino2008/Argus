@@ -199,8 +199,10 @@ function account(a) {
       ${sub ? html`<div class="list-sub">${sub}</div>` : ""}
       ${f.bio ? html`<div class="list-sub account-bio">${f.bio}</div>` : ""}
       ${why.length ? html`<div class="list-sub">${ico("info")} ${why.join(" · ")}</div>` : ""}
+      ${(a.matches || []).map((m) => html`<div class="list-sub" style="color:var(--ok)">${ico("check")} ${m.verdict === "same" ? "Same person as" : "Probably the same person as"} the ${m.platform} account: ${m.reasons.join(", ")}</div>`)}
+      ${(a.doubtful || []).map((d) => html`<div class="list-sub" style="color:var(--warn, #b45309)">${ico("alert")} Probably a different person from the ${d.platform} account: ${d.reasons.join(", ")}</div>`)}
     </div>
-    <span class="pill ${grade[0]}">${grade[1]}</span>
+    <span class="pill ${a.doubtful?.length ? "warn" : grade[0]}">${a.doubtful?.length ? "Doubtful" : grade[1]}</span>
     ${a.url ? html`<a class="btn ghost sm icon" href="${a.url}" target="_blank" rel="noopener noreferrer nofollow" referrerpolicy="no-referrer" title="Open profile (leaves Argus)">${ico("external")}</a>` : ""}
   </div>`;
 }

@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.42.0] — Phase 42: Bigger username search, and same-person checks
+
+### Added
+- **A second community username catalog**: Maigret's (MIT licence), read at run time like
+  WhatsMyName:
+  - about 8,000 usable sites;
+  - the most visited 3,000 are checked by default (`ARGUS_USERNAME_CATALOG_EXTRA_LIMIT`);
+  - site engines (shared forum software) are applied;
+  - entries Argus can't check safely are skipped (no HTTPS, redirect-only checks, disabled,
+    unreadable rules).
+  - Each site is checked once across all lists, by name and by address, and the hand-checked
+    list wins over WhatsMyName, which wins over Maigret.
+  - As before, every hit is checked against a random, certainly-unregistered name.
+  - Settings: `ARGUS_USERNAME_CATALOG_EXTRA_URL` and `ARGUS_USERNAME_CATALOG_EXTRA_FILE` (for
+    offline use).
+- **Profile details from any site**: for accounts on sites without an official API, Argus reads
+  the public page's link-preview information:
+  - the name, bio, photo and location (OpenGraph, Twitter cards, JSON-LD `Person`);
+  - links to the owner's other accounts (`sameAs`, `rel="me"`).
+  - Titles that are only the handle or the site's name, sales-pitch descriptions and sign-in
+    pages are ignored.
+- **Same person or not**: each account's public profile is compared with the person's other
+  accounts:
+  - **agreements**: a link between them, both linking to the same website, the same photo, the
+    same name (compared word by word), similar bios, the same place;
+  - **conflicts**: different real names, different places.
+  - Accounts found only because the username exists are upgraded to *strong* when another
+    account clearly matches.
+  - Accounts are marked **Doubtful** when everything points to a different person.
+  - The People page shows the reasons for each.
+- Profiles keep their outbound links, for these comparisons.
+
 ## [1.41.0] — Phase 41: The case vault
 
 ### Added

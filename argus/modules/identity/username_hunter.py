@@ -15,6 +15,7 @@ import secrets
 import string
 from collections.abc import AsyncIterator
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -24,6 +25,7 @@ from argus.core.settings import get_settings
 from argus.intel.handles import variants
 from argus.modules.base import BaseModule
 from argus.modules.identity.catalog import community_platforms
+from argus.modules.identity.maigret_catalog import extra_platforms
 from argus.modules.identity.platforms import Platform, detect, load_platforms, needs_body
 
 logger = logging.getLogger("argus.module.username_hunter")
@@ -45,11 +47,27 @@ def get_platforms() -> list[Platform]:
     return load_platforms(get_settings().extra_platforms_file)
 
 
+def _site_key(platform: Platform) -> str:
+    """The site a platform checks, so the same site from two catalogs is only checked once."""
+    host = urlsplit(platform.url.replace("{}", "x")).hostname or ""
+    return host.removeprefix("www.").removeprefix("x.")
+
+
 async def all_platforms(session: HttpClient) -> list[Platform]:
-    """Hand-checked signatures plus the community catalog; a hand-checked site wins a name clash."""
-    curated = get_platforms()
-    names = {p.name.lower() for p in curated}
-    return curated + [p for p in await community_platforms(session) if p.name.lower() not in names]
+    """Hand-checked signatures, then WhatsMyName, then Maigret: each site once, the better source first."""
+    chosen: list[Platform] = []
+    names: set[str] = set()
+    sites: set[str] = set()
+    for source in (get_platforms(), await community_platforms(session), await extra_platforms(session)):
+        for platform in source:
+            key = _site_key(platform)
+            if platform.name.lower() in names or (key and key in sites):
+                continue
+            chosen.append(platform)
+            names.add(platform.name.lower())
+            if key:
+                sites.add(key)
+    return chosen
 
 
 class UsernameHunterModule(BaseModule):

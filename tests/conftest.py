@@ -25,20 +25,23 @@ def database_url(tmp_path, name: str) -> str:
 def _no_live_username_catalog(monkeypatch):
     """Tests never download the community username catalog unless they opt in."""
     from argus.intel import sanctions
-    from argus.modules.identity import catalog
+    from argus.modules.identity import catalog, maigret_catalog
 
     monkeypatch.setenv("ARGUS_USERNAME_CATALOG_URL", "")
+    monkeypatch.setenv("ARGUS_USERNAME_CATALOG_EXTRA_URL", "")
     monkeypatch.setenv("ARGUS_SANCTIONS_SDN_URL", "")  # nor the sanctions lists
     monkeypatch.setenv("ARGUS_UK_SANCTIONS_URL", "")
     monkeypatch.setenv("ARGUS_UN_SANCTIONS_URL", "")
     get_settings.cache_clear()
     catalog.reset()
+    maigret_catalog.reset()
     from argus.intel import watchlists
 
     sanctions.reset()
     watchlists.reset()
     yield
     catalog.reset()
+    maigret_catalog.reset()
     sanctions.reset()
     watchlists.reset()
     get_settings.cache_clear()

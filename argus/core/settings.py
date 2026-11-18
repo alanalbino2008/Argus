@@ -172,6 +172,16 @@ class Settings(BaseSettings):
     username_catalog_file: str | None = Field(
         default=None, description="A local copy of the community catalog (offline installs); used instead of the URL"
     )
+    username_catalog_extra_url: str = Field(
+        default="https://raw.githubusercontent.com/soxoj/maigret/main/maigret/resources/data.json",
+        description="A second community username catalog (Maigret format), with more sites; '' = off",
+    )
+    username_catalog_extra_limit: int = Field(
+        default=3000, ge=0, le=20000, description="Most sites taken from the second catalog (the most visited first)"
+    )
+    username_catalog_extra_file: str | None = Field(
+        default=None, description="A local copy of the second catalog (offline installs); used instead of the URL"
+    )
     # ---------------------------------------------------------------- editions and accounts
     edition: Literal["server", "personal"] = Field(
         default="server",
