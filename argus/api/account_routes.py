@@ -66,7 +66,7 @@ class ResetConfirm(BaseModel):
 
 
 class AccountUpdate(BaseModel):
-    plan: Literal["trial", "personal", "professional", "team"] | None = None
+    plan: Literal["trial", "byok", "personal", "professional", "business"] | None = None
     status: Literal["trialing", "active", "past_due", "cancelled", "suspended"] | None = None
     valid_until: datetime | None = None
     max_devices: int | None = Field(default=None, ge=1, le=20)
@@ -245,7 +245,8 @@ async def confirm_password_reset(body: ResetConfirm, request: Request):
     signed_out = await repo.revoke_all_devices(account["id"])
     await audit(request, SERVICE, "account.password_reset", account["id"],
                 details={"computers_signed_out": signed_out, "ip": client_ip(request)})  # fmt: skip
-    await request.app.state.mailer.notify(account, "password_changed", body.token[:16])
+    if account["last_login_at"]:  # not for someone choosing their first password (an account made for them)
+        await request.app.state.mailer.notify(account, "password_changed", body.token[:16])
     return {"detail": "Your password has been changed. Sign in again on each computer with the new password."}
 
 

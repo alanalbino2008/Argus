@@ -70,9 +70,9 @@ def test_the_figures():
     weeks = out["signups"]["weeks"]
     assert len(weeks) == 12 and sum(w["accounts"] for w in weeks) == 9  # all joined within 12 weeks
     assert out["signups"]["trials_finished"] == 7 and out["signups"]["converted"] == 6
-    team = [acc(20, "team"), acc(21, "trial", "trialing", created=1, until=-1)]
+    team = [acc(20, "business"), acc(21, "trial", "trialing", created=1, until=-1)]
     team[0]["seats"], team[1]["team_id"] = 4, "acc_20"
-    with_team = business.summary(accounts + team, [], plan_prices={**prices, "team": {"amount": 1200, "currency": "GBP",
+    with_team = business.summary(accounts + team, [], plan_prices={**prices, "business": {"amount": 1200, "currency": "GBP",
                                  "interval": "month"}}, pack_prices={}, days=30, trial_days=14, now=NOW)  # fmt: skip
     assert with_team["mrr"]["amount"] == 3 * 1500 + 2 * 3900 + 4 * 1200  # every team seat counts
     assert with_team["customers"]["team_members"] == 1 and with_team["customers"]["team_seats"] == 4

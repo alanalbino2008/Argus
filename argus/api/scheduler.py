@@ -24,6 +24,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from argus.accounts import features
 from argus.core.models import EntityType, ScanConfig
 from argus.core.settings import Settings
 from argus.observability import metrics
@@ -59,6 +60,8 @@ class MonitorScheduler:
     async def tick(self) -> list[str]:
         """Start every due monitor that fits under the concurrency cap; returns investigation ids."""
         launched: list[str] = []
+        if not features.allows("monitoring"):  # Argus Personal on a plan without monitoring: paused
+            return launched
         for monitor in await self.monitors.due():
             running = self.running_scans()
             if inspect.isawaitable(running):

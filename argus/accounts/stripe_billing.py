@@ -47,9 +47,10 @@ class BillingError(Exception):
 # ---------------------------------------------------------------------------- what can be bought
 def plan_prices(settings: Settings) -> dict[str, str]:
     """Plan -> Stripe price id, for the plans the operator has priced."""
-    return {plan: price for plan, price in (("personal", settings.stripe_price_personal),
+    return {plan: price for plan, price in (("byok", settings.stripe_price_byok),
+                                            ("personal", settings.stripe_price_personal),
                                             ("professional", settings.stripe_price_professional),
-                                            ("team", settings.stripe_price_team)) if price}  # fmt: skip
+                                            ("business", settings.stripe_price_business)) if price}  # fmt: skip
 
 
 def credit_packs(settings: Settings) -> dict[int, str]:

@@ -32,7 +32,7 @@ def service(make_client, fake_stripe, monkeypatch):
     monkeypatch.setitem(connectors.BASES, "companies_house", ch.url)
     c = make_client(account_service_enabled="true", licence_signing_key=PRIVATE, account_signup_enabled="true",
                     public_url="http://testserver", monitors_enabled="false", stripe_secret_key="sk_test_argus",
-                    stripe_webhook_secret=SECRET, stripe_api_url=fake_stripe.url, stripe_price_team="price_team",
+                    stripe_webhook_secret=SECRET, stripe_api_url=fake_stripe.url, stripe_price_business="price_business", stripe_price_business_setup="price_setup",
                     stripe_price_personal="price_personal", smtp_host="smtp.test", companies_house_api_key="k")  # fmt: skip
     c.outbox = []
     monkeypatch.setattr(c.app.state.mailer.transport, "_send_mail", c.outbox.append)
@@ -60,14 +60,14 @@ def owner_with_team(c, fake_stripe, seats=3):
     c.post("/api/accounts/signup", json={"email": "olivia@agency.example", "password": GOOD_PHRASE, "name": "Olivia"})
     licence = sign_in(c, "olivia@agency.example").json()["licence"]
     acc = payload(licence)["sub"]
-    page = c.post("/api/billing/checkout", json={"licence": licence, "item": "plan:team", "seats": seats,
+    page = c.post("/api/billing/checkout", json={"licence": licence, "item": "plan:business", "seats": seats,
                                                  "return_url": "http://localhost:8000/"})  # fmt: skip
     assert page.status_code == 200
     form = [x for x in fake_stripe.calls if x[1] == "/v1/checkout/sessions"][-1][2]
     assert (
         form["line_items[0][quantity]"] == str(seats) and form["line_items[0][adjustable_quantity][enabled]"] == "true"
     )
-    sub = subscription(price="price_team", account_id=acc)
+    sub = subscription(price="price_business", account_id=acc)
     sub["items"]["data"][0]["quantity"] = seats
     fake_stripe.subscriptions["sub_1"] = sub
     deliver(c, event("customer.subscription.created", sub))
@@ -75,8 +75,8 @@ def owner_with_team(c, fake_stripe, seats=3):
 
 
 def test_the_rules():
-    assert monthly_allowance("team", 3) == 3000 and monthly_allowance("personal", 3) == 500
-    owner = {"id": "acc_o", "plan": "team", "team_id": None}
+    assert monthly_allowance("business", 3) == 3000 and monthly_allowance("personal", 3) == 500
+    owner = {"id": "acc_o", "plan": "business", "team_id": None}
     assert teams.is_owner(owner) and teams.pool_id({"id": "acc_m", "team_id": "acc_o"}) == "acc_o"
     assert teams.device_limit({"id": "m", "team_id": "acc_o"}) == 2 and teams.device_limit(owner) is None
 
@@ -85,7 +85,7 @@ def test_a_team_from_start_to_finish(service, fake_stripe):
     c = service
     acc, licence = owner_with_team(c, fake_stripe)
     got = c.get(f"/api/accounts/{acc}").json()
-    assert (got["plan"], got["seats"], got["status"]) == ("team", 3, "active")
+    assert (got["plan"], got["seats"], got["status"]) == ("business", 3, "active")
     assert c.post("/api/connect/balance", json={"licence": licence}).json()["credits"]["allowance"] == 3000
 
     invite = lambda email: c.post("/api/teams/invite", json={"licence": licence, "email": email})  # noqa: E731
@@ -117,7 +117,7 @@ def test_a_team_from_start_to_finish(service, fake_stripe):
     # Bob signs in on his own computer: the team's plan, paid-until and shared credits
     bob_licence = sign_in(c, "bob@agency.example", "bobs own pass phrase", "device-bbbbbbbbbbbbbbbb").json()["licence"]
     bob = payload(bob_licence)
-    assert (bob["plan"], bob["status"]) == ("team", "active") and bob["valid_until"] == got["valid_until"]
+    assert (bob["plan"], bob["status"]) == ("business", "active") and bob["valid_until"] == got["valid_until"]
     balance = c.post("/api/connect/balance", json={"licence": bob_licence}).json()
     assert balance["shared_with_team"] and balance["credits"]["allowance"] == 3000
     r = c.post("/api/connect/companies_house", json={"licence": bob_licence, "operation": "company",
@@ -169,7 +169,7 @@ def test_existing_accounts_removing_and_leaving(service, fake_stripe):
     assert c.post("/api/teams/join", json={"token": token, "password": GOOD_PHRASE}).status_code == 200
     sam_licence = sign_in(c, "sam@agency.example", device="device-ssssssssssssssss").json()["licence"]
     sam = payload(sam_licence)["sub"]
-    assert payload(sam_licence)["plan"] == "team"
+    assert payload(sam_licence)["plan"] == "business"
 
     removed = c.post("/api/teams/remove", json={"licence": licence, "member_id": sam})
     assert removed.status_code == 200
@@ -187,8 +187,8 @@ def test_existing_accounts_removing_and_leaving(service, fake_stripe):
 
     # Business page: the team (4 seats) and Pat's own plan; members aren't counted as trials
     summary = c.get("/api/business/summary").json()["customers"]
-    assert summary["paying"] == 2 and summary["team_seats"] == 4 and summary["plans"] == {"team": 1, "personal": 1}
-    assert c.get("/api/business/accounts?plan=team").json()["total"] == 1
+    assert summary["paying"] == 2 and summary["team_seats"] == 4 and summary["plans"] == {"business": 1, "personal": 1}
+    assert c.get("/api/business/accounts?plan=business").json()["total"] == 1
 
 
 def test_more_seats_mid_month(service, fake_stripe):
@@ -196,7 +196,7 @@ def test_more_seats_mid_month(service, fake_stripe):
     acc, licence = owner_with_team(c, fake_stripe, seats=2)
     balance = lambda: c.post("/api/connect/balance", json={"licence": licence}).json()["credits"]  # noqa: E731
     assert balance()["allowance_remaining"] == 2000
-    more = subscription(price="price_team", account_id=acc)
+    more = subscription(price="price_business", account_id=acc)
     more["items"]["data"][0]["quantity"] = 5
     fake_stripe.subscriptions["sub_1"] = more
     deliver(c, event("customer.subscription.updated", more))

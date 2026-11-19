@@ -218,8 +218,14 @@ class Settings(BaseSettings):
     stripe_price_professional: str = Field(
         default="", description="Account service: Stripe price id of the Professional plan"
     )
-    stripe_price_team: str = Field(
-        default="", description="Account service: Stripe price id of the Team plan (priced per seat)"
+    stripe_price_byok: str = Field(
+        default="", description="Account service: Stripe price id of the Bring-your-own-keys plan"
+    )
+    stripe_price_business: str = Field(
+        default="", description="Account service: Stripe price id of the Business plan (priced per seat)"
+    )
+    stripe_price_business_setup: str = Field(
+        default="", description="Account service: optional one-off Stripe price charged when a Business plan starts"
     )
     stripe_credit_packs: str = Field(
         default="", description="Account service: credit packs for sale, as credits=price id (500=price_1,2000=price_2)"

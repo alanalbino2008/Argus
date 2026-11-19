@@ -314,6 +314,8 @@ def run_personal(port: int) -> None:
     os.environ.setdefault("ARGUS_EDITION", "personal")
     os.environ.setdefault("ARGUS_DATABASE_URL", f"sqlite+aiosqlite:///{home / 'argus.db'}")
     os.environ.setdefault("ARGUS_PUBLIC_URL", f"http://127.0.0.1:{port}")
+    # this computer's own encryption key (created on first start): protects saved API keys
+    os.environ.setdefault("ARGUS_ENCRYPTION_KEY_FILE", str(home / "secret.key"))
     url = os.environ["ARGUS_PUBLIC_URL"]
     console.print(BANNER)
     console.print(f"[bold cyan]Argus Personal[/bold cyan] at {url}  ·  data in {home}")

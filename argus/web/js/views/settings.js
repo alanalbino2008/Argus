@@ -14,8 +14,13 @@ const checks = {}; // route name -> result of its last test
 let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null, members: null };
 
 const VAULT_FORMS = {
+  "own-key-form": async () => {
+    const provider = $("#own-key-provider").value;
+    data.ownKeys = await api.put(`/api/personal/keys/${enc(provider)}`, { key: $("#own-key-value").value.trim() });
+    toast("Key saved: lookups with it go straight to the source and use no credits", "success", 5000);
+  },
   "team-invite-form": async () => {
-    const r = await api.post("/api/personal/team/invite", { email: $("#team-invite-email").value.trim() });
+    const r = await api.post("/api/personal/team/add", { email: $("#team-invite-email").value.trim(), name: $("#team-invite-name").value.trim() });
     toast(r.detail, "success");
     data.team = await api.get("/api/personal/team").catch(() => data.team);
   },
@@ -75,6 +80,17 @@ export function initSettings(el) {
         window.dispatchEvent(new CustomEvent("argus:vault-locked"));
         return;
       }
+      if (act === "key-remove") {
+        data.ownKeys = await api.del(`/api/personal/keys/${enc(id)}`);
+        toast("Key removed: that source now uses credits", "success");
+        render();
+        return;
+      }
+      if (act === "team-signout") {
+        if (!(await confirmDialog({ title: `Sign ${btn.dataset.email} out of every computer?`, message: "Use this for a lost or stolen laptop. Their cases stay on their computers; they can sign in again with their password.", confirm: "Sign out", danger: true }))) return;
+        toast((await api.post("/api/personal/team/sign-out-member", { member_id: id })).detail, "success");
+        return;
+      }
       if (act === "team-remove" || act === "team-cancel" || act === "team-leave") {
         const leaving = act === "team-leave";
         const ok = act === "team-cancel" || await confirmDialog({
@@ -93,7 +109,7 @@ export function initSettings(el) {
       if (act === "buy" || act === "billing-portal") {
         btn.disabled = true;
         try {
-          const seats = btn.dataset.item === "plan:team" ? Math.max(2, Math.min(100, Number($("#team-seats")?.value) || 2)) : undefined;
+          const seats = btn.dataset.item === "plan:business" ? Math.max(2, Math.min(100, Number($("#team-seats")?.value) || 2)) : undefined;
           const page = act === "buy" ? await api.post("/api/personal/billing/checkout", { item: btn.dataset.item, ...(seats ? { seats } : {}) })
             : await api.post("/api/personal/billing/portal");
           if (page.url?.startsWith("https://")) { location.assign(page.url); return; }
@@ -263,12 +279,13 @@ export async function refresh() {
     platform ? api.get("/api/vault/status").catch(() => null) : null,
   ];
   const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault] = await Promise.all(tasks);
-  const [credits, billing, team] = personal?.signed_in ? await Promise.all([
+  const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
-  ]) : [null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, vault };
+    api.get("/api/personal/keys").catch(() => null),
+  ]) : [null, null, null, null];
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -487,38 +504,89 @@ function teamSection() {
       <button class="btn sm ghost danger" data-act="team-leave">Leave the team</button>`;
   }
   const free = t.seats - t.used - t.pending;
-  return html`<div class="section-title" style="margin-top:14px">Your team · ${t.used} of ${t.seats} seats used</div>
+  return html`<div class="section-title" style="margin-top:14px">Your Business team · ${t.used} of ${t.seats} seats used</div>
     <p class="muted small">Each member signs in with their own account on their own computers and shares the team's credits. You see who is on the team and how many credits each used, never their cases. Add or remove seats under Manage billing.</p>
     <table class="table"><thead><tr><th>Member</th><th>Credits this month</th><th>Last sign-in</th><th></th></tr></thead><tbody>
       ${t.members.map((m) => html`<tr><td><b>${m.name || m.email}</b>${m.name ? html`<div class="muted small">${m.email}</div>` : ""}${m.owner ? html` <span class="pill accent">owner</span>` : ""}</td>
         <td>${m.credits_this_month}</td><td>${m.last_login_at ? timeAgo(m.last_login_at) : "never"}</td>
-        <td class="actions">${m.owner ? "" : html`<button class="btn sm ghost danger" data-act="team-remove" data-id="${m.id}" data-email="${m.email}">Remove</button>`}</td></tr>`)}
+        <td class="actions">${m.owner ? "" : html`<button class="btn sm ghost" data-act="team-signout" data-id="${m.id}" data-email="${m.email}" title="For a lost or stolen laptop: they can sign in again">Sign out computers</button><button class="btn sm ghost danger" data-act="team-remove" data-id="${m.id}" data-email="${m.email}">Remove</button>`}</td></tr>`)}
       ${t.invites.map((i) => html`<tr><td>${i.email} <span class="pill">invited</span></td><td colspan="2" class="muted small">until ${formatDate(i.expires_at)}</td>
         <td class="actions"><button class="btn sm ghost" data-act="team-cancel" data-email="${i.email}">Cancel</button></td></tr>`)}
     </tbody></table>
     ${free > 0 ? html`<form id="team-invite-form" class="filters" style="margin-top:10px">
-      <input class="input" id="team-invite-email" type="email" placeholder="colleague@example.org" maxlength="320" required style="max-width:280px" aria-label="Email to invite">
-      <button class="btn sm primary" type="submit">${ico("plus")}Invite</button><p class="error-text"></p></form>
-      <p class="muted small">${free} seat${free === 1 ? "" : "s"} free. The invitation link works for a week.</p>`
+      <input class="input" id="team-invite-name" placeholder="Their name" maxlength="255" style="max-width:200px" aria-label="Their name">
+      <input class="input" id="team-invite-email" type="email" placeholder="colleague@example.org" maxlength="320" required style="max-width:260px" aria-label="Their email">
+      <button class="btn sm primary" type="submit">${ico("plus")}Add to team</button><p class="error-text"></p></form>
+      <p class="muted small">${free} seat${free === 1 ? "" : "s"} free. New to Argus: an account is created and they're emailed a link to choose their password. Already have an account: they're sent an invitation to join (it works for a week).</p>`
       : html`<p class="muted small" style="margin-top:8px">All seats are taken or invited: add seats under Manage billing to invite more.</p>`}`;
+}
+
+const FEATURE_LABELS = { monitoring: "Monitoring and watches", branded_reports: "Branded reports", playbooks: "Playbooks", team: "Team tools: add members, shared credits" };
+const PLAN_BLURB = {
+  byok: "Every investigation tool, using your own API keys for paid sources. The lowest price.",
+  personal: "Every investigation tool, with monthly credits for premium sources and the AI analyst.",
+  professional: "Everything in Personal, plus monitoring and watches, branded reports and playbooks.",
+  business: "Everything in Professional for each person, plus team tools. Priced per seat.",
+};
+
+function planCard(x, p) {
+  const current = p.plan === x.plan;
+  const credits = x.monthly_credits ? `${x.monthly_credits.toLocaleString()} credits a month${x.per_seat ? " per seat, shared" : ""}` : "No included credits: your own keys, or credit packs";
+  const price = x.price ? `${money(x.price)}${x.per_seat ? " per seat" : ""}` : "";
+  const setup = x.setup_price ? ` + ${money({ ...x.setup_price, interval: null })} one-off set-up` : "";
+  return html`<div class="card card-pad plan-card${current ? " current" : ""}">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b>${x.label}</b>${current ? html`<span class="pill accent">your plan</span>` : ""}</div>
+    ${price ? html`<div class="plan-price">${price}<span class="muted small">${setup}</span></div>` : ""}
+    <p class="muted small" style="margin:6px 0">${PLAN_BLURB[x.plan] || ""}</p>
+    <ul class="plan-list small">
+      <li>${credits}</li>
+      <li>${x.per_seat ? `${x.max_devices} computers per person` : `${x.max_devices} computer${x.max_devices === 1 ? "" : "s"}`}</li>
+      ${x.features.map((f) => html`<li>${FEATURE_LABELS[f] || f}</li>`)}
+    </ul>
+    ${current ? "" : x.per_seat
+      ? html`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px"><input class="input" type="number" id="team-seats" min="2" max="100" value="3" style="width:72px" aria-label="Seats"><span class="muted small">seats</span>
+          <button class="btn sm primary" data-act="buy" data-item="${x.item}" style="width:100%">${ico("check")}Choose ${x.label}</button></div>`
+      : html`<button class="btn sm primary" data-act="buy" data-item="${x.item}" style="margin-top:8px">${ico("check")}Choose ${x.label}</button>`}
+  </div>`;
+}
+
+function includesLine(p) {
+  if (!p.features) return "";
+  const missing = Object.entries(p.features).filter(([f, ok]) => !ok && f !== "team").map(([f]) => FEATURE_LABELS[f]);
+  return missing.length ? html`<p class="muted small" style="margin:6px 0 0">${ico("info")} Not in your plan: ${missing.join(", ")}. They're in Professional and Business.</p>` : "";
 }
 
 function billingSection(p) {
   const b = data.billing;
   if (data.team?.role === "member") return "";
-  if (!b?.enabled) return "";
+  if (!b?.enabled) return includesLine(p);
   const subscribed = ["active", "past_due"].includes(p.status) && p.plan && p.plan !== "trial";
-  const plans = b.plans.filter((x) => !(subscribed && x.plan === p.plan));
   return html`<div class="section-title" style="margin-top:14px">Plans and payment</div>
-    <p class="muted small">Payment is taken by Stripe on its own secure page: Argus never sees your card. ${subscribed ? "Change plan, update your card, download invoices or cancel in Manage billing; a cancelled plan keeps working to the end of the period you have paid for." : ""}</p>
+    <p class="muted small">Payment is taken by Stripe on its own secure page: Argus never sees your card. ${subscribed ? "To switch plan, update your card, download invoices or cancel, use Manage billing; a cancelled plan keeps working to the end of the period you have paid for." : ""}</p>
+    ${includesLine(p)}
     ${p.status === "past_due" ? html`<div class="callout warn" style="margin:8px 0">${ico("alert")}<span>Your last payment didn't go through. Argus keeps working while Stripe retries; update your card in Manage billing.</span></div>` : ""}
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
-      ${subscribed ? "" : plans.map((x) => x.per_seat
-        ? html`<span style="display:inline-flex;gap:6px;align-items:center"><input class="input" type="number" id="team-seats" min="2" max="100" value="3" style="width:72px" aria-label="Seats"><button class="btn sm primary" data-act="buy" data-item="${x.item}" title="${x.monthly_credits} shared credits a month per seat; each person ${x.max_devices} computers">${ico("check")}Subscribe: ${x.label}${x.price ? ` (${money(x.price)} per seat)` : " (per seat)"}</button></span>`
-        : html`<button class="btn sm primary" data-act="buy" data-item="${x.item}" title="${x.monthly_credits} credits a month, ${x.max_devices} computer${x.max_devices === 1 ? "" : "s"}">${ico("check")}Subscribe: ${x.label}${x.price ? ` (${money(x.price)})` : ""}</button>`)}
+    ${subscribed ? "" : html`<div class="plan-grid">${b.plans.map((x) => planCard(x, p))}</div>`}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
       ${b.credit_packs.map((x) => html`<button class="btn sm" data-act="buy" data-item="${x.item}">${ico("plus")}Buy ${x.credits} credits${x.price ? ` (${money(x.price)})` : ""}</button>`)}
       ${b.has_billing ? html`<button class="btn sm ghost" data-act="billing-portal">${ico("external")}Manage billing</button>` : ""}
     </div>`;
+}
+
+function ownKeysCard() {
+  const k = data.ownKeys;
+  if (!k) return "";
+  return html`<div class="card card-pad" style="margin-top:16px" id="own-keys-card">
+    <div class="card-head"><div><h2>Your own API keys</h2><p class="muted small">With your own key, lookups go straight from this computer to the source and use no Argus credits (this is how the Bring-your-own-keys plan works; any plan can use it). Keys are stored encrypted on this computer only and are never sent to the Argus account service.</p></div></div>
+    <table class="table"><tbody>${k.keys.map((x) => html`<tr>
+      <td><b>${x.label}</b><div class="muted small">Get a key at ${x.where}</div></td>
+      <td>${x.set ? html`<span class="pill ok">saved</span> <span class="mono small">…${x.ends_with}</span>` : html`<span class="muted small">not set: uses credits</span>`}</td>
+      <td class="actions">${x.set ? html`<button class="btn sm ghost danger" data-act="key-remove" data-id="${x.provider}">Remove</button>` : ""}</td></tr>`)}</tbody></table>
+    <form id="own-key-form" class="filters" style="margin-top:10px">
+      <select class="select" id="own-key-provider" aria-label="Source" style="max-width:260px">${k.keys.map((x) => html`<option value="${x.provider}">${x.label}</option>`)}</select>
+      <input class="input mono" id="own-key-value" type="password" placeholder="Paste the API key" autocomplete="off" maxlength="512" required style="max-width:300px" aria-label="API key">
+      <button class="btn sm primary" type="submit">Save key</button><p class="error-text"></p>
+    </form>
+  </div>`;
 }
 
 function workspacesCard() {
@@ -626,6 +694,7 @@ function render() {
       </div>
     </div>
     ${subscriptionCard()}
+    ${data.personal?.signed_in ? ownKeysCard() : ""}
     ${vaultCard()}
     ${data.personal ? "" : workspacesCard()}
     ${safetyCard()}

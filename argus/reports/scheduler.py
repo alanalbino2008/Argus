@@ -24,6 +24,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from argus.accounts import features
 from argus.core.settings import Settings
 from argus.notify.render import board_event, report_event
 from argus.observability import metrics
@@ -67,6 +68,8 @@ class ReportScheduler:
     async def tick(self) -> list[str]:
         """Run every due schedule this replica manages to claim; returns their outcomes."""
         outcomes: list[str] = []
+        if not features.allows("monitoring"):  # Argus Personal on a plan without monitoring: paused
+            return outcomes
         for schedule in await self.schedules.due():
             if not await self.schedules.claim(schedule["id"]):
                 continue  # another replica took it

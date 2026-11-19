@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from argus.accounts import features, own_keys
 from argus.accounts.personal import AccountServiceError
 from argus.api.deps import (
     SESSION_COOKIE,
@@ -126,7 +127,7 @@ async def personal_credits(request: Request):
 
 
 class CheckoutRequest(BaseModel):
-    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional|team)|credits:\d{1,7})$")
+    item: str = Field(max_length=64, pattern=r"^(plan:(byok|personal|professional|business)|credits:\d{1,7})$")
     seats: int = Field(default=2, ge=2, le=100)
 
 
@@ -211,6 +212,21 @@ async def personal_team_invite(body: TeamInvite, request: Request):
     return await _team_action(request, "invite", {"email": body.email.strip()})
 
 
+class TeamAdd(TeamInvite):
+    name: str = Field(default="", max_length=255)
+
+
+@router.post("/team/add")
+async def personal_team_add(body: TeamAdd, request: Request):
+    """Create an account for someone (or invite them if they already have one) and add them to the team."""
+    return await _team_action(request, "add", {"email": body.email.strip(), "name": body.name.strip()})
+
+
+@router.post("/team/sign-out-member")
+async def personal_team_sign_out_member(body: TeamRemove, request: Request):
+    return await _team_action(request, "sign-out-member", {"member_id": body.member_id})
+
+
 @router.post("/team/cancel-invite")
 async def personal_team_cancel_invite(body: TeamInvite, request: Request):
     return await _team_action(request, "cancel-invite", {"email": body.email.strip()})
@@ -224,6 +240,45 @@ async def personal_team_remove(body: TeamRemove, request: Request):
 @router.post("/team/leave")
 async def personal_team_leave(request: Request):
     return await _team_action(request, "leave")
+
+
+class OwnKey(BaseModel):
+    key: str = Field(max_length=512)
+
+
+@router.get("/keys")
+async def personal_keys(request: Request):
+    """Which of your own API keys are set (never the keys themselves: only their last 4 characters)."""
+    _personal(request)
+    await get_principal(request)
+    return {"keys": own_keys.listing()}
+
+
+@router.put("/keys/{provider}")
+async def personal_key_set(provider: str, body: OwnKey, request: Request):
+    """Save your own key for a source (kept encrypted on this computer only)."""
+    _personal(request)
+    _csrf(request)
+    principal = await get_principal(request)
+    try:
+        await own_keys.put(request.app.state.app_state, request.app.state.secret_box, provider, body.key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    await audit(request, principal, "settings.own_key_set", provider)
+    return {"keys": own_keys.listing()}
+
+
+@router.delete("/keys/{provider}")
+async def personal_key_remove(provider: str, request: Request):
+    _personal(request)
+    _csrf(request)
+    principal = await get_principal(request)
+    if not await own_keys.remove(request.app.state.app_state, request.app.state.secret_box, provider):
+        raise HTTPException(status_code=404, detail="No key saved for that source")
+    await audit(request, principal, "settings.own_key_removed", provider)
+    return {"keys": own_keys.listing()}
 
 
 @router.post("/refresh")
@@ -260,4 +315,8 @@ async def licence_gate(request: Request, call_next: Any) -> Any:
         return JSONResponse({"detail": reason, "sign_in": True}, status_code=401)
     if level == "read_only" and request.method in UNSAFE_METHODS and not any(p.match(path) for p in READ_ONLY_WRITES):
         return JSONResponse({"detail": reason, "read_only": True}, status_code=402)
+    feature = features.needed(path) if request.method in UNSAFE_METHODS else None
+    if feature and not features.allows(feature):
+        return JSONResponse({"detail": features.upgrade_message(feature), "upgrade": True, "feature": feature},
+                            status_code=403)  # fmt: skip
     return await call_next(request)

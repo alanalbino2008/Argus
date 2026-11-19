@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
+from argus.accounts import own_keys
 from argus.accounts.mailer import AccountMailer
 from argus.accounts.personal import PersonalLicence
 from argus.api import remediation_hooks
@@ -277,6 +278,8 @@ async def lifespan(app: FastAPI):
     )
     app.state.schedules = ScheduleRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
+    if settings.edition == "personal":
+        await own_keys.load(app.state.app_state, app.state.secret_box)
     app.state.notifications = NotificationRepository(db, app.state.secret_box)
     app.state.notifier = NotificationDispatcher(
         app.state.notifications,

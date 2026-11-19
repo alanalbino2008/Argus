@@ -14,7 +14,7 @@ let selected = null; // the account open in the detail card
 let searchTimer = null;
 
 const STATUS = { trialing: ["accent", "Trial"], active: ["ok", "Active"], past_due: ["warn", "Payment due"], cancelled: ["", "Cancelled"], suspended: ["critical", "Suspended"] };
-const PLAN = { trial: "Free trial", personal: "Personal", professional: "Professional", team: "Team" };
+const PLAN = { trial: "Free trial", byok: "Bring your own keys", personal: "Personal", professional: "Professional", business: "Business" };
 const statusPill = (s) => html`<span class="pill ${(STATUS[s] || [""])[0]}">${(STATUS[s] || ["", s])[1]}</span>`;
 
 function money(amount, currency) {
@@ -91,7 +91,7 @@ function detailCard() {
       <div>
         <dl class="kv"><dt>Plan</dt><dd>${PLAN[a.plan] || a.plan} ${statusPill(a.status)}</dd>
           <dt>${a.status === "trialing" ? "Trial ends" : "Paid until"}</dt><dd>${a.valid_until ? formatDate(a.valid_until) : "—"}</dd>
-          ${a.plan === "team" && !a.team_id ? html`<dt>Team</dt><dd>Owner: ${a.seats} seats</dd>` : ""}
+          ${a.plan === "business" && !a.team_id ? html`<dt>Business</dt><dd>Owner: ${a.seats} seats</dd>` : ""}
           ${a.team_id ? html`<dt>Team</dt><dd>Member of <a href="#" data-open="${a.team_id}">this team</a>: covered by its plan and credits</dd>` : ""}
           <dt>Stripe customer</dt><dd class="mono small">${a.billing_reference || "—"}</dd>
           <dt>Credits</dt><dd><b>${c.available ?? "—"}</b> available (${c.allowance_remaining ?? 0} of this month's ${c.allowance ?? 0}, ${c.purchased ?? 0} bought)</dd></dl>

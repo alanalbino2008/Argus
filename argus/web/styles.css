@@ -951,3 +951,10 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .biz-chart .bar-hit:focus { outline: none; }
 .biz-bar { height: 8px; background: var(--accent-soft); border-radius: 4px; overflow: hidden; }
 .biz-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+
+/* Plan choice (Argus Personal) */
+.plan-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+.plan-card { padding: 16px; display: flex; flex-direction: column; }
+.plan-card.current { border-color: var(--accent); }
+.plan-price { font-size: 18px; font-weight: 700; margin-top: 4px; }
+.plan-list { margin: 0; padding-left: 18px; color: var(--text-2); line-height: 1.6; flex: 1; }

@@ -303,7 +303,13 @@
         "supportEmail": {
           "type": "string"
         },
-        "stripePriceTeam": {
+        "stripePriceByok": {
+          "type": "string"
+        },
+        "stripePriceBusiness": {
+          "type": "string"
+        },
+        "stripePriceBusinessSetup": {
           "type": "string"
         }
       }

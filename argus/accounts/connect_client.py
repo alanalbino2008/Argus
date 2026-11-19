@@ -14,7 +14,7 @@ from typing import Any
 
 import aiohttp
 
-from argus.accounts import personal
+from argus.accounts import own_keys, personal
 from argus.accounts.connectors import LABELS, ConnectError, call_source
 from argus.core.settings import get_settings
 
@@ -22,7 +22,17 @@ OWN_KEYS = {"companies_house": "companies_house_api_key", "web_search": "web_sea
 
 
 def own_key(provider: str) -> str:
+    """The investigator's own key: entered in Argus Personal, else set in the configuration."""
+    if own_keys.get(provider):
+        return own_keys.get(provider)
     value = getattr(get_settings(), OWN_KEYS.get(provider, ""), None)
+    return value.get_secret_value() if value else ""
+
+
+def anthropic_key() -> str:
+    if own_keys.get("anthropic"):
+        return own_keys.get("anthropic")
+    value = get_settings().anthropic_api_key
     return value.get_secret_value() if value else ""
 
 
@@ -54,7 +64,7 @@ async def lookup(session: Any, provider: str, name: str, params: dict[str, Any])
 def ai_access() -> str | None:
     """How the AI analyst is reached: "own_key", "connect" (credits), or None (not available)."""
     settings = get_settings()
-    if settings.anthropic_api_key and settings.anthropic_api_key.get_secret_value():
+    if anthropic_key():
         return "own_key"
     if settings.edition == "personal" and settings.account_server_url:
         return "connect"
@@ -70,8 +80,8 @@ async def ai(task: str, material: str) -> dict[str, Any]:
 
     settings = get_settings()
     via = ai_access()
-    if via == "own_key" and settings.anthropic_api_key is not None:
-        result = await run_task(task, material, key=settings.anthropic_api_key.get_secret_value(), settings=settings)
+    if via == "own_key":
+        result = await run_task(task, material, key=anthropic_key(), settings=settings)
         return {**result, "via": via, "credits": None}
     licence = personal.CURRENT
     if via is None or licence is None or not licence.token:

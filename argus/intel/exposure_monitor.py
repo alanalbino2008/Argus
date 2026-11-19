@@ -25,6 +25,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any
 
+from argus.accounts import features
 from argus.core.settings import Settings
 from argus.intel.breach_sources import BreachSources, SourceError, SourceUnavailable
 from argus.intel.exposure import (
@@ -67,7 +68,9 @@ class ExposureMonitor:
     # ------------------------------------------------------------------ the loop
     async def tick(self) -> list[dict[str, Any]]:
         """Check every due watch this replica manages to claim; returns their outcomes."""
-        outcomes = []
+        outcomes: list[dict[str, Any]] = []
+        if not features.allows("monitoring"):  # Argus Personal on a plan without monitoring: paused
+            return outcomes
         for watch in await self.repo.due():
             if not await self.repo.claim(watch["id"]):
                 continue  # another replica took it

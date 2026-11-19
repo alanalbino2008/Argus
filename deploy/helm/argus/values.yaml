@@ -138,9 +138,11 @@ config:
   trialDays: 14
   licenceOfflineDays: 14         # how long Argus Personal works without reaching the account service
   # Payments (account service): the Stripe price ids on sale. Prices themselves are set in Stripe.
+  stripePriceByok: ""            # Bring-your-own-keys plan (the cheapest: no included credits)
   stripePricePersonal: ""        # e.g. price_1Q...
   stripePriceProfessional: ""
-  stripePriceTeam: ""            # the Team plan's price, per seat
+  stripePriceBusiness: ""        # the Business plan's price, per seat
+  stripePriceBusinessSetup: ""   # optional one-off fee charged when a Business plan starts
   stripeCreditPacks: ""          # credits=price id, comma-separated: "500=price_1...,2000=price_2..."
   billingReturnUrl: ""           # page customers return to when not paying from Argus Personal
   accountEmails: true            # email account holders (welcome, payments, reminders, password resets); needs SMTP

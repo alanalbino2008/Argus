@@ -15,6 +15,7 @@ invitation went to is what proves who they are.
 from __future__ import annotations
 
 import asyncio
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -30,6 +31,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 INVITE_TTL = timedelta(days=7)
+SETUP_TTL = timedelta(days=7)  # a created account's "choose your password" link
 _invites = SlidingWindowLimiter(limit=30, window=3600)  # invitations per team an hour
 _joins = SlidingWindowLimiter(limit=10, window=3600)  # join attempts per address an hour
 
@@ -40,6 +42,10 @@ class LicenceBody(BaseModel):
 
 class InviteBody(LicenceBody):
     email: str = Field(max_length=320)
+
+
+class AddBody(InviteBody):
+    name: str = Field(default="", max_length=255)
 
 
 class RemoveBody(LicenceBody):
@@ -89,14 +95,11 @@ async def team_status(body: LicenceBody, request: Request):
             "members": people, "invites": invites, "status": account["status"]}  # fmt: skip
 
 
-@router.post("/invite")
-async def team_invite(body: InviteBody, request: Request):
-    """Email an invitation to join the team (a seat must be free)."""
-    _service(request)
-    owner = await _owner(request, body.licence)
+async def _check_room(request: Request, owner: dict[str, Any], email: str) -> str:
+    """The email, normalised, once it is clear there is a free seat for it and email can be sent."""
     if owner["status"] not in FULL_STATUSES:
-        raise HTTPException(status_code=402, detail="Your team plan isn't active: renew it before inviting anyone")
-    email = body.email.strip().lower()
+        raise HTTPException(status_code=402, detail="Your Business plan isn't active: renew it before adding anyone")
+    email = email.strip().lower()
     if not EMAIL.match(email):
         raise HTTPException(status_code=422, detail="Enter a valid email address")
     team = request.app.state.teams
@@ -108,17 +111,72 @@ async def team_invite(body: InviteBody, request: Request):
         raise HTTPException(status_code=409, detail=f"All {owner['seats']} seats are taken or invited: add seats under "
                                                     "Manage billing, or remove someone first")  # fmt: skip
     if not request.app.state.mailer.enabled:
-        raise HTTPException(
-            status_code=503, detail="Invitations are sent by email, which isn't set up: contact support"
-        )
+        raise HTTPException(status_code=503, detail="Accounts and invitations are sent by email, which isn't set up: "
+                                                    "contact support")  # fmt: skip
     if not _invites.hit(owner["id"]):
         raise HTTPException(status_code=429, detail="Too many invitations this hour; try later")
+    return email
+
+
+async def _send_invite(request: Request, owner: dict[str, Any], email: str) -> dict[str, Any]:
+    team = request.app.state.teams
     token = await team.invite(owner["id"], email, INVITE_TTL)
     link = f"{_issuer(request)}/join-team#token={token}"
     await request.app.state.mailer.notify({**owner, "email": email, "name": ""}, "team_invite", token[:16],
                                           team=_team_name(owner), link=link, days=INVITE_TTL.days)  # fmt: skip
     await audit(request, SERVICE, "team.invite", owner["id"], details={"email": email})
-    return {"detail": f"Invitation sent to {email}", "invites": await team.invites(owner["id"])}
+    return {"detail": f"Invitation sent to {email}", "invited": True, "invites": await team.invites(owner["id"])}
+
+
+@router.post("/invite")
+async def team_invite(body: InviteBody, request: Request):
+    """Email an invitation to join the team (a seat must be free)."""
+    _service(request)
+    owner = await _owner(request, body.licence)
+    return await _send_invite(request, owner, await _check_room(request, owner, body.email))
+
+
+@router.post("/add")
+async def team_add(body: AddBody, request: Request):
+    """Create an account for someone and put them straight on the team; they choose their own password.
+
+    If the email already has an Argus account, they are sent an invitation instead: nobody's
+    existing account can be taken over.
+    """
+    repo, _private = _service(request)
+    owner = await _owner(request, body.licence)
+    email = await _check_room(request, owner, body.email)
+    if await repo.by_email(email) is not None:
+        return await _send_invite(request, owner, email)
+    unusable = await asyncio.to_thread(hash_password, secrets.token_urlsafe(32))  # until they choose their own
+    account = await repo.create(email=email, name=body.name.strip(), password_hash=unusable, plan="trial",
+                                status="trialing", valid_until=datetime.now(timezone.utc))  # fmt: skip
+    if account is None:  # created a moment ago by someone else
+        return await _send_invite(request, owner, email)
+    if not await request.app.state.teams.join(account["id"], owner["id"], owner["seats"]):
+        raise HTTPException(status_code=409, detail="The team is full: add a seat under Manage billing")
+    token = await request.app.state.account_mail.new_reset(account["id"], SETUP_TTL)
+    await request.app.state.mailer.notify(account, "member_account_created", token[:16], team=_team_name(owner),
+                                          link=f"{_issuer(request)}/reset-password#token={token}",
+                                          days=SETUP_TTL.days)  # fmt: skip
+    await audit(request, SERVICE, "team.add_member", owner["id"], details={"member": account["id"], "email": email})
+    return {"detail": f"Account created for {email}: they've been emailed a link to choose their password",
+            "created": True}  # fmt: skip
+
+
+@router.post("/sign-out-member")
+async def team_sign_out_member(body: RemoveBody, request: Request):
+    """Sign every computer of a member out (a lost or stolen laptop); they can sign in again."""
+    repo, _private = _service(request)
+    owner = await _owner(request, body.licence)
+    member = await repo.get(body.member_id)
+    if member is None or member.get("team_id") != owner["id"]:
+        raise HTTPException(status_code=404, detail="That person isn't on your team")
+    count = await repo.revoke_all_devices(member["id"])
+    await audit(
+        request, SERVICE, "team.sign_out_member", owner["id"], details={"member": member["id"], "computers": count}
+    )
+    return {"detail": f"{member['email']} was signed out of {count} computer{'s' if count != 1 else ''}"}
 
 
 @router.post("/cancel-invite")

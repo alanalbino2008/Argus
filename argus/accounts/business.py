@@ -66,7 +66,7 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
     plans = Counter(a["plan"] for a in customers)
     units: Counter[str] = Counter()  # what is billed: one per subscription, or one per seat for a team plan
     for a in customers:
-        units[a["plan"]] += int(a.get("seats") or 1) if a["plan"] == "team" else 1
+        units[a["plan"]] += int(a.get("seats") or 1) if a["plan"] == "business" else 1
 
     # ------------------------------------------------------------ revenue
     by_plan, currencies = [], set()
@@ -165,7 +165,7 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
             "accounts": len(accounts), "paying": len(customers), "trialing": statuses.get("trialing", 0),
             "past_due": statuses.get("past_due", 0), "cancelled": statuses.get("cancelled", 0),
             "suspended": statuses.get("suspended", 0), "plans": dict(plans), "team_members": len(members),
-            "team_seats": units.get("team", 0),
+            "team_seats": units.get("business", 0),
         },
         "mrr": mrr,
         "signups": {"weeks": signups, "trials_finished": len(finished), "converted": converted,

@@ -73,7 +73,7 @@ async def _filtered(request: Request, q: str, status: str, plan: str) -> list[di
 @router.get("/accounts")
 async def business_accounts(request: Request, q: str = Query("", max_length=200),
                             status: str = Query("", pattern=r"^(|trialing|active|past_due|cancelled|suspended)$"),
-                            plan: str = Query("", pattern=r"^(|trial|personal|professional|team)$"),
+                            plan: str = Query("", pattern=r"^(|trial|byok|personal|professional|business)$"),
                             limit: int = Query(200, ge=1, le=1000),
                             _: Principal = Depends(require_platform_admin)):  # fmt: skip
     """Accounts, newest first, with search (email, name, id or Stripe customer) and filters."""
@@ -89,7 +89,7 @@ def _cell(value: Any) -> str:
 @router.get("/accounts.csv")
 async def business_accounts_csv(request: Request, q: str = Query("", max_length=200),
                                 status: str = Query("", pattern=r"^(|trialing|active|past_due|cancelled|suspended)$"),
-                                plan: str = Query("", pattern=r"^(|trial|personal|professional|team)$"),
+                                plan: str = Query("", pattern=r"^(|trial|byok|personal|professional|business)$"),
                                 principal: Principal = Depends(require_platform_admin)):  # fmt: skip
     """The accounts as a CSV file. Contains customers' emails: handle it as personal data."""
     found = await _filtered(request, q, status, plan)

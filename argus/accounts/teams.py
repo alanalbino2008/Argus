@@ -17,7 +17,7 @@ from typing import Any
 
 from argus.accounts.licence import PLANS
 
-TEAM_PLAN = "team"
+TEAM_PLAN = "business"
 
 
 def is_owner(account: dict[str, Any]) -> bool:

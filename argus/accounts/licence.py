@@ -38,12 +38,22 @@ PREFIX = "argus1"
 REFRESH_EVERY = timedelta(days=1)
 FULL_STATUSES = {"trialing", "active", "past_due"}  # past_due: the payment is being retried; keep working
 
+PRO_FEATURES = ["monitoring", "branded_reports", "playbooks"]
 PLANS: dict[str, dict[str, Any]] = {
-    "trial": {"label": "Free trial", "max_devices": 1, "monthly_credits": 50},
-    "personal": {"label": "Personal", "max_devices": 2, "monthly_credits": 500},
-    "professional": {"label": "Professional", "max_devices": 3, "monthly_credits": 2000},
-    # one owner pays for seats; each member signs in with their own account; credits are shared
-    "team": {"label": "Team", "max_devices": 2, "monthly_credits": 1000, "per_seat": True},
+    # the trial shows everything an individual can buy, so people know what Professional offers
+    "trial": {"label": "Free trial", "max_devices": 1, "monthly_credits": 50, "features": PRO_FEATURES},
+    # every investigation tool, using the investigator's own API keys (or credit packs); the lowest price
+    "byok": {"label": "Bring your own keys", "max_devices": 1, "monthly_credits": 0, "features": []},
+    "personal": {"label": "Personal", "max_devices": 2, "monthly_credits": 500, "features": []},
+    "professional": {"label": "Professional", "max_devices": 3, "monthly_credits": 2000, "features": PRO_FEATURES},
+    # one owner pays per seat (and a one-off set-up fee); members have their own accounts; credits are shared
+    "business": {
+        "label": "Business",
+        "max_devices": 2,
+        "monthly_credits": 1000,
+        "per_seat": True,
+        "features": [*PRO_FEATURES, "team"],
+    },
 }
 STATUSES = ("trialing", "active", "past_due", "cancelled", "suspended")
 
@@ -122,6 +132,7 @@ def issue(account: dict[str, Any], *, device_id: str, issuer: str, private: Ed25
     payload = {
         "v": 1, "iss": issuer, "sub": account["id"], "email": account["email"], "name": account.get("name") or "",
         "plan": account["plan"], "plan_label": plan["label"], "status": account["status"],
+        "features": list(plan.get("features", [])),
         "valid_until": account["valid_until"], "issued_at": now.isoformat(),
         "refresh_after": (now + REFRESH_EVERY).isoformat(),
         "offline_until": (now + timedelta(days=offline_days)).isoformat(), "device": device_id,

@@ -36,6 +36,7 @@ from urllib.parse import quote
 
 import aiohttp
 
+from argus.accounts import features
 from argus.core.http import NEUTRAL_USER_AGENT, HttpClient
 from argus.core.models import EntityType, ScanConfig
 from argus.core.settings import EgressRoute, Settings
@@ -188,6 +189,8 @@ class AccountWatcher:
         self._running: set[asyncio.Task[Any]] = set()
 
     async def tick(self) -> list[dict[str, Any]]:
+        if not features.allows("monitoring"):  # Argus Personal on a plan without monitoring: paused
+            return []
         return [await self.check(watch) for watch in await self.repo.due() if await self.repo.claim(watch["id"])]
 
     async def run_forever(self) -> None:

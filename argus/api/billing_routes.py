@@ -40,9 +40,9 @@ _prices: dict[str, tuple[float, dict[str, Any] | None]] = {}  # price id -> (fet
 
 class CheckoutRequest(BaseModel):
     licence: str = Field(max_length=8192)
-    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional|team)|credits:\d{1,7})$")
+    item: str = Field(max_length=64, pattern=r"^(plan:(byok|personal|professional|business)|credits:\d{1,7})$")
     return_url: str = Field(default="", max_length=500)
-    seats: int = Field(default=2, ge=2, le=MAX_SEATS)  # team plan only; adjustable on Stripe's page too
+    seats: int = Field(default=2, ge=2, le=MAX_SEATS)  # business plan only; adjustable on Stripe's page too
 
 
 class PortalRequest(BaseModel):
@@ -123,6 +123,10 @@ async def _catalogue(request: Request) -> dict[str, Any]:
             has_billing = account["billing_reference"].startswith("cus_")
     packs = [{"item": f"credits:{credits}", "credits": credits, "price": await _price(settings, price)}
              for credits, price in sorted(stripe.credit_packs(settings).items())]  # fmt: skip
+    for plan in plans:
+        plan["features"] = list(PLANS[plan["plan"]].get("features", []))
+        if plan["plan"] == "business" and settings.stripe_price_business_setup:
+            plan["setup_price"] = await _price(settings, settings.stripe_price_business_setup)
     return {"enabled": True, "plans": plans, "credit_packs": packs, "has_billing": has_billing}
 
 
@@ -155,10 +159,13 @@ async def checkout(body: CheckoutRequest, request: Request):
                 status_code=409, detail="You already have a subscription: use Manage billing to change it"
             )
         item: dict[str, Any] = {"price": price, "quantity": 1}
-        if what == "team":  # priced per seat; the buyer can change the number on Stripe's page
+        if what == "business":  # priced per seat; the buyer can change the number on Stripe's page
             item = {"price": price, "quantity": body.seats,
                     "adjustable_quantity": {"enabled": True, "minimum": 2, "maximum": MAX_SEATS}}  # fmt: skip
-        session.update(mode="subscription", line_items=[item],
+        items = [item]
+        if what == "business" and settings.stripe_price_business_setup:
+            items.append({"price": settings.stripe_price_business_setup, "quantity": 1})  # one-off, first invoice only
+        session.update(mode="subscription", line_items=items,
                        subscription_data={"metadata": {"account_id": account["id"]}})  # fmt: skip
     else:
         price = stripe.credit_packs(settings).get(int(what))
@@ -301,7 +308,7 @@ async def _subscription(request: Request, account: dict[str, Any], sub: dict[str
     plan = stripe.plan_for_price(settings, stripe.subscription_price(sub))
     if plan:
         changes["plan"] = plan
-    seats = stripe.subscription_quantity(sub) if plan == "team" else 1
+    seats = stripe.subscription_quantity(sub) if plan == "business" else 1
     if plan:
         changes["seats"] = seats
     until = stripe.period_end(sub)

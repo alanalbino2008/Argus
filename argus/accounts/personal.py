@@ -23,6 +23,7 @@ from typing import Any
 
 import aiohttp
 
+from argus.accounts import features
 from argus.accounts.licence import LicenceError, access, load_public_key, verify
 from argus.core.settings import Settings
 
@@ -119,6 +120,7 @@ class PersonalLicence:
             "valid_until": p.get("valid_until"), "offline_until": p.get("offline_until"),
             "renewed_at": p.get("issued_at"), "renewal_problem": self.last_refresh_error,
             "account_service": self.settings.account_server_url or None,
+            "features": features.summary(p) if p else None,
             "configured": bool(self.settings.account_server_url and self._public),
         }  # fmt: skip
 

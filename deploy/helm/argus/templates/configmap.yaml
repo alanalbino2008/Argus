@@ -28,7 +28,9 @@ data:
   ARGUS_LICENCE_OFFLINE_DAYS: {{ .Values.config.licenceOfflineDays | quote }}
   ARGUS_STRIPE_PRICE_PERSONAL: {{ .Values.config.stripePricePersonal | default "" | quote }}
   ARGUS_STRIPE_PRICE_PROFESSIONAL: {{ .Values.config.stripePriceProfessional | default "" | quote }}
-  ARGUS_STRIPE_PRICE_TEAM: {{ .Values.config.stripePriceTeam | default "" | quote }}
+  ARGUS_STRIPE_PRICE_BYOK: {{ .Values.config.stripePriceByok | default "" | quote }}
+  ARGUS_STRIPE_PRICE_BUSINESS: {{ .Values.config.stripePriceBusiness | default "" | quote }}
+  ARGUS_STRIPE_PRICE_BUSINESS_SETUP: {{ .Values.config.stripePriceBusinessSetup | default "" | quote }}
   ARGUS_STRIPE_CREDIT_PACKS: {{ .Values.config.stripeCreditPacks | default "" | quote }}
   ARGUS_BILLING_RETURN_URL: {{ .Values.config.billingReturnUrl | default "" | quote }}
   ARGUS_ACCOUNT_EMAILS_ENABLED: {{ .Values.config.accountEmails | default true | quote }}

@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.51.0] — Phase 51: Four plans, each with what it needs
+
+### Changed
+- **Plans** are now Bring your own keys, Personal, Professional and Business. The Team plan is
+  renamed **Business** (migration 0025); `ARGUS_STRIPE_PRICE_TEAM` becomes
+  `ARGUS_STRIPE_PRICE_BUSINESS`, and Helm's `config.stripePriceTeam` becomes
+  `config.stripePriceBusiness`.
+
+### Added
+- **What each plan includes**:
+  - every plan: all investigation tools;
+  - Professional and Business add monitoring and watches (scheduled scans, account and breach
+    watches, scheduled reports), branded reports and playbooks;
+  - Business adds team tools;
+  - the free trial includes the Professional features.
+- **Enforced from the licence**:
+  - the plan's features are inside the signed licence, so Argus Personal enforces them even
+    offline;
+  - a locked action answers with which plans include it;
+  - what already exists stays readable, and background runs pause.
+- **Bring your own keys plan** (`ARGUS_STRIPE_PRICE_BYOK`): the cheapest, with no included
+  credits and one computer.
+- **Your own API keys** in Argus Personal (Settings), for Companies House, web search and Claude:
+  - stored encrypted on the computer with its own key (created on first start), never sent to
+    the account service;
+  - lookups with them go direct and cost no credits;
+  - available on every plan.
+- **Business**:
+  - an optional one-off set-up fee (`ARGUS_STRIPE_PRICE_BUSINESS_SETUP`), charged with the
+    first payment;
+  - the owner can **create accounts** for their people, who are emailed a link to choose their
+    password; existing Argus accounts get an invitation instead, so no account is taken over;
+  - the owner can **sign a member out of every computer** (a lost laptop).
+- Settings: plan cards showing what each plan includes, with a seat count for Business, and
+  "Not in your plan" for locked features.
+- API: `GET/PUT/DELETE /api/personal/keys/{provider}`, `POST /api/teams/add`,
+  `POST /api/teams/sign-out-member`, and the Argus Personal equivalents. Helm chart 0.41.0.
+
 ## [1.50.0] — Phase 50: Team plans
 
 ### Added

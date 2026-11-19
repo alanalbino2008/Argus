@@ -114,6 +114,15 @@ def _content(kind: str, a: dict[str, Any], ctx: dict[str, Any]) -> tuple[str, li
             f"Join here (the link works for {ctx.get('days', 7)} days):",
             f"LINK:{ctx['link']}|Join the team",
             "If you weren't expecting this, ignore this email."]  # fmt: skip
+    if kind == "member_account_created":
+        return f"{ctx['team']} created an Argus account for you", [
+            f"{ctx['team']} has created an Argus account for you on their Business plan. The plan covers your use of "
+            "Argus and its shared credits; your cases stay on your own computer and nobody else on the team can see "
+            "them.",
+            f"Choose your password here (the link works once, for {ctx.get('days', 7)} days), then sign in to Argus "
+            "Personal with this email address:",
+            f"LINK:{ctx['link']}|Choose your password",
+            "If you weren't expecting this, ignore this email."]  # fmt: skip
     if kind == "team_joined":
         return f"{ctx['member']} joined your Argus team", [
             f"{ctx['member']} accepted your invitation and is now on your team ({ctx['used']} of {ctx['seats']} seats "
