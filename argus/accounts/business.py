@@ -59,9 +59,14 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
     by_id = {a["id"]: a for a in accounts}
 
     # ------------------------------------------------------------ customers
-    statuses = Counter(a["status"] for a in accounts)
-    customers = [a for a in accounts if paying(a)]
+    members = [a for a in accounts if a.get("team_id")]  # covered by their team's plan
+    own = [a for a in accounts if not a.get("team_id")]
+    statuses = Counter(a["status"] for a in own)
+    customers = [a for a in own if paying(a)]
     plans = Counter(a["plan"] for a in customers)
+    units: Counter[str] = Counter()  # what is billed: one per subscription, or one per seat for a team plan
+    for a in customers:
+        units[a["plan"]] += int(a.get("seats") or 1) if a["plan"] == "team" else 1
 
     # ------------------------------------------------------------ revenue
     by_plan, currencies = [], set()
@@ -74,8 +79,9 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
             priced = False
         else:
             currencies.add(price["currency"])
-            total += each * count
-        by_plan.append({"plan": plan, "customers": count, "monthly": round(each * count) if each is not None else None,
+            total += each * units[plan]
+        by_plan.append({"plan": plan, "customers": count, "seats": units[plan],
+                        "monthly": round(each * units[plan]) if each is not None else None,
                         "currency": price.get("currency") if price else None})  # fmt: skip
     mrr = {"amount": round(total), "currency": next(iter(currencies)) if len(currencies) == 1 else None,
            "complete": priced, "by_plan": by_plan}  # fmt: skip
@@ -116,7 +122,7 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
         signups.append(
             {"week": w.date().isoformat(), "accounts": len(cohort), "paying": sum(paying(a) for a in cohort)}
         )
-    finished = [a for a in accounts if a["created"] and a["created"] <= now - timedelta(days=trial_days)]
+    finished = [a for a in own if a["created"] and a["created"] <= now - timedelta(days=trial_days)]
     converted = sum(1 for a in finished if a["plan"] != "trial")
 
     # ------------------------------------------------------------ needs attention
@@ -127,9 +133,9 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
                 "valid_until": a["valid_until"], "why": why}  # fmt: skip
 
     attention = [row(a, "payment failing") for a in accounts if a["status"] == "past_due"]
-    attention += [row(a, "trial ends soon") for a in accounts if a["status"] == "trialing" and a["until"]
+    attention += [row(a, "trial ends soon") for a in own if a["status"] == "trialing" and a["until"]
                   and now < a["until"] <= now + timedelta(days=3)]  # fmt: skip
-    attention += [row(a, "trial ended without paying") for a in accounts if a["plan"] == "trial" and a["until"]
+    attention += [row(a, "trial ended without paying") for a in own if a["plan"] == "trial" and a["until"]
                   and now - timedelta(days=14) <= a["until"] <= now]  # fmt: skip
     attention += [row(a, "locked after wrong passwords") for a in accounts
                   if a["locked_until"] and datetime.fromisoformat(a["locked_until"]) > now]  # fmt: skip
@@ -158,7 +164,8 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
         "customers": {
             "accounts": len(accounts), "paying": len(customers), "trialing": statuses.get("trialing", 0),
             "past_due": statuses.get("past_due", 0), "cancelled": statuses.get("cancelled", 0),
-            "suspended": statuses.get("suspended", 0), "plans": dict(plans),
+            "suspended": statuses.get("suspended", 0), "plans": dict(plans), "team_members": len(members),
+            "team_seats": units.get("team", 0),
         },
         "mrr": mrr,
         "signups": {"weeks": signups, "trials_finished": len(finished), "converted": converted,

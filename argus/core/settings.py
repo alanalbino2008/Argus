@@ -218,6 +218,9 @@ class Settings(BaseSettings):
     stripe_price_professional: str = Field(
         default="", description="Account service: Stripe price id of the Professional plan"
     )
+    stripe_price_team: str = Field(
+        default="", description="Account service: Stripe price id of the Team plan (priced per seat)"
+    )
     stripe_credit_packs: str = Field(
         default="", description="Account service: credit packs for sale, as credits=price id (500=price_1,2000=price_2)"
     )

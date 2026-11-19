@@ -14,6 +14,11 @@ const checks = {}; // route name -> result of its last test
 let data = { keys: null, audit: null, plugins: null, health: null, verify: null, users: null, members: null };
 
 const VAULT_FORMS = {
+  "team-invite-form": async () => {
+    const r = await api.post("/api/personal/team/invite", { email: $("#team-invite-email").value.trim() });
+    toast(r.detail, "success");
+    data.team = await api.get("/api/personal/team").catch(() => data.team);
+  },
   "vault-enable-form": async () => {
     if ($("#vault-new").value !== $("#vault-new2").value) throw new Error("The two passphrases don't match");
     const r = await api.post("/api/vault/enable", { passphrase: $("#vault-new").value, understood: $("#vault-understood").checked });
@@ -70,10 +75,26 @@ export function initSettings(el) {
         window.dispatchEvent(new CustomEvent("argus:vault-locked"));
         return;
       }
+      if (act === "team-remove" || act === "team-cancel" || act === "team-leave") {
+        const leaving = act === "team-leave";
+        const ok = act === "team-cancel" || await confirmDialog({
+          title: leaving ? "Leave the team?" : `Remove ${btn.dataset.email} from your team?`,
+          message: leaving ? "Your cases stay on this computer. You'll need your own plan to start new work." : "Their account and their cases are theirs and stay on their computer; they lose the team's plan and credits, and a seat is freed.",
+          confirm: leaving ? "Leave" : "Remove", danger: true,
+        });
+        if (!ok) return;
+        const r = act === "team-remove" ? await api.post("/api/personal/team/remove", { member_id: id })
+          : act === "team-cancel" ? await api.post("/api/personal/team/cancel-invite", { email: btn.dataset.email })
+            : await api.post("/api/personal/team/leave");
+        toast(r.detail, "success");
+        await refresh();
+        return;
+      }
       if (act === "buy" || act === "billing-portal") {
         btn.disabled = true;
         try {
-          const page = act === "buy" ? await api.post("/api/personal/billing/checkout", { item: btn.dataset.item })
+          const seats = btn.dataset.item === "plan:team" ? Math.max(2, Math.min(100, Number($("#team-seats")?.value) || 2)) : undefined;
+          const page = act === "buy" ? await api.post("/api/personal/billing/checkout", { item: btn.dataset.item, ...(seats ? { seats } : {}) })
             : await api.post("/api/personal/billing/portal");
           if (page.url?.startsWith("https://")) { location.assign(page.url); return; }
           toast("The payment page could not be opened", "error");
@@ -242,11 +263,12 @@ export async function refresh() {
     platform ? api.get("/api/vault/status").catch(() => null) : null,
   ];
   const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault] = await Promise.all(tasks);
-  const [credits, billing] = personal?.signed_in ? await Promise.all([
+  const [credits, billing, team] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
-  ]) : [null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, vault };
+    api.get("/api/personal/team").catch(() => null),
+  ]) : [null, null, null];
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, vault };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -439,10 +461,11 @@ function subscriptionCard() {
       <dt>Account service</dt><dd class="mono small">${p.account_service || "not configured"}</dd></dl>
     ${data.credits ? html`<div class="section-title" style="margin-top:14px">Argus credits</div>
       <p class="muted small">Premium sources (such as UK Companies House) are included through Argus Connect: no accounts or API keys of your own needed. Each lookup uses credits; this month's allowance renews on the 1st, and purchased credits never expire.</p>
-      <dl class="kv"><dt>Available</dt><dd><b>${data.credits.credits.available}</b> credits</dd><dt>This month</dt><dd>${data.credits.credits.allowance_remaining} of ${data.credits.credits.allowance} left</dd><dt>Purchased</dt><dd>${data.credits.credits.purchased}</dd>
+      <dl class="kv"><dt>Available</dt><dd><b>${data.credits.credits.available}</b> credits${data.credits.shared_with_team ? " (shared with your team)" : ""}</dd><dt>This month</dt><dd>${data.credits.credits.allowance_remaining} of ${data.credits.credits.allowance} left</dd><dt>Purchased</dt><dd>${data.credits.credits.purchased}</dd>
         ${Object.values(data.credits.prices).map((p) => { const costs = Object.entries(p.lookups); const same = costs.every(([, c]) => c === costs[0][1]);
           return html`<dt>${p.label}</dt><dd>${same ? `${costs[0][1]} credit${costs[0][1] === 1 ? "" : "s"} per lookup` : costs.map(([n, c]) => `${n.replace(/_/g, " ")} ${c}`).join(" · ")}</dd>`; })}</dl>
       <p class="muted small" style="margin-top:6px">A brokered lookup tells the Argus account service what was looked up (a company number or name). The AI analyst sends the case material you confirm through it to Anthropic; the service keeps none of it. To keep even that private, set your own key for the source (or your own Claude API key); requests then go directly and cost no credits.</p>` : ""}
+    ${teamSection()}
     ${billingSection(p)}
     <p class="muted small" style="margin-top:10px">If a subscription ends, nothing is lost: your cases stay readable, verifiable and exportable, and only new work waits until it is renewed.</p>
   </div>`;
@@ -454,8 +477,35 @@ function money(price) {
   return price.interval ? `${amount} a ${price.interval}` : amount;
 }
 
+function teamSection() {
+  const t = data.team;
+  if (!t || t.role === "none") return "";
+  if (t.role === "member") {
+    return html`<div class="section-title" style="margin-top:14px">Your team</div>
+      <p class="small">You're on <b>${t.team || "a team"}</b>'s team${t.owner_email ? ` (${t.owner_email})` : ""}. The team's plan covers your use of Argus and its shared credits; your cases stay on this computer and nobody else on the team can see them.</p>
+      ${t.active ? "" : html`<div class="callout warn" style="margin:8px 0">${ico("alert")}<span>The team's plan isn't active. Ask its owner, or choose your own plan.</span></div>`}
+      <button class="btn sm ghost danger" data-act="team-leave">Leave the team</button>`;
+  }
+  const free = t.seats - t.used - t.pending;
+  return html`<div class="section-title" style="margin-top:14px">Your team · ${t.used} of ${t.seats} seats used</div>
+    <p class="muted small">Each member signs in with their own account on their own computers and shares the team's credits. You see who is on the team and how many credits each used, never their cases. Add or remove seats under Manage billing.</p>
+    <table class="table"><thead><tr><th>Member</th><th>Credits this month</th><th>Last sign-in</th><th></th></tr></thead><tbody>
+      ${t.members.map((m) => html`<tr><td><b>${m.name || m.email}</b>${m.name ? html`<div class="muted small">${m.email}</div>` : ""}${m.owner ? html` <span class="pill accent">owner</span>` : ""}</td>
+        <td>${m.credits_this_month}</td><td>${m.last_login_at ? timeAgo(m.last_login_at) : "never"}</td>
+        <td class="actions">${m.owner ? "" : html`<button class="btn sm ghost danger" data-act="team-remove" data-id="${m.id}" data-email="${m.email}">Remove</button>`}</td></tr>`)}
+      ${t.invites.map((i) => html`<tr><td>${i.email} <span class="pill">invited</span></td><td colspan="2" class="muted small">until ${formatDate(i.expires_at)}</td>
+        <td class="actions"><button class="btn sm ghost" data-act="team-cancel" data-email="${i.email}">Cancel</button></td></tr>`)}
+    </tbody></table>
+    ${free > 0 ? html`<form id="team-invite-form" class="filters" style="margin-top:10px">
+      <input class="input" id="team-invite-email" type="email" placeholder="colleague@example.org" maxlength="320" required style="max-width:280px" aria-label="Email to invite">
+      <button class="btn sm primary" type="submit">${ico("plus")}Invite</button><p class="error-text"></p></form>
+      <p class="muted small">${free} seat${free === 1 ? "" : "s"} free. The invitation link works for a week.</p>`
+      : html`<p class="muted small" style="margin-top:8px">All seats are taken or invited: add seats under Manage billing to invite more.</p>`}`;
+}
+
 function billingSection(p) {
   const b = data.billing;
+  if (data.team?.role === "member") return "";
   if (!b?.enabled) return "";
   const subscribed = ["active", "past_due"].includes(p.status) && p.plan && p.plan !== "trial";
   const plans = b.plans.filter((x) => !(subscribed && x.plan === p.plan));
@@ -463,7 +513,9 @@ function billingSection(p) {
     <p class="muted small">Payment is taken by Stripe on its own secure page: Argus never sees your card. ${subscribed ? "Change plan, update your card, download invoices or cancel in Manage billing; a cancelled plan keeps working to the end of the period you have paid for." : ""}</p>
     ${p.status === "past_due" ? html`<div class="callout warn" style="margin:8px 0">${ico("alert")}<span>Your last payment didn't go through. Argus keeps working while Stripe retries; update your card in Manage billing.</span></div>` : ""}
     <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
-      ${subscribed ? "" : plans.map((x) => html`<button class="btn sm primary" data-act="buy" data-item="${x.item}" title="${x.monthly_credits} credits a month, ${x.max_devices} computer${x.max_devices === 1 ? "" : "s"}">${ico("check")}Subscribe: ${x.label}${x.price ? ` (${money(x.price)})` : ""}</button>`)}
+      ${subscribed ? "" : plans.map((x) => x.per_seat
+        ? html`<span style="display:inline-flex;gap:6px;align-items:center"><input class="input" type="number" id="team-seats" min="2" max="100" value="3" style="width:72px" aria-label="Seats"><button class="btn sm primary" data-act="buy" data-item="${x.item}" title="${x.monthly_credits} shared credits a month per seat; each person ${x.max_devices} computers">${ico("check")}Subscribe: ${x.label}${x.price ? ` (${money(x.price)} per seat)` : " (per seat)"}</button></span>`
+        : html`<button class="btn sm primary" data-act="buy" data-item="${x.item}" title="${x.monthly_credits} credits a month, ${x.max_devices} computer${x.max_devices === 1 ? "" : "s"}">${ico("check")}Subscribe: ${x.label}${x.price ? ` (${money(x.price)})` : ""}</button>`)}
       ${b.credit_packs.map((x) => html`<button class="btn sm" data-act="buy" data-item="${x.item}">${ico("plus")}Buy ${x.credits} credits${x.price ? ` (${money(x.price)})` : ""}</button>`)}
       ${b.has_billing ? html`<button class="btn sm ghost" data-act="billing-portal">${ico("external")}Manage billing</button>` : ""}
     </div>`;

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -18,10 +19,15 @@ from argus.storage.db import (
     Database,
     SubscriberAccountRow,
     SubscriberDeviceRow,
+    TeamInviteRow,
 )
 
 LOCK_AFTER = 5  # failed sign-ins in a row
 LOCK_FOR = timedelta(minutes=15)
+
+
+def _hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _now() -> datetime:
@@ -46,6 +52,7 @@ def _account(row: SubscriberAccountRow, devices: int | None = None) -> dict[str,
         "valid_until": _iso(row.valid_until), "max_devices": max_devices(row),
         "billing_reference": row.billing_reference, "created_at": _iso(row.created_at),
         "reminder_emails": bool(row.reminder_emails if row.reminder_emails is not None else True),
+        "team_id": row.team_id, "seats": int(row.seats or 1),
         "last_login_at": _iso(row.last_login_at),
     }  # fmt: skip
     if devices is not None:
@@ -220,7 +227,8 @@ class SubscriberRepository:
                 row.failed_logins, row.locked_until, row.last_login_at = 0, None, _now()
 
     # ------------------------------------------------------------------ devices
-    async def attach_device(self, account_id: str, device_id: str, name: str) -> tuple[bool, list[dict[str, Any]]]:
+    async def attach_device(self, account_id: str, device_id: str, name: str,
+                            limit: int | None = None) -> tuple[bool, list[dict[str, Any]]]:  # fmt: skip
         """Register (or re-use) a device; (False, active devices) if the plan's device limit is reached."""
         async with self.db.session() as s, s.begin():
             account = await s.get(SubscriberAccountRow, account_id)
@@ -233,7 +241,7 @@ class SubscriberRepository:
             if existing is not None and not existing.revoked:
                 existing.last_seen, existing.name = _now(), name or existing.name
                 return True, [_device(d) for d in active]
-            if len(active) >= max_devices(account):
+            if len(active) >= (limit or max_devices(account)):
                 return False, [_device(d) for d in active]
             if existing is not None:
                 existing.revoked, existing.last_seen, existing.name = False, _now(), name or existing.name
@@ -280,22 +288,24 @@ def _month(now: datetime | None = None) -> str:
     return (now or _now()).strftime("%Y-%m")
 
 
-def monthly_allowance(plan: str) -> int:
-    return int(PLANS.get(plan, {}).get("monthly_credits", 0))
+def monthly_allowance(plan: str, seats: int = 1) -> int:
+    """A plan's monthly credits; a team plan's are per seat, shared by the team."""
+    info = PLANS.get(plan, {})
+    return int(info.get("monthly_credits", 0)) * (max(1, int(seats or 1)) if info.get("per_seat") else 1)
 
 
 def _roll(row: SubscriberAccountRow, s: Any, now: datetime | None = None) -> None:
     """A new month: the plan's allowance is renewed (unused allowance does not carry over)."""
     month = _month(now)
     if row.allowance_month != month:
-        row.allowance_month, row.allowance_remaining = month, monthly_allowance(row.plan)
+        row.allowance_month, row.allowance_remaining = month, monthly_allowance(row.plan, row.seats)
         s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=row.id, kind="allowance",
                               delta=row.allowance_remaining, balance_after=row.allowance_remaining + row.purchased_credits,
                               detail=f"monthly allowance {month}", created_at=_now()))  # fmt: skip
 
 
 def _balance(row: SubscriberAccountRow) -> dict[str, Any]:
-    return {"allowance": monthly_allowance(row.plan), "allowance_remaining": row.allowance_remaining,
+    return {"allowance": monthly_allowance(row.plan, row.seats), "allowance_remaining": row.allowance_remaining,
             "purchased": row.purchased_credits, "available": row.allowance_remaining + row.purchased_credits,
             "month": row.allowance_month}  # fmt: skip
 
@@ -315,7 +325,7 @@ class CreditRepository:
             return _balance(row)
 
     async def charge(
-        self, account_id: str, amount: int, detail: str, now: datetime | None = None
+        self, account_id: str, amount: int, detail: str, now: datetime | None = None, used_by: str = ""
     ) -> dict[str, Any] | None:
         """Take ``amount`` credits, atomically; None (nothing taken) if there are not enough."""
         async with self.db.session() as s, s.begin():
@@ -330,8 +340,8 @@ class CreditRepository:
             row.purchased_credits -= amount - from_allowance
             s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="usage", delta=-amount,
                                   balance_after=row.allowance_remaining + row.purchased_credits, detail=detail[:255],
-                                  created_at=_now()))  # fmt: skip
-            return {**_balance(row), "charged": amount, "from_allowance": from_allowance}
+                                  used_by=used_by[:32], created_at=_now()))  # fmt: skip
+            return {**_balance(row), "charged": amount, "from_allowance": from_allowance, "used_by": used_by}
 
     async def refund(self, account_id: str, charge: dict[str, Any], detail: str) -> None:
         """Give back a charge whose lookup failed, to where it came from."""
@@ -343,7 +353,8 @@ class CreditRepository:
             row.purchased_credits += charge["charged"] - charge["from_allowance"]
             s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="refund",
                                   delta=charge["charged"], balance_after=row.allowance_remaining + row.purchased_credits,
-                                  detail=detail[:255], created_at=_now()))  # fmt: skip
+                                  detail=detail[:255], used_by=str(charge.get("used_by") or "")[:32],
+                                  created_at=_now()))  # fmt: skip
 
     async def add(self, account_id: str, amount: int, *, kind: str, detail: str) -> dict[str, Any] | None:
         """Purchased credits (or an adjustment, which may be negative but never below zero)."""
@@ -377,9 +388,10 @@ class CreditRepository:
                                   created_at=_now()))  # fmt: skip
             return taken
 
-    async def upgrade_allowance(self, account_id: str, old_plan: str, new_plan: str) -> None:
-        """A move to a bigger plan mid-month: the extra allowance is available straight away."""
-        extra = monthly_allowance(new_plan) - monthly_allowance(old_plan)
+    async def upgrade_allowance(self, account_id: str, old_plan: str, new_plan: str, old_seats: int = 1,
+                                new_seats: int = 1) -> None:  # fmt: skip
+        """A move to a bigger plan (or more seats) mid-month: the extra allowance is available straight away."""
+        extra = monthly_allowance(new_plan, new_seats) - monthly_allowance(old_plan, old_seats)
         if extra <= 0:
             return
         async with self.db.session() as s, s.begin():
@@ -392,7 +404,8 @@ class CreditRepository:
             row.allowance_remaining += extra
             s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="allowance", delta=extra,
                                   balance_after=row.allowance_remaining + row.purchased_credits,
-                                  detail=f"upgrade to {new_plan}", created_at=_now()))  # fmt: skip
+                                  detail=f"upgrade to {new_plan}" + (f" ({new_seats} seats)" if new_seats > 1 else ""),
+                                  created_at=_now()))  # fmt: skip
 
     async def since(self, start: datetime) -> list[dict[str, Any]]:
         """Every credit movement since ``start`` (for the business dashboard)."""
@@ -400,14 +413,26 @@ class CreditRepository:
             rows = (await s.scalars(select(CreditLedgerRow).where(CreditLedgerRow.created_at >= start)
                                     .order_by(CreditLedgerRow.created_at))).all()  # fmt: skip
         return [{"account_id": r.account_id, "kind": r.kind, "delta": r.delta, "detail": r.detail,
-                 "at": _aware(r.created_at)} for r in rows]  # fmt: skip
+                 "used_by": r.used_by or "", "at": _aware(r.created_at)} for r in rows]  # fmt: skip
 
     async def ledger(self, account_id: str, limit: int = 100) -> list[dict[str, Any]]:
         async with self.db.session() as s:
             rows = (await s.scalars(select(CreditLedgerRow).where(CreditLedgerRow.account_id == account_id)
                                     .order_by(CreditLedgerRow.created_at.desc()).limit(limit))).all()  # fmt: skip
         return [{"kind": r.kind, "delta": r.delta, "balance_after": r.balance_after, "detail": r.detail,
-                 "at": _iso(r.created_at)} for r in rows]  # fmt: skip
+                 "used_by": r.used_by or "", "at": _iso(r.created_at)} for r in rows]  # fmt: skip
+
+    async def used_by_member(self, account_id: str, start: datetime) -> dict[str, int]:
+        """Credits each team member used since ``start`` (refunded lookups netted off)."""
+        async with self.db.session() as s:
+            rows = (await s.execute(select(CreditLedgerRow.used_by, CreditLedgerRow.delta).where(
+                CreditLedgerRow.account_id == account_id, CreditLedgerRow.kind.in_(("usage", "refund")),
+                CreditLedgerRow.created_at >= start))).all()  # fmt: skip
+        out: dict[str, int] = {}
+        for who, delta in rows:
+            key = who or account_id
+            out[key] = out.get(key, 0) - int(delta)
+        return out
 
 
 class AppStateRepository:
@@ -434,3 +459,89 @@ class AppStateRepository:
             row = await s.get(AppStateRow, key)
             if row is not None:
                 await s.delete(row)
+
+
+class TeamRepository:
+    """Team plans: who belongs to which team, and the invitations (stored only as hashes)."""
+
+    def __init__(self, db: Database):
+        self.db = db
+
+    async def members(self, team_id: str) -> list[dict[str, Any]]:
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(SubscriberAccountRow).where(SubscriberAccountRow.team_id == team_id)
+                                    .order_by(SubscriberAccountRow.email))).all()  # fmt: skip
+        return [_account(r) for r in rows]
+
+    async def join(self, account_id: str, team_id: str, seats: int) -> bool:
+        """Add a member if a seat is free (the owner holds one seat); False if the team is full."""
+        async with self.db.session() as s, s.begin():
+            owner = await s.get(SubscriberAccountRow, team_id, with_for_update=True)  # one join at a time
+            row = await s.get(SubscriberAccountRow, account_id)
+            if owner is None or row is None:
+                return False
+            if row.team_id == team_id:
+                return True
+            count = await s.scalar(select(func.count()).select_from(SubscriberAccountRow).where(
+                SubscriberAccountRow.team_id == team_id))  # fmt: skip
+            if int(count or 0) + 2 > seats:  # the members, the owner, and this newcomer must fit
+                return False
+            row.team_id = team_id
+        return True
+
+    async def leave(self, account_id: str) -> str | None:
+        """Take a member off their team; the team they were on."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id)
+            if row is None or not row.team_id:
+                return None
+            team, row.team_id = row.team_id, None
+        return team
+
+    async def invite(self, team_id: str, email: str, ttl: timedelta) -> str:
+        """A fresh invitation token (an earlier open one for the same email stops working)."""
+        token, now = secrets.token_urlsafe(32), _now()
+        async with self.db.session() as s, s.begin():
+            for row in (await s.scalars(select(TeamInviteRow).where(
+                    TeamInviteRow.team_id == team_id, TeamInviteRow.email == email.lower(),
+                    TeamInviteRow.accepted_at.is_(None), TeamInviteRow.cancelled.is_(False)))).all():  # fmt: skip
+                row.cancelled = True
+            s.add(TeamInviteRow(token_hash=_hash(token), team_id=team_id, email=email.lower(), expires_at=now + ttl,
+                                cancelled=False, created_at=now))  # fmt: skip
+        return token
+
+    async def invites(self, team_id: str) -> list[dict[str, Any]]:
+        """Open invitations (not accepted, cancelled or expired)."""
+        now = _now()
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(TeamInviteRow).where(
+                TeamInviteRow.team_id == team_id, TeamInviteRow.accepted_at.is_(None),
+                TeamInviteRow.cancelled.is_(False)).order_by(TeamInviteRow.created_at.desc()))).all()  # fmt: skip
+        return [{"email": r.email, "sent_at": _iso(r.created_at), "expires_at": _iso(r.expires_at)}
+                for r in rows if (_aware(r.expires_at) or now) > now]  # fmt: skip
+
+    async def cancel_invite(self, team_id: str, email: str) -> bool:
+        async with self.db.session() as s, s.begin():
+            rows = (await s.scalars(select(TeamInviteRow).where(
+                TeamInviteRow.team_id == team_id, TeamInviteRow.email == email.lower(),
+                TeamInviteRow.accepted_at.is_(None), TeamInviteRow.cancelled.is_(False)))).all()  # fmt: skip
+            for row in rows:
+                row.cancelled = True
+        return bool(rows)
+
+    async def find_invite(self, token: str) -> dict[str, Any] | None:
+        """An open, unexpired invitation."""
+        now = _now()
+        async with self.db.session() as s:
+            row = await s.get(TeamInviteRow, _hash(token))
+        if row is None or row.accepted_at or row.cancelled or (_aware(row.expires_at) or now) <= now:
+            return None
+        return {"team_id": row.team_id, "email": row.email}
+
+    async def accept_invite(self, token: str) -> bool:
+        async with self.db.session() as s, s.begin():
+            row = await s.get(TeamInviteRow, _hash(token), with_for_update=True)
+            if row is None or row.accepted_at or row.cancelled:
+                return False
+            row.accepted_at = _now()
+        return True

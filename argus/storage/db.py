@@ -171,6 +171,8 @@ class SubscriberAccountRow(Base):
     allowance_remaining: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     purchased_credits: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # never expire
     reminder_emails: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())  # trial reminders
+    team_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)  # the team owner's account
+    seats: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # a team owner: seats paid for
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -202,6 +204,22 @@ class CreditLedgerRow(Base):
     delta: Mapped[int] = mapped_column(Integer)
     balance_after: Mapped[int] = mapped_column(Integer)
     detail: Mapped[str] = mapped_column(String(255), default="")  # e.g. "companies_house/officers"
+    used_by: Mapped[str] = mapped_column(String(32), default="", server_default="")  # a team member's account
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class TeamInviteRow(Base):
+    """An invitation to join a team (only its hash is kept); single use, a week to accept."""
+
+    __tablename__ = "team_invites"
+    __table_args__ = (Index("ix_team_invites_team", "team_id", "created_at"),)
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    team_id: Mapped[str] = mapped_column(String(32), ForeignKey("subscriber_accounts.id", ondelete="CASCADE"))
+    email: Mapped[str] = mapped_column(String(320))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

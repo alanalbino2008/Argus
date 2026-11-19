@@ -107,6 +107,27 @@ def _content(kind: str, a: dict[str, Any], ctx: dict[str, Any]) -> tuple[str, li
         return "Your Argus account is active again", [
             "The payment dispute has been closed and your account is active again. Thank you for your patience."
         ]
+    if kind == "team_invite":
+        return f"{ctx['team']} invited you to their Argus team", [
+            f"{ctx['team']} has invited you to join their team on Argus. The team's plan covers your use of Argus and "
+            "its shared credits; your cases stay on your own computer and nobody else on the team can see them.",
+            f"Join here (the link works for {ctx.get('days', 7)} days):",
+            f"LINK:{ctx['link']}|Join the team",
+            "If you weren't expecting this, ignore this email."]  # fmt: skip
+    if kind == "team_joined":
+        return f"{ctx['member']} joined your Argus team", [
+            f"{ctx['member']} accepted your invitation and is now on your team ({ctx['used']} of {ctx['seats']} seats "
+            "used).",
+            f"Manage your team in Argus under {SETTINGS_PATH}."]  # fmt: skip
+    if kind == "team_removed":
+        return "You're no longer on an Argus team", [
+            f"You've been taken off {ctx['team']}'s Argus team. Your cases are still on your computer, readable and "
+            "exportable.",
+            f"To carry on with new work, choose your own plan in Argus under {SETTINGS_PATH}."]  # fmt: skip
+    if kind == "team_left":
+        return f"{ctx['member']} left your Argus team", [
+            f"{ctx['member']} has left your team, so a seat is free again. Invite someone else, or reduce your seats "
+            f"under Manage billing in {SETTINGS_PATH}."]  # fmt: skip
     if kind == "password_reset":
         return "Reset your Argus password", [
             "Someone (hopefully you) asked to reset the password of your Argus account.",
@@ -132,11 +153,11 @@ def render(kind: str, account: dict[str, Any], *, support: str = "", unsubscribe
     text_parts, html_parts = [hello], [f"<p>{escape(hello)}</p>"]
     for p in paragraphs:
         if p.startswith("LINK:"):
-            url = p[5:]
+            url, _, label = p[5:].partition("|")
             text_parts.append(url)
             html_parts.append(f'<p><a href="{escape(url, quote=True)}" style="display:inline-block;padding:10px 18px;'
                               f'background:#4f5bd5;color:#fff;border-radius:6px;text-decoration:none">'
-                              f"Choose a new password</a></p>"
+                              f"{escape(label or 'Choose a new password')}</a></p>"
                               f'<p style="font-size:12px;color:#666">Or paste this into your browser: {escape(url)}</p>')  # fmt: skip
         else:
             text_parts.append(p)

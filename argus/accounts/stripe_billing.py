@@ -48,7 +48,8 @@ class BillingError(Exception):
 def plan_prices(settings: Settings) -> dict[str, str]:
     """Plan -> Stripe price id, for the plans the operator has priced."""
     return {plan: price for plan, price in (("personal", settings.stripe_price_personal),
-                                            ("professional", settings.stripe_price_professional)) if price}  # fmt: skip
+                                            ("professional", settings.stripe_price_professional),
+                                            ("team", settings.stripe_price_team)) if price}  # fmt: skip
 
 
 def credit_packs(settings: Settings) -> dict[int, str]:
@@ -148,6 +149,15 @@ def period_end(subscription: dict[str, Any]) -> datetime | None:
     if subscription.get("status") == "canceled" and subscription.get("ended_at"):
         stamp = subscription["ended_at"]
     return datetime.fromtimestamp(int(stamp), tz=timezone.utc) if stamp else None
+
+
+def subscription_quantity(subscription: dict[str, Any]) -> int:
+    """Seats paid for (a team plan's quantity)."""
+    items = (subscription.get("items") or {}).get("data") or []
+    try:
+        return max(1, int(items[0].get("quantity") or 1)) if items else 1
+    except (TypeError, ValueError):
+        return 1
 
 
 def subscription_price(subscription: dict[str, Any]) -> str | None:

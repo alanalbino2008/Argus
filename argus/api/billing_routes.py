@@ -32,6 +32,7 @@ from argus.api.account_routes import SERVICE, _licence_account, _service
 from argus.api.deps import audit
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
+MAX_SEATS = 100
 GRACE = timedelta(days=7)  # a failed renewal keeps working at least this long while Stripe retries
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
 _prices: dict[str, tuple[float, dict[str, Any] | None]] = {}  # price id -> (fetched at, price)
@@ -39,8 +40,9 @@ _prices: dict[str, tuple[float, dict[str, Any] | None]] = {}  # price id -> (fet
 
 class CheckoutRequest(BaseModel):
     licence: str = Field(max_length=8192)
-    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional)|credits:\d{1,7})$")
+    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional|team)|credits:\d{1,7})$")
     return_url: str = Field(default="", max_length=500)
+    seats: int = Field(default=2, ge=2, le=MAX_SEATS)  # team plan only; adjustable on Stripe's page too
 
 
 class PortalRequest(BaseModel):
@@ -108,6 +110,7 @@ async def _catalogue(request: Request) -> dict[str, Any]:
 
     plans = [{"item": f"plan:{plan}", "plan": plan, "label": PLANS[plan]["label"],
               "monthly_credits": PLANS[plan].get("monthly_credits", 0), "max_devices": PLANS[plan].get("max_devices", 1),
+              "per_seat": bool(PLANS[plan].get("per_seat")),
               "price": await _price(settings, price)} for plan, price in stripe.plan_prices(settings).items()]  # fmt: skip
     has_billing = False
     if request.method == "POST":  # from Argus Personal, with the licence: can this account manage billing?
@@ -132,6 +135,8 @@ async def checkout(body: CheckoutRequest, request: Request):
     _payload, account, _private = await _licence_account(request, body.licence)
     if account["status"] == "suspended":
         raise HTTPException(status_code=403, detail="This account is suspended: contact support")
+    if account.get("team_id"):
+        raise HTTPException(status_code=409, detail="You're on a team: its owner looks after the plan and credits")
     kind, _, what = body.item.partition(":")
     back = _return_url(request, body.return_url)
     customer = account["billing_reference"] if account["billing_reference"].startswith("cus_") else ""
@@ -149,7 +154,11 @@ async def checkout(body: CheckoutRequest, request: Request):
             raise HTTPException(
                 status_code=409, detail="You already have a subscription: use Manage billing to change it"
             )
-        session.update(mode="subscription", line_items=[{"price": price, "quantity": 1}],
+        item: dict[str, Any] = {"price": price, "quantity": 1}
+        if what == "team":  # priced per seat; the buyer can change the number on Stripe's page
+            item = {"price": price, "quantity": body.seats,
+                    "adjustable_quantity": {"enabled": True, "minimum": 2, "maximum": MAX_SEATS}}  # fmt: skip
+        session.update(mode="subscription", line_items=[item],
                        subscription_data={"metadata": {"account_id": account["id"]}})  # fmt: skip
     else:
         price = stripe.credit_packs(settings).get(int(what))
@@ -292,6 +301,9 @@ async def _subscription(request: Request, account: dict[str, Any], sub: dict[str
     plan = stripe.plan_for_price(settings, stripe.subscription_price(sub))
     if plan:
         changes["plan"] = plan
+    seats = stripe.subscription_quantity(sub) if plan == "team" else 1
+    if plan:
+        changes["seats"] = seats
     until = stripe.period_end(sub)
     now = datetime.now(timezone.utc)
     if status == "past_due":
@@ -307,8 +319,9 @@ async def _subscription(request: Request, account: dict[str, Any], sub: dict[str
             await repo.update_payment(p["id"], status_before_hold=status)
         changes["status"] = "suspended"
     updated = await repo.update(account["id"], **changes)
-    if plan and plan != account["plan"]:
-        await request.app.state.credits.upgrade_allowance(account["id"], account["plan"], plan)
+    if plan and (plan != account["plan"] or seats != account.get("seats", 1)):
+        await request.app.state.credits.upgrade_allowance(account["id"], account["plan"], plan,
+                                                          account.get("seats", 1), seats)  # fmt: skip
     await audit(request, SERVICE, "billing.subscription", account["id"],
                 details={"event": event["type"], "status": status, "plan": (updated or account)["plan"],
                          "valid_until": until.isoformat() if until else None})  # fmt: skip

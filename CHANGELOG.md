@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.50.0] — Phase 50: Team plans
+
+### Added
+- **Team plan**, priced per seat (`ARGUS_STRIPE_PRICE_TEAM`):
+  - the owner chooses the seats at checkout and changes them in Manage billing;
+  - 1,000 shared credits a month per seat, plus any credit packs the owner buys;
+  - each member has 2 computers.
+- **Invitations by email**:
+  - the owner invites from Settings; an invitation works once, for a week, and is stored only
+    as a hash; inviting again replaces it, and the owner can cancel it;
+  - invitations can't exceed the free seats.
+- **Joining** at `/join-team` on the account service, with an existing Argus account (its
+  password) or a new one:
+  - someone with their own paid subscription is asked to cancel it first, so nobody pays
+    twice;
+  - nobody can join a full team or two teams.
+- **Members follow the team**:
+  - their licence carries the team's plan, status and paid-until date;
+  - if the team's subscription lapses, ends or is on hold, every member goes read-only (cases
+    kept);
+  - someone removed, or who leaves, goes back to their own account as it was.
+- **Shared credits, private work**:
+  - lookups are charged to the team's pool, and each records which member used it;
+  - the owner sees members, invitations, last sign-in and credits used this month, never
+    what was looked up or anything about anyone's cases.
+- Emails: team invitation, member joined, member left, removed from the team. Members get no
+  trial reminders.
+- Business page: team seats and members; revenue counts every seat; members aren't counted
+  as trials.
+- API: `POST /api/teams/status|invite|cancel-invite|remove|leave|join/info|join`; Argus
+  Personal: `GET /api/personal/team`, `POST /api/personal/team/invite|cancel-invite|remove|leave`.
+  Migration 0024.
+- Helm chart 0.40.0: `config.stripePriceTeam`.
+
 ## [1.49.0] — Phase 49: Refunds and disputes
 
 ### Added

@@ -103,7 +103,7 @@ class AccountMailer:
         queued = 0
         for account in await self.subscribers.overview():
             until = account.get("until")
-            if account["plan"] != "trial" or account["status"] != "trialing" or until is None:
+            if account["plan"] != "trial" or account["status"] != "trialing" or until is None or account.get("team_id"):
                 continue
             day = until.date().isoformat()
             if now < until <= now + timedelta(days=3):

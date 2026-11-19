@@ -22,6 +22,7 @@ import aiohttp
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from argus.accounts import teams
 from argus.accounts.connectors import CATALOGUE, LABELS, ConnectError, build, call_source, operation
 from argus.accounts.licence import FULL_STATUSES, LicenceError, load_private_key, verify
 from argus.api.deps import audit, client_ip, require_platform_admin
@@ -76,20 +77,22 @@ async def _customer(request: Request, token: str) -> dict[str, Any]:
     account = await repo.get(payload["sub"])
     if account is None or not await repo.device_active(account["id"], payload["device"]):
         raise HTTPException(status_code=401, detail="This computer is not signed in to the account")
+    account = await teams.effective(repo, account)  # a team member uses the team's subscription and credits
     if account["status"] not in FULL_STATUSES:
         raise HTTPException(
             status_code=402, detail=f"Your subscription is {account['status']}: renew to use Argus Connect"
         )
     if not _per_account.hit(account["id"]):
         raise HTTPException(status_code=429, detail="Too many lookups; wait a minute")
-    return account
+    return {**account, "pool": teams.pool_id(account)}
 
 
 @router.post("/connect/balance")
 async def connect_balance(body: BalanceRequest, request: Request):
     """The account's credits and what each lookup costs."""
     account = await _customer(request, body.licence)
-    return {"credits": await request.app.state.credits.balance(account["id"]), "prices": _price_list()}
+    return {"credits": await request.app.state.credits.balance(account["pool"]), "prices": _price_list(),
+            "shared_with_team": account["pool"] != account["id"]}  # fmt: skip
 
 
 @router.post("/connect/{provider}")
@@ -107,7 +110,7 @@ async def connect_lookup(provider: str, body: ConnectRequest, request: Request):
     if not key:
         raise HTTPException(status_code=503, detail=f"{LABELS[provider]} is not available on this service")
     detail = f"{provider}/{body.operation}"
-    charge = await request.app.state.credits.charge(account["id"], op.credits, detail)
+    charge = await request.app.state.credits.charge(account["pool"], op.credits, detail, used_by=account["id"])
     if charge is None:
         raise HTTPException(status_code=402, detail="Not enough Argus credits for this lookup: your allowance renews "
                                                     "on the 1st, or buy more credits")  # fmt: skip
@@ -115,13 +118,13 @@ async def connect_lookup(provider: str, body: ConnectRequest, request: Request):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as http:
             result = await call_source(http, provider, body.operation, body.params, key)
     except ConnectError as exc:
-        await request.app.state.credits.refund(account["id"], charge, f"{detail} failed")
+        await request.app.state.credits.refund(account["pool"], charge, f"{detail} failed")
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-        await request.app.state.credits.refund(account["id"], charge, f"{detail} failed")
+        await request.app.state.credits.refund(account["pool"], charge, f"{detail} failed")
         raise HTTPException(status_code=503, detail=f"{LABELS[provider]} could not be reached") from exc
     if result.get("not_found"):  # nothing found is still an answer, but costs nothing
-        await request.app.state.credits.refund(account["id"], charge, f"{detail}: not found")
+        await request.app.state.credits.refund(account["pool"], charge, f"{detail}: not found")
         charge = {**charge, "charged": 0, "available": charge["available"] + charge["charged"]}
     return {
         "result": result,
@@ -148,14 +151,15 @@ async def connect_ai(task: str, body: AnalystConnectRequest, request: Request):
     if len(body.material) > settings.analyst_max_chars + 10_000:
         raise HTTPException(status_code=413, detail="Too much case material for one request")
     detail = f"ai/{task}"
-    charge = await request.app.state.credits.charge(account["id"], price(task, len(body.material)), detail)
+    charge = await request.app.state.credits.charge(account["pool"], price(task, len(body.material)), detail,
+                                                    used_by=account["id"])  # fmt: skip
     if charge is None:
         raise HTTPException(status_code=402, detail="Not enough Argus credits for the AI analyst: your allowance "
                                                     "renews on the 1st, or buy more credits")  # fmt: skip
     try:
         result = await run_task(task, body.material, key=key, settings=settings)
     except AnalystError as exc:
-        await request.app.state.credits.refund(account["id"], charge, f"{detail} failed")
+        await request.app.state.credits.refund(account["pool"], charge, f"{detail} failed")
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
     return {
         "result": result,

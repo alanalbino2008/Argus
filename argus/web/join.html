@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Join a team · Argus</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/js/theme.js"></script>
+</head>
+<body>
+  <main class="signin-root">
+    <div class="card signin">
+      <h1>Join a team on Argus</h1>
+      <p id="intro">Checking your invitation…</p>
+      <form id="join" hidden>
+        <div class="field"><label class="label" for="email">Email</label><input id="email" class="input" type="email" readonly></div>
+        <div class="field" id="name-field" hidden><label class="label" for="name">Your name <span class="muted small">optional</span></label><input id="name" class="input" autocomplete="name" maxlength="255"></div>
+        <div class="field"><label class="label" for="password" id="password-label">Password</label><input id="password" class="input" type="password" maxlength="256" required></div>
+        <p class="small muted" id="forgot" hidden><a href="/reset-password" target="_blank" rel="noopener">Forgot your password?</a></p>
+        <p class="error-text" role="alert"></p>
+        <button class="btn primary" type="submit" style="width:100%">Join the team</button>
+      </form>
+      <p id="done" hidden></p>
+    </div>
+  </main>
+  <script src="/static/js/join.js"></script>
+</body>
+</html>

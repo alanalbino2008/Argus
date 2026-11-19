@@ -55,8 +55,9 @@ def test_the_figures():
     assert c["plans"] == {"personal": 3, "professional": 2}
     # 3 x 15.00 a month + 2 x (468.00 a year = 39.00 a month)
     assert out["mrr"] == {"amount": 3 * 1500 + 2 * 3900, "currency": "GBP", "complete": True,
-                          "by_plan": [{"plan": "personal", "customers": 3, "monthly": 4500, "currency": "GBP"},
-                                      {"plan": "professional", "customers": 2, "monthly": 7800, "currency": "GBP"}]}  # fmt: skip
+                          "by_plan": [{"plan": "personal", "customers": 3, "seats": 3, "monthly": 4500, "currency": "GBP"},
+                                      {"plan": "professional", "customers": 2, "seats": 2, "monthly": 7800,
+                                       "currency": "GBP"}]}  # fmt: skip
     credits = out["credits"]
     assert credits["by_source"] == [{"source": "ai", "label": "AI analyst", "credits": 20},
                                     {"source": "companies_house", "label": "UK Companies House", "credits": 4}]  # fmt: skip
@@ -69,6 +70,13 @@ def test_the_figures():
     weeks = out["signups"]["weeks"]
     assert len(weeks) == 12 and sum(w["accounts"] for w in weeks) == 9  # all joined within 12 weeks
     assert out["signups"]["trials_finished"] == 7 and out["signups"]["converted"] == 6
+    team = [acc(20, "team"), acc(21, "trial", "trialing", created=1, until=-1)]
+    team[0]["seats"], team[1]["team_id"] = 4, "acc_20"
+    with_team = business.summary(accounts + team, [], plan_prices={**prices, "team": {"amount": 1200, "currency": "GBP",
+                                 "interval": "month"}}, pack_prices={}, days=30, trial_days=14, now=NOW)  # fmt: skip
+    assert with_team["mrr"]["amount"] == 3 * 1500 + 2 * 3900 + 4 * 1200  # every team seat counts
+    assert with_team["customers"]["team_members"] == 1 and with_team["customers"]["team_seats"] == 4
+    assert "acc_21" not in {a["id"] for a in with_team["attention"]}  # a member's own trial doesn't matter
     no_prices = business.summary(accounts, [], plan_prices={}, pack_prices={}, days=30, trial_days=14, now=NOW)
     assert no_prices["mrr"]["complete"] is False and no_prices["mrr"]["currency"] is None
 

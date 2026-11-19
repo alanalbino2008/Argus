@@ -140,6 +140,7 @@ config:
   # Payments (account service): the Stripe price ids on sale. Prices themselves are set in Stripe.
   stripePricePersonal: ""        # e.g. price_1Q...
   stripePriceProfessional: ""
+  stripePriceTeam: ""            # the Team plan's price, per seat
   stripeCreditPacks: ""          # credits=price id, comma-separated: "500=price_1...,2000=price_2..."
   billingReturnUrl: ""           # page customers return to when not paying from Argus Personal
   accountEmails: true            # email account holders (welcome, payments, reminders, password resets); needs SMTP

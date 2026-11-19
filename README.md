@@ -504,6 +504,9 @@ the addresses published on a website) and it follows the money.
 - **Refunds and disputes**: refunding a credit pack takes back its credits; a chargeback puts the
   account on hold until the dispute is settled
   ([`docs/explained/49-refunds-and-disputes.md`](docs/explained/49-refunds-and-disputes.md)).
+- **Team plans**: one owner pays per seat and invites investigators, who sign in with their own
+  accounts and share the team's credits; nobody sees anyone else's cases
+  ([`docs/explained/50-team-plans.md`](docs/explained/50-team-plans.md)).
 
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.

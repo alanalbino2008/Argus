@@ -86,6 +86,7 @@ from argus.api.report_routes import router as report_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.supplier_routes import router as supplier_router
+from argus.api.team_routes import router as team_router
 from argus.api.vault_routes import router as vault_router
 from argus.api.vault_routes import vault_gate
 from argus.api.watch_routes import router as watch_router
@@ -136,7 +137,12 @@ from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
 from argus.storage.schedule_repo import ScheduleRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
-from argus.storage.subscriber_repo import AppStateRepository, CreditRepository, SubscriberRepository
+from argus.storage.subscriber_repo import (
+    AppStateRepository,
+    CreditRepository,
+    SubscriberRepository,
+    TeamRepository,
+)
 from argus.storage.supplier_repo import SupplierRepository
 from argus.storage.user_repo import UserRepository
 from argus.storage.vault_store import VaultService
@@ -244,6 +250,7 @@ async def lifespan(app: FastAPI):
     app.state.account_watches = AccountWatchRepository(db)
     app.state.subscribers = SubscriberRepository(db)
     app.state.credits = CreditRepository(db)
+    app.state.teams = TeamRepository(db)
     app.state.playbooks = PlaybookRepository(db)
     app.state.playbook_scan = _playbook_scan
     app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
@@ -523,6 +530,7 @@ app.include_router(map_router)
 app.include_router(account_router)
 app.include_router(billing_router)
 app.include_router(business_router)
+app.include_router(team_router)
 app.include_router(connect_router)
 app.include_router(personal_router)
 app.include_router(analyst_router)
@@ -1579,6 +1587,14 @@ if WEB_DIR.exists():
         if index_file.exists():
             return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
         return HTMLResponse("<h3>Argus Web UI Loading...</h3>")
+
+    @app.get("/join-team", response_class=HTMLResponse, include_in_schema=False)
+    async def serve_join_team(request: Request):
+        """The account service's "join a team" page (the link in team invitations)."""
+        if not request.app.state.settings.account_service_enabled:
+            raise HTTPException(status_code=404, detail="Not found")
+        return HTMLResponse(content=(WEB_DIR / "join.html").read_text(encoding="utf-8"),
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})  # fmt: skip
 
     @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
     async def serve_password_reset(request: Request):

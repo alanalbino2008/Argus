@@ -14,7 +14,7 @@ let selected = null; // the account open in the detail card
 let searchTimer = null;
 
 const STATUS = { trialing: ["accent", "Trial"], active: ["ok", "Active"], past_due: ["warn", "Payment due"], cancelled: ["", "Cancelled"], suspended: ["critical", "Suspended"] };
-const PLAN = { trial: "Free trial", personal: "Personal", professional: "Professional" };
+const PLAN = { trial: "Free trial", personal: "Personal", professional: "Professional", team: "Team" };
 const statusPill = (s) => html`<span class="pill ${(STATUS[s] || [""])[0]}">${(STATUS[s] || ["", s])[1]}</span>`;
 
 function money(amount, currency) {
@@ -91,6 +91,8 @@ function detailCard() {
       <div>
         <dl class="kv"><dt>Plan</dt><dd>${PLAN[a.plan] || a.plan} ${statusPill(a.status)}</dd>
           <dt>${a.status === "trialing" ? "Trial ends" : "Paid until"}</dt><dd>${a.valid_until ? formatDate(a.valid_until) : "—"}</dd>
+          ${a.plan === "team" && !a.team_id ? html`<dt>Team</dt><dd>Owner: ${a.seats} seats</dd>` : ""}
+          ${a.team_id ? html`<dt>Team</dt><dd>Member of <a href="#" data-open="${a.team_id}">this team</a>: covered by its plan and credits</dd>` : ""}
           <dt>Stripe customer</dt><dd class="mono small">${a.billing_reference || "—"}</dd>
           <dt>Credits</dt><dd><b>${c.available ?? "—"}</b> available (${c.allowance_remaining ?? 0} of this month's ${c.allowance ?? 0}, ${c.purchased ?? 0} bought)</dd></dl>
         <form id="biz-plan" class="filters" style="margin-top:12px">
@@ -170,7 +172,7 @@ function render() {
     </div>
     ${d.payments_enabled ? "" : html`<div class="callout warn" style="margin-bottom:16px">${ico("info")}<span>Payments aren't set up on this account service yet, so revenue can't be shown. See "Payments with Stripe" in the deployment guide.</span></div>`}
     <div class="grid kpis">
-      ${kpi("Paying customers", c.paying, Object.entries(c.plans).map(([p, n]) => `${n} ${PLAN[p] || p}`).join(" · ") || "none yet")}
+      ${kpi("Paying customers", c.paying, (Object.entries(c.plans).map(([p, n]) => `${n} ${PLAN[p] || p}`).join(" · ") || "none yet") + (c.team_seats ? ` · ${c.team_seats} team seats, ${c.team_members} members` : ""))}
       ${kpi("Monthly recurring revenue", mrrText, mrr.complete ? "from subscriptions, at Stripe's prices" : "some plans have no price in Stripe")}
       ${kpi("On free trial", c.trialing, conv == null ? "no finished trials yet" : `${Math.round(conv * 100)}% of finished trials became paying`)}
       ${kpi("Payment due", c.past_due, c.past_due ? "Stripe is retrying their card" : "all payments up to date")}

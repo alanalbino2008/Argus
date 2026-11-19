@@ -150,6 +150,12 @@ class PersonalLicence:
             raise AccountServiceError(401, "Sign in first")
         return await self.client.call(f"/api/billing/{action}", {"licence": self.token, **(body or {})})
 
+    async def team(self, action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Team plans, through the account service: status, invite, cancel-invite, remove, leave."""
+        if not self.token:
+            raise AccountServiceError(401, "Sign in first")
+        return await self.client.call(f"/api/teams/{action}", {"licence": self.token, **(body or {})})
+
     async def sign_up(self, email: str, password: str, name: str) -> dict[str, Any]:
         return await self.client.call("signup", {"email": email, "password": password, "name": name})
 

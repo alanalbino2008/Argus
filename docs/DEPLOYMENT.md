@@ -311,6 +311,9 @@ every Argus Personal installation needs the new public key.
    * `ARGUS_STRIPE_SECRET_KEY=sk_live_...` (Helm: `secrets.stripeSecretKey`);
    * `ARGUS_STRIPE_WEBHOOK_SECRET=whsec_...` (Helm: `secrets.stripeWebhookSecret`);
    * `ARGUS_STRIPE_PRICE_PERSONAL`, `ARGUS_STRIPE_PRICE_PROFESSIONAL`: the plans' price ids;
+   * `ARGUS_STRIPE_PRICE_TEAM`: the Team plan's price id. Make it a recurring price **per seat**
+     (Stripe "per unit"), and in the customer portal settings allow customers to change the
+     quantity, so team owners can add and remove seats;
    * `ARGUS_STRIPE_CREDIT_PACKS=500=price_...,2000=price_...` (credits = price id);
    * optionally `ARGUS_BILLING_RETURN_URL`: where customers land after paying, when they did not
      start from Argus Personal.

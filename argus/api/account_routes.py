@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from argus.accounts import emails
+from argus.accounts import emails, teams
 from argus.accounts.licence import PLANS, LicenceError, issue, load_private_key, public_key_of, verify
 from argus.accounts.passwords import DUMMY_HASH, hash_password, verify_password, weakness
 from argus.api.deps import audit, client_ip, require_platform_admin
@@ -66,7 +66,7 @@ class ResetConfirm(BaseModel):
 
 
 class AccountUpdate(BaseModel):
-    plan: Literal["trial", "personal", "professional"] | None = None
+    plan: Literal["trial", "personal", "professional", "team"] | None = None
     status: Literal["trialing", "active", "past_due", "cancelled", "suspended"] | None = None
     valid_until: datetime | None = None
     max_devices: int | None = Field(default=None, ge=1, le=20)
@@ -144,17 +144,19 @@ async def sign_in(body: TokenRequest, request: Request):
         raise HTTPException(status_code=423, detail="Too many failed sign-ins: try again in 15 minutes")
     if account["status"] == "suspended":
         raise HTTPException(status_code=403, detail="This account is suspended: contact support")
-    attached, active = await repo.attach_device(account["id"], body.device_id, body.device_name.strip())
+    limit = teams.device_limit(account)
+    attached, active = await repo.attach_device(account["id"], body.device_id, body.device_name.strip(), limit)
     if not attached:
         names = ", ".join(d["name"] or d["device_id"][:8] for d in active)
-        raise HTTPException(status_code=409, detail=f"Your plan allows {account['max_devices']} computer(s), already "
-                                                    f"used by: {names}. Sign out on one of them first.")  # fmt: skip
+        raise HTTPException(status_code=409, detail=f"Your plan allows {limit or account['max_devices']} computer(s), "
+                                                    f"already used by: {names}. Sign out on one of them first.")  # fmt: skip
     await repo.login_succeeded(account["id"])
     settings = request.app.state.settings
-    licence = issue(account, device_id=body.device_id, issuer=_issuer(request), private=private,
+    entitled = await teams.effective(repo, account)  # a team member signs in on the team's plan
+    licence = issue(entitled, device_id=body.device_id, issuer=_issuer(request), private=private,
                     offline_days=settings.licence_offline_days)  # fmt: skip
     await audit(request, SERVICE, "account.sign_in", account["id"], details={"device": body.device_id[:12]})
-    return {"licence": licence, "account": account}
+    return {"licence": licence, "account": entitled}
 
 
 async def _licence_account(request: Request, token: str) -> tuple[dict[str, Any], dict[str, Any], Any]:
@@ -178,9 +180,10 @@ async def refresh(body: LicenceRequest, request: Request):
         raise HTTPException(status_code=401, detail="This computer was signed out of the account: sign in again")
     if account["status"] == "suspended":
         raise HTTPException(status_code=403, detail="This account is suspended: contact support")
-    licence = issue(account, device_id=payload["device"], issuer=_issuer(request), private=private,
+    entitled = await teams.effective(request.app.state.subscribers, account)
+    licence = issue(entitled, device_id=payload["device"], issuer=_issuer(request), private=private,
                     offline_days=request.app.state.settings.licence_offline_days)  # fmt: skip
-    return {"licence": licence, "account": account}
+    return {"licence": licence, "account": entitled}
 
 
 @router.post("/sign-out", status_code=204)

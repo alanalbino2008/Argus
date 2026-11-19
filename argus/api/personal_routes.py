@@ -126,7 +126,8 @@ async def personal_credits(request: Request):
 
 
 class CheckoutRequest(BaseModel):
-    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional)|credits:\d{1,7})$")
+    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional|team)|credits:\d{1,7})$")
+    seats: int = Field(default=2, ge=2, le=100)
 
 
 def _back(request: Request) -> str:
@@ -152,7 +153,8 @@ async def personal_checkout(body: CheckoutRequest, request: Request):
     _csrf(request)
     principal = await get_principal(request)
     try:
-        page = await personal.billing("checkout", {"item": body.item, "return_url": _back(request)})
+        page = await personal.billing("checkout", {"item": body.item, "seats": body.seats,
+                                                   "return_url": _back(request)})  # fmt: skip
     except AccountServiceError as exc:
         raise _service_error(exc) from exc
     await audit(request, principal, "billing.checkout", principal.key_id, details={"item": body.item})
@@ -169,6 +171,59 @@ async def personal_portal(request: Request):
         return await personal.billing("portal", {"return_url": _back(request)})
     except AccountServiceError as exc:
         raise _service_error(exc) from exc
+
+
+class TeamInvite(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class TeamRemove(BaseModel):
+    member_id: str = Field(max_length=40)
+
+
+@router.get("/team")
+async def personal_team(request: Request):
+    """The team this account owns or belongs to (if any)."""
+    personal = _personal(request)
+    await get_principal(request)
+    try:
+        return await personal.team("status")
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+
+
+async def _team_action(request: Request, action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    personal = _personal(request)
+    _csrf(request)
+    principal = await get_principal(request)
+    try:
+        result = await personal.team(action, body)
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+    await audit(request, principal, f"team.{action.replace('-', '_')}", principal.key_id, details=body or {})
+    if action == "leave":
+        await personal.refresh()  # back to their own plan straight away
+    return result
+
+
+@router.post("/team/invite")
+async def personal_team_invite(body: TeamInvite, request: Request):
+    return await _team_action(request, "invite", {"email": body.email.strip()})
+
+
+@router.post("/team/cancel-invite")
+async def personal_team_cancel_invite(body: TeamInvite, request: Request):
+    return await _team_action(request, "cancel-invite", {"email": body.email.strip()})
+
+
+@router.post("/team/remove")
+async def personal_team_remove(body: TeamRemove, request: Request):
+    return await _team_action(request, "remove", {"member_id": body.member_id})
+
+
+@router.post("/team/leave")
+async def personal_team_leave(request: Request):
+    return await _team_action(request, "leave")
 
 
 @router.post("/refresh")

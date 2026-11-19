@@ -42,6 +42,8 @@ PLANS: dict[str, dict[str, Any]] = {
     "trial": {"label": "Free trial", "max_devices": 1, "monthly_credits": 50},
     "personal": {"label": "Personal", "max_devices": 2, "monthly_credits": 500},
     "professional": {"label": "Professional", "max_devices": 3, "monthly_credits": 2000},
+    # one owner pays for seats; each member signs in with their own account; credits are shared
+    "team": {"label": "Team", "max_devices": 2, "monthly_credits": 1000, "per_seat": True},
 }
 STATUSES = ("trialing", "active", "past_due", "cancelled", "suspended")
 
