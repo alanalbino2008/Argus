@@ -293,6 +293,15 @@
         },
         "billingReturnUrl": {
           "type": "string"
+        },
+        "accountEmails": {
+          "type": "boolean"
+        },
+        "accountEmailFrom": {
+          "type": "string"
+        },
+        "supportEmail": {
+          "type": "string"
         }
       }
     },

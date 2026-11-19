@@ -498,6 +498,9 @@ the addresses published on a website) and it follows the money.
 - A **Business** page shows paying customers, monthly revenue, sign-ups, credits used by source
   and who needs attention, and lets the operator look after each account
   ([`docs/explained/47-business-dashboard.md`](docs/explained/47-business-dashboard.md)).
+- **Account emails**: welcome, payment received or failed, cancellation, credits added, trial
+  reminders (with one-click unsubscribe), and "Forgot your password?"
+  ([`docs/explained/48-account-emails.md`](docs/explained/48-account-emails.md)).
 
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.

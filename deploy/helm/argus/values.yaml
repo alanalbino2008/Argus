@@ -142,6 +142,9 @@ config:
   stripePriceProfessional: ""
   stripeCreditPacks: ""          # credits=price id, comma-separated: "500=price_1...,2000=price_2..."
   billingReturnUrl: ""           # page customers return to when not paying from Argus Personal
+  accountEmails: true            # email account holders (welcome, payments, reminders, password resets); needs SMTP
+  accountEmailFrom: ""           # sender of account emails (default: the notifications sender)
+  supportEmail: ""               # support address shown in account emails and used as Reply-To
   ransomwareFeedUrl: https://api.ransomware.live/v2   # ransomware leak-site research feed; "" turns it off
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone

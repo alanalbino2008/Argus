@@ -30,6 +30,9 @@ data:
   ARGUS_STRIPE_PRICE_PROFESSIONAL: {{ .Values.config.stripePriceProfessional | default "" | quote }}
   ARGUS_STRIPE_CREDIT_PACKS: {{ .Values.config.stripeCreditPacks | default "" | quote }}
   ARGUS_BILLING_RETURN_URL: {{ .Values.config.billingReturnUrl | default "" | quote }}
+  ARGUS_ACCOUNT_EMAILS_ENABLED: {{ .Values.config.accountEmails | default true | quote }}
+  ARGUS_ACCOUNT_EMAIL_FROM: {{ .Values.config.accountEmailFrom | default "" | quote }}
+  ARGUS_SUPPORT_EMAIL: {{ .Values.config.supportEmail | default "" | quote }}
   ARGUS_NOTIFICATIONS_ENABLED: {{ .Values.notifications.enabled | quote }}
   ARGUS_NOTIFY_MAX_ATTEMPTS: {{ .Values.notifications.maxAttempts | quote }}
   ARGUS_REPORT_SCHEDULES_ENABLED: {{ .Values.notifications.scheduledReports | quote }}

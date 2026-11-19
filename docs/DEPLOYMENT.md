@@ -317,6 +317,21 @@ every Argus Personal installation needs the new public key.
 Try it first with test keys (`sk_test_...`) and Stripe's test cards. Card details never reach
 Argus: customers pay on Stripe's own pages.
 
+#### Account emails
+
+With an SMTP server set (`ARGUS_SMTP_HOST` and friends, as for notifications), the account
+service emails account holders: welcome, payment received, payment failed, plan changed,
+cancellation confirmed, subscription ended, credits added, trial ending and trial ended
+reminders, and password resets ("Forgot your password?" on Argus Personal's sign-in screen opens
+`https://accounts.example.com/reset-password`). Optional settings:
+
+* `ARGUS_ACCOUNT_EMAIL_FROM`: the sender (default `ARGUS_SMTP_FROM`), e.g.
+  `Argus <hello@example.com>`. Set up SPF and DKIM for its domain so emails aren't marked as spam;
+* `ARGUS_SUPPORT_EMAIL`: shown in each email and used as Reply-To;
+* `ARGUS_ACCOUNT_EMAILS_ENABLED=false` turns them off.
+
+`ARGUS_PUBLIC_URL` must be the account service's public address: links in emails use it.
+
 **Argus Personal** (each investigator's computer):
 
 ```bash

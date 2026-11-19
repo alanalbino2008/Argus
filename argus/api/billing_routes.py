@@ -269,6 +269,8 @@ async def _credits_paid(request: Request, account: dict[str, Any], obj: dict[str
                                         detail=f"credit pack {credits} ({obj.get('id', '')})")  # fmt: skip
     await audit(request, SERVICE, "billing.credits_purchased", account["id"],
                 details={"credits": int(credits), "event": event["id"]})  # fmt: skip
+    await request.app.state.mailer.notify(account, "credits_added", str(obj.get("id") or event["id"]),
+                                          credits=int(credits))  # fmt: skip
     return str(account["id"])
 
 
@@ -294,4 +296,26 @@ async def _subscription(request: Request, account: dict[str, Any], sub: dict[str
     await audit(request, SERVICE, "billing.subscription", account["id"],
                 details={"event": event["type"], "status": status, "plan": (updated or account)["plan"],
                          "valid_until": until.isoformat() if until else None})  # fmt: skip
+    await _tell(request, account, updated or account, sub)
     return str(account["id"])
+
+
+async def _tell(request: Request, before: dict[str, Any], after: dict[str, Any], sub: dict[str, Any]) -> None:
+    """The email this change deserves, if any (each sent once, however often Stripe repeats itself)."""
+    mailer = request.app.state.mailer
+    sid, period = str(sub.get("id") or "sub"), (after.get("valid_until") or "")[:10]
+    was_paying = before["status"] in ("active", "past_due") and before["plan"] != "trial"
+    if after["status"] == "cancelled":
+        if was_paying or before["status"] == "trialing":
+            await mailer.notify(after, "subscription_ended", sid)
+        return
+    if after["status"] == "past_due" and before["status"] != "past_due":
+        await mailer.notify(after, "payment_failed", f"{sid}:{period}")
+    elif after["status"] == "active" and before["status"] == "past_due":
+        await mailer.notify(after, "payment_recovered", f"{sid}:{period}")
+    elif after["status"] in ("active", "trialing") and not was_paying:
+        await mailer.notify(after, "subscription_started", sid)
+    elif after["plan"] != before["plan"] and was_paying:
+        await mailer.notify(after, "plan_changed", f"{sid}:{after['plan']}:{period}")
+    if sub.get("cancel_at_period_end") and after["status"] in ("active", "trialing", "past_due"):
+        await mailer.notify(after, "cancellation_scheduled", f"{sid}:{period}")

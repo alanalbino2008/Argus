@@ -208,6 +208,10 @@ async function setupSignInOptions() {
     $("#signin-keyblock").hidden = true;
     if (!config.personal.configured) $("#signin-account-hint").textContent = "This installation has no Argus account service configured (ARGUS_ACCOUNT_SERVER_URL and ARGUS_LICENCE_PUBLIC_KEY).";
     if (config.personal.access === "read_only") showReadOnly(config.personal.reason);
+    if (/^https?:\/\//.test(config.personal.account_service || "")) {
+      $("#signin-forgot").href = `${config.personal.account_service.replace(/\/+$/, "")}/reset-password`;
+      $("#signin-forgot-wrap").hidden = false;
+    }
     return;
   }
   if (!config.sso?.enabled) return;

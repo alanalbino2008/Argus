@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.48.0] — Phase 48: Account emails and password resets
+
+### Added
+- **Emails to account holders** from the account service (through the SMTP server already used
+  for notifications):
+  - account emails, always sent: welcome; payment received (plan active); payment failed (with
+    the grace period and how to fix it); payment went through after all; plan changed;
+    cancellation confirmed (with the last day); subscription ended; credits added; password
+    reset; password changed;
+  - reminders: trial ending in three days, trial ended. Each has a one-click unsubscribe link and
+    a `List-Unsubscribe` header (RFC 8058 one-click supported); the choice is remembered.
+- **Reliable sending**: an outbox (migration 0022) so each email is sent exactly once however
+  often Stripe repeats an event or however many servers run; retried for about half a day when
+  the mail server is down; the text is deleted once sent; history per account on the Business
+  page.
+- **Forgot your password?** on Argus Personal's sign-in screen opens the account service's reset
+  page. The emailed link works once, for an hour, carries its secret in the URL fragment (never in
+  server logs) and is stored only as a hash. A new password signs every computer out and is
+  confirmed by email. The answer never reveals whether an email has an account; at most three
+  links an hour per account.
+- Settings: `ARGUS_ACCOUNT_EMAILS_ENABLED`, `ARGUS_ACCOUNT_EMAIL_FROM`, `ARGUS_SUPPORT_EMAIL`.
+  Helm chart 0.38.0: `config.accountEmails`, `config.accountEmailFrom`, `config.supportEmail`.
+- API: `POST /api/accounts/password-reset`, `POST /api/accounts/password-reset/confirm`,
+  `GET|POST /api/accounts/emails/unsubscribe`; `GET /api/accounts/{id}` lists the account's emails.
+
 ## [1.47.0] — Phase 47: Business dashboard
 
 ### Added

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <title>Reset your password · Argus</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/js/theme.js"></script>
+</head>
+<body>
+  <main class="signin-root">
+    <div class="card signin">
+      <h1>Reset your password</h1>
+      <form id="ask" hidden>
+        <p>Enter the email address of your Argus account. If it has an account, we'll email a link to choose a new password.</p>
+        <div class="field"><label class="label" for="email">Email</label><input id="email" class="input" type="email" autocomplete="username" maxlength="320" required></div>
+        <p class="error-text" role="alert"></p>
+        <button class="btn primary" type="submit" style="width:100%">Email me a reset link</button>
+      </form>
+      <form id="choose" hidden>
+        <p>Choose a new password: at least 12 characters (a few unrelated words work well). Every computer signed in to your account will be signed out.</p>
+        <div class="field"><label class="label" for="password">New password</label><input id="password" class="input" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div>
+        <div class="field"><label class="label" for="again">New password again</label><input id="again" class="input" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div>
+        <p class="error-text" role="alert"></p>
+        <button class="btn primary" type="submit" style="width:100%">Change password</button>
+      </form>
+      <p id="done" hidden></p>
+    </div>
+  </main>
+  <script src="/static/js/reset.js"></script>
+</body>
+</html>

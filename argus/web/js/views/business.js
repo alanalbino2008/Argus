@@ -97,6 +97,11 @@ function detailCard() {
         ${(a.device_list || []).length ? html`<table class="table"><tbody>${a.device_list.map((d) => html`<tr style="${d.revoked ? "opacity:.5" : ""}">
           <td>${d.name || d.device_id.slice(0, 10)}<div class="muted small">last seen ${timeAgo(d.last_seen)}</div></td>
           <td class="actions">${d.revoked ? html`<span class="pill">signed out</span>` : html`<button class="btn sm ghost danger" data-act="device-out" data-id="${d.device_id}">Sign out</button>`}</td></tr>`)}</tbody></table>` : html`<p class="muted small">Never signed in.</p>`}
+        <div class="section-title" style="margin-top:12px">Emails</div>
+        <p class="muted small" style="margin:0 0 6px">Reminder emails: <b>${a.reminder_emails ? "on" : "off (unsubscribed)"}</b>. Emails about the account itself are always sent.</p>
+        ${(a.emails || []).length ? html`<table class="table"><tbody>${a.emails.slice(0, 10).map((m) => html`<tr>
+          <td class="muted small">${formatDate(m.sent_at || m.created_at)}</td><td class="small">${m.subject}</td>
+          <td><span class="pill ${m.status === "sent" ? "ok" : m.status === "failed" ? "critical" : ""}" title="${m.error || ""}">${m.status}</span></td></tr>`)}</tbody></table>` : html`<p class="muted small">No emails yet.</p>`}
         <div class="section-title" style="margin-top:12px">Credit history</div>
         ${(c.ledger || []).length ? html`<table class="table"><tbody>${c.ledger.slice(0, 15).map((e) => html`<tr>
           <td class="muted small">${formatDate(e.at)}</td><td>${e.kind}</td><td class="small">${e.detail}</td>

@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
+from argus.accounts.mailer import AccountMailer
 from argus.accounts.personal import PersonalLicence
 from argus.api import remediation_hooks
 from argus.api.account_routes import router as account_router
@@ -122,6 +123,7 @@ from argus.security.network import validate_scan_target
 from argus.security.oidc import OidcProvider
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from argus.storage.account_mail_repo import AccountMailRepository
 from argus.storage.case_repo import CaseRepository
 from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.migrate import upgrade_database
@@ -313,6 +315,11 @@ async def lifespan(app: FastAPI):
         if settings.account_watch_enabled and settings.monitors_enabled
         else None
     )
+    app.state.account_mail = AccountMailRepository(db)
+    app.state.mailer = AccountMailer(app.state.account_mail, app.state.subscribers, settings)
+    mailer_task = (
+        asyncio.create_task(app.state.mailer.run_forever(), name="account-emails") if app.state.mailer.enabled else None
+    )
     licence_task = (
         asyncio.create_task(app.state.personal.run_forever(), name="licence-renewal")
         if settings.edition == "personal"
@@ -340,6 +347,7 @@ async def lifespan(app: FastAPI):
                 remediation_task,
                 watch_task,
                 licence_task,
+                mailer_task,
                 vault_task,
             )
             if t
@@ -1571,3 +1579,11 @@ if WEB_DIR.exists():
         if index_file.exists():
             return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
         return HTMLResponse("<h3>Argus Web UI Loading...</h3>")
+
+    @app.get("/reset-password", response_class=HTMLResponse, include_in_schema=False)
+    async def serve_password_reset(request: Request):
+        """The account service's "forgot password" page (the link in reset emails)."""
+        if not request.app.state.settings.account_service_enabled:
+            raise HTTPException(status_code=404, detail="Not found")
+        return HTMLResponse(content=(WEB_DIR / "reset.html").read_text(encoding="utf-8"),
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})  # fmt: skip

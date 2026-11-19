@@ -18,11 +18,14 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import datetime, timedelta, timezone
+from html import escape
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from argus.accounts import emails
 from argus.accounts.licence import PLANS, LicenceError, issue, load_private_key, public_key_of, verify
 from argus.accounts.passwords import DUMMY_HASH, hash_password, verify_password, weakness
 from argus.api.deps import audit, client_ip, require_platform_admin
@@ -51,6 +54,15 @@ class TokenRequest(BaseModel):
 
 class LicenceRequest(BaseModel):
     licence: str = Field(max_length=8192)
+
+
+class ResetRequest(BaseModel):
+    email: str = Field(max_length=320)
+
+
+class ResetConfirm(BaseModel):
+    token: str = Field(min_length=20, max_length=128)
+    password: str = Field(max_length=256)
 
 
 class AccountUpdate(BaseModel):
@@ -111,6 +123,7 @@ async def signup(body: SignupRequest, request: Request):
     if account is None:
         raise HTTPException(status_code=409, detail="An account with this email already exists: sign in instead")
     await audit(request, SERVICE, "account.signup", account["id"], details={"plan": "trial"})
+    await request.app.state.mailer.notify(account, "welcome", "1")
     return account
 
 
@@ -179,6 +192,94 @@ async def sign_out(body: LicenceRequest, request: Request):
     return Response(status_code=204)
 
 
+# ---------------------------------------------------------------------------- forgotten passwords
+RESET_TTL = timedelta(hours=1)
+_resets_per_ip = SlidingWindowLimiter(limit=10, window=3600)
+
+
+@router.post("/password-reset", status_code=202)
+async def request_password_reset(body: ResetRequest, request: Request):
+    """Email a reset link. The answer is the same whether or not the account exists."""
+    repo, _private = _service(request)
+    _limit(request)
+    if not _resets_per_ip.hit(client_ip(request) or "unknown"):
+        raise HTTPException(status_code=429, detail="Too many reset requests from this address; try later")
+    mailer = request.app.state.mailer
+    if not mailer.enabled:
+        raise HTTPException(status_code=503, detail="Password resets need email, which isn't set up: contact support")
+    found = await repo.by_email(body.email.strip())
+    mail = request.app.state.account_mail
+    if found is not None and found[0]["status"] != "suspended":
+        account = found[0]
+        if await mail.recent_resets(account["id"], timedelta(hours=1)) < 3:  # no flooding someone's inbox
+            token = await mail.new_reset(account["id"], RESET_TTL)
+            link = f"{_issuer(request)}/reset-password#token={token}"
+            await mailer.notify(account, "password_reset", token[:16], link=link,
+                                minutes=int(RESET_TTL.total_seconds() // 60))  # fmt: skip
+            await audit(request, SERVICE, "account.password_reset_requested", account["id"],
+                        details={"ip": client_ip(request)})  # fmt: skip
+    return {"detail": "If an account uses that email, a reset link is on its way. It works for one hour."}
+
+
+@router.post("/password-reset/confirm")
+async def confirm_password_reset(body: ResetConfirm, request: Request):
+    """Set a new password with a reset link; every computer is signed out."""
+    repo, _private = _service(request)
+    _limit(request)
+    mail = request.app.state.account_mail
+    expired = "This reset link has expired or was already used: ask for a new one"
+    account_id = await mail.use_reset(body.token, consume=False)
+    account = await repo.get(account_id) if account_id else None
+    if account is None:
+        raise HTTPException(status_code=400, detail=expired)
+    problem = weakness(body.password, account["email"])
+    if problem:  # the link still works: they can try a better password
+        raise HTTPException(status_code=422, detail=problem)
+    if await mail.use_reset(body.token) != account["id"]:  # used up in the meantime
+        raise HTTPException(status_code=400, detail=expired)
+    hashed = await asyncio.to_thread(hash_password, body.password)
+    await repo.update(account["id"], password_hash=hashed, failed_logins=0, locked_until=None)
+    signed_out = await repo.revoke_all_devices(account["id"])
+    await audit(request, SERVICE, "account.password_reset", account["id"],
+                details={"computers_signed_out": signed_out, "ip": client_ip(request)})  # fmt: skip
+    await request.app.state.mailer.notify(account, "password_changed", body.token[:16])
+    return {"detail": "Your password has been changed. Sign in again on each computer with the new password."}
+
+
+# ---------------------------------------------------------------------------- reminder emails
+@router.get("/emails/unsubscribe", response_class=HTMLResponse)
+async def unsubscribe_reminders(request: Request, a: str = Query("", max_length=40), t: str = Query("", max_length=64)):
+    """One-click unsubscribe from reminder emails (the link in each reminder)."""
+    _service(request)
+    secret = request.app.state.mailer._secret()
+    ok = (
+        bool(a) and emails.unsubscribe_ok(secret, a, t) and await request.app.state.account_mail.set_reminders(a, False)
+    )
+    if ok:
+        await audit(request, SERVICE, "account.reminders_off", a)
+    message = ("You won't get reminder emails any more. Emails about your account itself (payments, password "
+               "changes) still arrive." if ok else "This unsubscribe link isn't valid.")  # fmt: skip
+    return HTMLResponse(_page("Reminder emails", message), status_code=200 if ok else 400)
+
+
+@router.post("/emails/unsubscribe")
+async def unsubscribe_one_click(request: Request, a: str = Query("", max_length=40), t: str = Query("", max_length=64)):
+    """RFC 8058 one-click unsubscribe, as mail apps send it."""
+    _service(request)
+    secret = request.app.state.mailer._secret()
+    if not (a and emails.unsubscribe_ok(secret, a, t) and await request.app.state.account_mail.set_reminders(a, False)):
+        raise HTTPException(status_code=400, detail="Invalid unsubscribe link")
+    await audit(request, SERVICE, "account.reminders_off", a)
+    return {"detail": "Unsubscribed from reminders"}
+
+
+def _page(title: str, message: str) -> str:
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
+            f'content="width=device-width,initial-scale=1"><title>{escape(title)} \u2014 Argus</title>'
+            f'<link rel="stylesheet" href="/static/styles.css"></head><body><main class="signin-root"><div class="card signin '
+            f'card-pad"><h1>{escape(title)}</h1><p>{escape(message)}</p></div></main></body></html>')  # fmt: skip
+
+
 # ---------------------------------------------------------------------------- administration
 @router.get("")
 async def list_accounts(request: Request, _: Principal = Depends(require_platform_admin)):
@@ -192,7 +293,8 @@ async def get_account(account_id: str, request: Request, _: Principal = Depends(
     account = await repo.get(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
-    return {**account, "device_list": await repo.devices(account_id)}
+    return {**account, "device_list": await repo.devices(account_id),
+            "emails": await request.app.state.account_mail.for_account(account_id)}  # fmt: skip
 
 
 @router.patch("/{account_id}")

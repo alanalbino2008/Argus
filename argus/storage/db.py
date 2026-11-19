@@ -25,9 +25,11 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    Text,
     event,
     false,
     text,
+    true,
 )
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -168,6 +170,7 @@ class SubscriberAccountRow(Base):
     allowance_month: Mapped[str] = mapped_column(String(7), default="", server_default="")  # "2026-11"
     allowance_remaining: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     purchased_credits: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # never expire
+    reminder_emails: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())  # trial reminders
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -199,6 +202,41 @@ class CreditLedgerRow(Base):
     delta: Mapped[int] = mapped_column(Integer)
     balance_after: Mapped[int] = mapped_column(Integer)
     detail: Mapped[str] = mapped_column(String(255), default="")  # e.g. "companies_house/officers"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AccountEmailRow(Base):
+    """An email to an account holder (account service): queued, sent once, retried if the mail server fails."""
+
+    __tablename__ = "account_emails"
+    __table_args__ = (Index("ix_account_emails_due", "status", "next_attempt_at"),
+                      Index("ix_account_emails_account", "account_id", "created_at"))  # fmt: skip
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(32), ForeignKey("subscriber_accounts.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(32))
+    dedupe_key: Mapped[str] = mapped_column(String(255), unique=True)  # each email at most once
+    recipient: Mapped[str] = mapped_column(String(320))
+    subject: Mapped[str] = mapped_column(String(255))
+    body_text: Mapped[str] = mapped_column(Text, default="")  # cleared once sent (or given up on)
+    body_html: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(16))  # pending | sent | failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PasswordResetRow(Base):
+    """A password reset link (only its hash is kept); single use, short-lived."""
+
+    __tablename__ = "password_resets"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(32), ForeignKey("subscriber_accounts.id", ondelete="CASCADE"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 

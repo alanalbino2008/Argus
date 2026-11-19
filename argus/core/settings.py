@@ -221,6 +221,13 @@ class Settings(BaseSettings):
     stripe_credit_packs: str = Field(
         default="", description="Account service: credit packs for sale, as credits=price id (500=price_1,2000=price_2)"
     )
+    account_emails_enabled: bool = Field(
+        default=True, description="Account service: email account holders (needs ARGUS_SMTP_HOST)"
+    )
+    account_email_from: str = Field(
+        default="", description="Account service: sender of account emails (default: ARGUS_SMTP_FROM)"
+    )
+    support_email: str = Field(default="", description="Account service: support address shown in emails and replies")
     billing_return_url: str = Field(
         default="",
         description="Account service: page customers return to after paying, when not paying from Argus Personal",

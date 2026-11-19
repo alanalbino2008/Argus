@@ -44,6 +44,7 @@ def _account(row: SubscriberAccountRow, devices: int | None = None) -> dict[str,
         "plan_label": PLANS.get(row.plan, {}).get("label", row.plan), "status": row.status,
         "valid_until": _iso(row.valid_until), "max_devices": max_devices(row),
         "billing_reference": row.billing_reference, "created_at": _iso(row.created_at),
+        "reminder_emails": bool(row.reminder_emails if row.reminder_emails is not None else True),
         "last_login_at": _iso(row.last_login_at),
     }  # fmt: skip
     if devices is not None:
@@ -203,6 +204,15 @@ class SubscriberRepository:
             rows = (await s.scalars(select(SubscriberDeviceRow).where(SubscriberDeviceRow.account_id == account_id)
                                     .order_by(SubscriberDeviceRow.last_seen.desc()))).all()  # fmt: skip
         return [_device(r) for r in rows]
+
+    async def revoke_all_devices(self, account_id: str) -> int:
+        """Sign every computer out (after a password reset)."""
+        async with self.db.session() as s, s.begin():
+            rows = (await s.scalars(select(SubscriberDeviceRow).where(
+                SubscriberDeviceRow.account_id == account_id, SubscriberDeviceRow.revoked.is_(False)))).all()  # fmt: skip
+            for row in rows:
+                row.revoked = True
+        return len(rows)
 
     async def revoke_device(self, account_id: str, device_id: str) -> bool:
         async with self.db.session() as s, s.begin():
