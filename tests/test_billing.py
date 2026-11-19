@@ -57,6 +57,8 @@ class StripeHandler(BaseHTTPRequestHandler):
         if path.path.startswith("/v1/subscriptions/"):
             sub = s.subscriptions.get(path.path.rsplit("/", 1)[1])
             return self._send(200, sub) if sub else self._send(404, {"error": {"message": "No such subscription"}})
+        if path.path == "/v1/prices":
+            return self._send(200, {"object": "list", "data": []})
         if path.path.startswith("/v1/charges/"):
             charge = s.charges.get(path.path.rsplit("/", 1)[1])
             return self._send(200, charge) if charge else self._send(404, {"error": {"message": "No such charge"}})

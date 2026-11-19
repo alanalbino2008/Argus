@@ -504,6 +504,10 @@ the addresses published on a website) and it follows the money.
 - **Refunds and disputes**: refunding a credit pack takes back its credits; a chargeback puts the
   account on hold until the dispute is settled
   ([`docs/explained/49-refunds-and-disputes.md`](docs/explained/49-refunds-and-disputes.md)).
+- **Owner console** at `/admin`: only you (your email, password and authenticator code) can
+  open it. Health checks, payments, email, plans, data-source keys, security and the activity
+  log, all from the browser, applied live
+  ([`docs/explained/52-owner-console.md`](docs/explained/52-owner-console.md)).
 - **Four plans**: Bring your own keys, Personal, Professional and Business (per seat, with an
   optional set-up fee). Each plan only unlocks what it includes, enforced from the signed
   licence even offline; Business owners create accounts for their people

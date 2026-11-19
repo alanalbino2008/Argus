@@ -291,6 +291,38 @@ class BillingEventRow(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class OwnerRow(Base):
+    """The one owner of this Argus server (the owner console). There is never more than one row."""
+
+    __tablename__ = "owner"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)  # always "owner"
+    email: Mapped[str] = mapped_column(String(320))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    totp_sealed: Mapped[str] = mapped_column(Text)  # the authenticator secret, encrypted
+    totp_last_counter: Mapped[int] = mapped_column(Integer, default=-1)  # no code is accepted twice
+    recovery_hashes: Mapped[list[str]] = mapped_column(JSON, default=list)  # one-time codes, hashed
+    failed: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OwnerSessionRow(Base):
+    """A signed-in owner console session (only its hash is kept)."""
+
+    __tablename__ = "owner_sessions"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    stage: Mapped[str] = mapped_column(String(16))  # "code": password accepted, waiting for the code; "full"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # last code
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(String(255), default="")
+
+
 class AppStateRow(Base):
     """Small facts about this installation (its device id, the personal edition's licence...)."""
 

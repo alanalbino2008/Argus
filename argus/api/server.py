@@ -50,6 +50,7 @@ from sqlalchemy import text
 from argus import __version__
 from argus.accounts import own_keys
 from argus.accounts.mailer import AccountMailer
+from argus.accounts.owner import box as owner_box
 from argus.accounts.personal import PersonalLicence
 from argus.api import remediation_hooks
 from argus.api.account_routes import router as account_router
@@ -74,6 +75,8 @@ from argus.api.onboarding_routes import scope_warnings
 from argus.api.openapi import build_openapi
 from argus.api.opsec_routes import route_for
 from argus.api.opsec_routes import router as opsec_router
+from argus.api.owner_console_routes import router as owner_console_router
+from argus.api.owner_routes import router as owner_router
 from argus.api.people_routes import auto_import
 from argus.api.people_routes import router as people_router
 from argus.api.personal_routes import licence_gate
@@ -92,6 +95,7 @@ from argus.api.vault_routes import router as vault_router
 from argus.api.vault_routes import vault_gate
 from argus.api.watch_routes import router as watch_router
 from argus.api.workspace_routes import router as workspace_router
+from argus.core import runtime_config
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, event_bus
 from argus.core.graph import IntelligenceGraph
@@ -131,6 +135,7 @@ from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
+from argus.storage.owner_repo import OwnerRepository
 from argus.storage.playbook_repo import PlaybookRepository
 from argus.storage.rating_repo import RatingRepository
 from argus.storage.remediation_repo import RemediationRepository
@@ -210,6 +215,8 @@ async def lifespan(app: FastAPI):
         await upgrade_database(db)
     repo = InvestigationRepository(db)
     app.state.app_state = AppStateRepository(db)
+    if settings.edition != "personal":  # the owner console's settings win over the deployment's
+        runtime_config.apply(settings, await app.state.app_state.get(runtime_config.STATE_KEY), owner_box(settings))
     app.state.vault = VaultService(db, app.state.app_state)
     await app.state.vault.load()  # a vault set up here starts locked: the key is only in memory once unlocked
 
@@ -239,6 +246,7 @@ async def lifespan(app: FastAPI):
     app.state.api_limiter = (
         SlidingWindowLimiter(settings.api_requests_per_minute, 60) if settings.api_requests_per_minute else None
     )
+    app.state.owner = OwnerRepository(db)
     await _bootstrap_admin_key(app)
     await _audit_plugins(app)
     app.state.monitors = MonitorRepository(db)
@@ -327,8 +335,13 @@ async def lifespan(app: FastAPI):
     )
     app.state.account_mail = AccountMailRepository(db)
     app.state.mailer = AccountMailer(app.state.account_mail, app.state.subscribers, settings)
-    mailer_task = (
-        asyncio.create_task(app.state.mailer.run_forever(), name="account-emails") if app.state.mailer.enabled else None
+    mailer_task = (  # runs whenever this is an account service: email can be switched on from the owner console
+        asyncio.create_task(app.state.mailer.run_forever(), name="account-emails")
+        if settings.account_service_enabled
+        else None
+    )
+    config_task = (
+        asyncio.create_task(_config_sync(app), name="owner-config-sync") if settings.edition != "personal" else None
     )
     licence_task = (
         asyncio.create_task(app.state.personal.run_forever(), name="licence-renewal")
@@ -358,6 +371,7 @@ async def lifespan(app: FastAPI):
                 watch_task,
                 licence_task,
                 mailer_task,
+                config_task,
                 vault_task,
             )
             if t
@@ -398,6 +412,18 @@ async def _audit_plugins(app: FastAPI) -> None:
 BOOTSTRAP_LOCK = 0x4152_4755_5342_4F4F  # "ARGUSBOO": replicas starting together bootstrap once
 
 
+async def _config_sync(app: FastAPI, every: float = 30.0) -> None:
+    """Pick up owner console changes made on another server of this deployment."""
+    while True:
+        await asyncio.sleep(every)
+        try:
+            stored = await app.state.app_state.get(runtime_config.STATE_KEY)
+            if str((stored or {}).get("version") or "") != runtime_config.version():
+                runtime_config.apply(app.state.settings, stored, owner_box(app.state.settings))
+        except Exception:
+            logger.exception("Could not refresh the owner console's settings")
+
+
 async def _bootstrap_admin_key(app: FastAPI) -> None:
     """Guarantee an administrator can always get in - without shipping a default password."""
     settings = app.state.settings
@@ -412,6 +438,9 @@ async def _bootstrap_admin_key(app: FastAPI) -> None:
 async def _install_bootstrap_key(app: FastAPI, settings: Settings) -> None:
     keys: ApiKeyRepository = app.state.keys
     if await keys.count_active(Role.ADMIN) > 0:
+        return
+    if await app.state.owner.get() is not None:  # the owner signs in to the owner console: no key is recreated
+        logger.info("No admin API key, and the owner console is set up: not creating one")
         return
     supplied = (settings.bootstrap_admin_key.get_secret_value() if settings.bootstrap_admin_key else "").strip() or None
     if supplied is not None and len(supplied) < MIN_BOOTSTRAP_KEY_LENGTH:
@@ -534,6 +563,8 @@ app.include_router(account_router)
 app.include_router(billing_router)
 app.include_router(business_router)
 app.include_router(team_router)
+app.include_router(owner_router)
+app.include_router(owner_console_router)
 app.include_router(connect_router)
 app.include_router(personal_router)
 app.include_router(analyst_router)
@@ -1590,6 +1621,15 @@ if WEB_DIR.exists():
         if index_file.exists():
             return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
         return HTMLResponse("<h3>Argus Web UI Loading...</h3>")
+
+    @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
+    async def serve_owner_console(request: Request):
+        """The owner console (not on Argus Personal)."""
+        if request.app.state.settings.edition == "personal":
+            raise HTTPException(status_code=404, detail="Not found")
+        return HTMLResponse(content=(WEB_DIR / "admin.html").read_text(encoding="utf-8"),
+                            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+                                     "X-Robots-Tag": "noindex, nofollow"})  # fmt: skip
 
     @app.get("/join-team", response_class=HTMLResponse, include_in_schema=False)
     async def serve_join_team(request: Request):

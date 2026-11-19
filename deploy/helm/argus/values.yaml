@@ -134,6 +134,7 @@ config:
   unSanctionsUrl: https://scsanctions.un.org/resources/xml/en/consolidated.xml   # "" = off
   secUserAgent: ""               # "Organisation contact@email": the SEC requires it; "" = EDGAR off
   accountService: false          # run the Argus account service (subscriptions for Argus Personal) here
+  ownerEmail: ""                 # your email: the only person who can open the owner console (/admin)
   accountSignup: false           # anyone may create a trial account
   trialDays: 14
   licenceOfflineDays: 14         # how long Argus Personal works without reaching the account service

@@ -23,6 +23,7 @@ data:
   ARGUS_UN_SANCTIONS_URL: {{ .Values.config.unSanctionsUrl | quote }}
   ARGUS_SEC_USER_AGENT: {{ .Values.config.secUserAgent | quote }}
   ARGUS_ACCOUNT_SERVICE_ENABLED: {{ .Values.config.accountService | quote }}
+  ARGUS_OWNER_EMAIL: {{ .Values.config.ownerEmail | default "" | quote }}
   ARGUS_ACCOUNT_SIGNUP_ENABLED: {{ .Values.config.accountSignup | quote }}
   ARGUS_TRIAL_DAYS: {{ .Values.config.trialDays | quote }}
   ARGUS_LICENCE_OFFLINE_DAYS: {{ .Values.config.licenceOfflineDays | quote }}

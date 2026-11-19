@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -28,6 +29,8 @@ def client_ip(request: Request) -> str | None:
 
 
 SESSION_COOKIE = "argus_session"
+OWNER_COOKIE = "argus_owner"
+OWNER_PRINCIPAL = Principal(key_id="owner", name="owner", role=Role.ADMIN)
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
@@ -79,6 +82,11 @@ async def get_principal(request: Request) -> Principal:
     if not request.app.state.settings.auth_enabled:
         return ANONYMOUS_ADMIN
     key = _extract_key(request)
+    owner = request.cookies.get(OWNER_COOKIE)
+    if not key and owner:  # the owner, signed in to the owner console, may also use the app as its administrator
+        principal = await _owner_principal(request, owner)
+        if principal is not None:
+            return principal
     cookie = request.cookies.get(SESSION_COOKIE)
     if not key and cookie:
         return await _session_principal(request, cookie)
@@ -128,6 +136,21 @@ def _rate_limit(request: Request, key_id: str) -> None:
 
 def rate_limit_headers(limit: int, remaining: int, reset: int) -> dict[str, str]:
     return {"RateLimit-Limit": str(limit), "RateLimit-Remaining": str(max(0, remaining)), "RateLimit-Reset": str(reset)}
+
+
+async def _owner_principal(request: Request, token: str) -> Principal | None:
+    settings = request.app.state.settings
+    repo = getattr(request.app.state, "owner", None)
+    if repo is None or settings.edition == "personal":
+        return None
+    session = await repo.session(token, timedelta(minutes=settings.owner_idle_minutes))
+    if session is None or session["stage"] != "full":
+        return None
+    if request.method in UNSAFE_METHODS and not _same_origin(request):
+        metrics.AUTH_FAILURES.labels("csrf").inc()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-site request refused")
+    request.state.auth_method = "owner"
+    return OWNER_PRINCIPAL
 
 
 async def _session_principal(request: Request, token: str) -> Principal:
@@ -227,6 +250,11 @@ async def require_platform_admin(request: Request, principal: Principal = Depend
         metrics.AUTH_FAILURES.labels("insufficient_role").inc()
         await audit(request, principal, "auth.forbidden", request.url.path, "denied", {"required": "platform admin"})
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requires a platform administrator")
+    settings = request.app.state.settings
+    if not settings.admin_keys_allowed and principal.key_id != OWNER_PRINCIPAL.key_id and settings.auth_enabled:
+        await audit(request, principal, "auth.forbidden", request.url.path, "denied", {"required": "owner"})
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only the owner can administer this server (owner console)")  # fmt: skip
     return principal
 
 

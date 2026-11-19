@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.52.0] — Phase 52: The owner console
+
+### Added
+- **Owner console** at `/admin`: the server owner's own control panel.
+- **Only the owner can open it**:
+  - one owner, ever: the email in `ARGUS_OWNER_EMAIL`; set-up also needs the server's
+    administrator key and closes for good once done;
+  - sign-in is a password plus a 6-digit authenticator code (RFC 6238), with ten one-time
+    recovery codes; no code is accepted twice;
+  - five wrong attempts lock the console for 15 minutes; sign-ins, lock-outs and security
+    changes are emailed to the owner;
+  - sessions last 8 hours, end after 30 minutes idle, are stored only as hashes, and are
+    same-site only; sensitive changes need a code from the last 10 minutes;
+  - API keys, workspace users and single sign-on can never open the console. Once the owner
+    exists, no administrator key is ever recreated automatically;
+  - an optional "owner only" switch stops API keys and other administrators from
+    administering the server.
+- **Overview**: health checks with plain fixes (database, public address, account service,
+  encryption, Stripe and its webhook, email and its queue, background jobs), the business at
+  a glance, and recent activity.
+- **Settings changed from the browser, applied live** (no restart, other servers within 30
+  seconds):
+  - Stripe keys, prices and credit packs, with a "Test connection" button;
+  - the mail server, senders and support address, with "Send test email";
+  - sign-ups, trial length and offline days;
+  - the paid data sources' keys;
+  - each plan's monthly credits and computers.
+  - Each value is checked before saving. Secrets are encrypted, never shown back and never
+    logged. Clearing a value returns to the deployment's own.
+- **Security**: sessions (sign out one or all others), change password, new recovery codes,
+  move the authenticator to a new phone, every API key (revoke), and the activity log with
+  filters.
+- The owner's session also opens the main app as its administrator.
+- Helm chart 0.42.0: `config.ownerEmail`. Migration 0026 (`owner`, `owner_sessions`).
+
 ## [1.51.0] — Phase 51: Four plans, each with what it needs
 
 ### Changed

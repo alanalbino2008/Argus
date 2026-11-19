@@ -230,6 +230,14 @@ class Settings(BaseSettings):
     stripe_credit_packs: str = Field(
         default="", description="Account service: credit packs for sale, as credits=price id (500=price_1,2000=price_2)"
     )
+    owner_email: str = Field(
+        default="", description="The email of this server's owner: the only person who can open the owner console"
+    )
+    admin_keys_allowed: bool = Field(
+        default=True, description="API keys and other administrators may administer the platform (off: owner only)"
+    )
+    owner_session_hours: float = Field(default=8, ge=0.25, le=24, description="Owner console: longest session")
+    owner_idle_minutes: float = Field(default=30, ge=5, le=240, description="Owner console: ends after this idle time")
     account_emails_enabled: bool = Field(
         default=True, description="Account service: email account holders (needs ARGUS_SMTP_HOST)"
     )

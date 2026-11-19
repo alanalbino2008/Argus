@@ -156,6 +156,12 @@ class SubscriberRepository:
             return False
         return True
 
+    async def last_billing_event(self) -> dict[str, Any] | None:
+        """The most recent Stripe event received (to show the webhook is working)."""
+        async with self.db.session() as s:
+            row = await s.scalar(select(BillingEventRow).order_by(BillingEventRow.received_at.desc()).limit(1))
+        return {"type": row.type, "at": _iso(row.received_at)} if row else None
+
     async def event_done(self, event_id: str, account_id: str) -> None:
         async with self.db.session() as s, s.begin():
             row = await s.get(BillingEventRow, event_id)

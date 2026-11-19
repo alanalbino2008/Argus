@@ -311,6 +311,9 @@
         },
         "stripePriceBusinessSetup": {
           "type": "string"
+        },
+        "ownerEmail": {
+          "type": "string"
         }
       }
     },

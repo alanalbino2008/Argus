@@ -275,6 +275,25 @@ other websites the site links to.
 renews on the 1st; purchased credits never expire. A payment provider's webhook handler adds
 purchased credits with `POST /api/accounts/{id}/credits` (`kind: purchase`).
 
+### The owner console (`/admin`)
+
+Your own control panel for the server: health, payments, email, plans, data-source keys,
+security and the activity log, changed from the browser instead of configuration files.
+
+1. Set **`ARGUS_OWNER_EMAIL`** to your email (Helm: `config.ownerEmail`). This is the only
+   address that can ever be the owner.
+2. Open `https://<your server>/admin`. Enter your email and the server's administrator key
+   (`ARGUS_BOOTSTRAP_ADMIN_KEY`, or the one printed in the log at first start). This proves you
+   control the server.
+3. Scan the QR code with an authenticator app, choose a password, and save the ten recovery
+   codes.
+
+From then on you sign in with your password plus the 6-digit code. After that, everything in
+the sections below (Stripe keys and prices, email server, sign-ups and trials, data-source keys,
+plan allowances) can be set in the console instead; console values win over these settings and
+apply at once. The server needs an encryption key to store secrets (Helm creates one; otherwise
+set `ARGUS_ENCRYPTION_KEY`).
+
 ### Argus accounts and Argus Personal
 
 **The account service** (your central server) creates accounts and signs licences:
