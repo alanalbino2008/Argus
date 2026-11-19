@@ -61,6 +61,7 @@ async def auth_config(request: Request):
         "sso": {"enabled": provider is not None and not personal, "name": request.app.state.settings.oidc_display_name},
         "api_keys": not personal,
         "personal": request.app.state.personal.status() if personal else None,
+        "account_service": bool(request.app.state.settings.account_service_enabled),
     }
 
 

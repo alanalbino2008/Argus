@@ -95,6 +95,7 @@ def service(make_client, fake_stripe, monkeypatch):
     from argus.security.ratelimit import SlidingWindowLimiter
 
     monkeypatch.setattr(account_routes, "_per_ip", SlidingWindowLimiter(limit=200, window=60))
+    monkeypatch.setattr(account_routes, "_signups", SlidingWindowLimiter(limit=50, window=3600))
     monkeypatch.setattr(billing_routes, "_prices", {})
     return make_client(account_service_enabled="true", licence_signing_key=PRIVATE, account_signup_enabled="true",
                        public_url="http://testserver", monitors_enabled="false", stripe_secret_key="sk_test_argus",

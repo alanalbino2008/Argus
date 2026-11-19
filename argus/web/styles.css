@@ -943,3 +943,11 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 /* Link chart: the network beside its details; stacked on narrow screens */
 .chart-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; }
 @media (max-width: 860px) { .chart-layout { grid-template-columns: 1fr; } #chart-canvas { height: 420px !important; } }
+
+/* Business dashboard */
+.biz-chart { width: 100%; height: auto; display: block; }
+.biz-chart .chart-axis { font-size: 11px; fill: var(--text-3); }
+.biz-chart .bar-hit:hover path, .biz-chart .bar-hit:focus path { fill: var(--accent-hover); }
+.biz-chart .bar-hit:focus { outline: none; }
+.biz-bar { height: 8px; background: var(--accent-soft); border-radius: 4px; overflow: hidden; }
+.biz-bar span { display: block; height: 100%; background: var(--accent); border-radius: 4px; }

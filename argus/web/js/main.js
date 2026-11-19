@@ -23,9 +23,10 @@ import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
 import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
+import { initBusiness, refreshBusiness } from "./views/business.js";
 import { initVault, refreshVault } from "./vault.js";
 
-const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "compliance", "ratings", "history", "settings"];
+const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "compliance", "ratings", "history", "business", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -55,6 +56,7 @@ function route() {
   if (view === "executive") refreshExecutive();
   if (view === "compliance") refreshCompliance();
   if (view === "cases") refreshCases();
+  if (view === "business") refreshBusiness();
 }
 
 // ------------------------------------------------------------------ actions shared by views
@@ -195,8 +197,11 @@ function showReadOnly(text) {
   $("#readonly-banner").hidden = !text;
 }
 
+let accountService = false;
+
 async function setupSignInOptions() {
   const config = await authConfig();
+  accountService = !!config.account_service;
   if (config.personal) {
     personalMode = config.personal;
     $("#signin-account").hidden = false;
@@ -257,6 +262,7 @@ async function enterApp(me) {
   chooseWorkspace(me);
   emit("onboarding-changed"); // signed in: load this workspace's getting-started progress
   $("#signin").hidden = true;
+  $(".nav-item[data-view=\"business\"]").hidden = !(accountService && me.platform_admin);
   $("#user-name").textContent = `${me.name}`;
   await refreshVault();
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
@@ -363,6 +369,7 @@ async function boot() {
   initCompliance($("#view-compliance"));
   initCases($("#view-cases"), actions);
   initSettings($("#view-settings"));
+  initBusiness($("#view-business"));
 
   $$(".nav-item").forEach((el) => el.addEventListener("click", () => go(el.dataset.view)));
   $("#btn-new").addEventListener("click", () => actions.newInvestigation());

@@ -110,6 +110,14 @@ class SubscriberRepository:
                 setattr(row, key, value)
         return await self.get(account_id)
 
+    async def overview(self) -> list[dict[str, Any]]:
+        """Every account with what the business dashboard needs (no password hashes)."""
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(SubscriberAccountRow))).all()
+        return [{**_account(r), "locked_until": _iso(r.locked_until), "allowance_month": r.allowance_month,
+                 "allowance_remaining": r.allowance_remaining, "purchased_credits": r.purchased_credits,
+                 "created": _aware(r.created_at), "until": _aware(r.valid_until)} for r in rows]  # fmt: skip
+
     async def by_billing_reference(self, reference: str) -> dict[str, Any] | None:
         if not reference:
             return None
@@ -304,6 +312,14 @@ class CreditRepository:
             s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="allowance", delta=extra,
                                   balance_after=row.allowance_remaining + row.purchased_credits,
                                   detail=f"upgrade to {new_plan}", created_at=_now()))  # fmt: skip
+
+    async def since(self, start: datetime) -> list[dict[str, Any]]:
+        """Every credit movement since ``start`` (for the business dashboard)."""
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(CreditLedgerRow).where(CreditLedgerRow.created_at >= start)
+                                    .order_by(CreditLedgerRow.created_at))).all()  # fmt: skip
+        return [{"account_id": r.account_id, "kind": r.kind, "delta": r.delta, "detail": r.detail,
+                 "at": _aware(r.created_at)} for r in rows]  # fmt: skip
 
     async def ledger(self, account_id: str, limit: int = 100) -> list[dict[str, Any]]:
         async with self.db.session() as s:

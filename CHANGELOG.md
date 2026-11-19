@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.47.0] — Phase 47: Business dashboard
+
+### Added
+- **Business** page for the operator of the account service (platform admins only; shown only
+  on an account service):
+  - paying customers by plan, monthly recurring revenue at Stripe's prices (yearly prices count
+    a twelfth), customers on trial and the share of finished trials that became paying, and
+    payments due;
+  - new accounts per week for twelve weeks (with how many now pay), with a table view;
+  - credits used by source over 30 days, 90 days or 12 months (refunded lookups don't count),
+    the accounts using the most, credits bought and credit packs sold;
+  - **Needs attention**: payments failing, trials ending within three days, trials that ended
+    without paying, accounts locked after wrong passwords, paying customers out of credits.
+- **Accounts**: search by email, name, account or Stripe id, filter by status and plan, and
+  download as CSV (cells that could run as spreadsheet formulas are neutralised; the export is
+  audited). Open an account to change its plan, status or paid-until date, add or remove credits
+  with a reason, sign a computer out, and see its credit history.
+- API: `GET /api/business/summary?days=`, `GET /api/business/accounts`,
+  `GET /api/business/accounts.csv`; `/api/auth/config` says whether this is an account service.
+
 ## [1.46.0] — Phase 46: Payments
 
 ### Added

@@ -495,6 +495,9 @@ the addresses published on a website) and it follows the money.
   paid period.
 - "Manage billing" opens Stripe's page for cards, invoices, plan changes and cancelling
   ([`docs/explained/46-payments.md`](docs/explained/46-payments.md)).
+- A **Business** page shows paying customers, monthly revenue, sign-ups, credits used by source
+  and who needs attention, and lets the operator look after each account
+  ([`docs/explained/47-business-dashboard.md`](docs/explained/47-business-dashboard.md)).
 
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
