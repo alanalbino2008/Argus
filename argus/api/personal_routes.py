@@ -56,7 +56,7 @@ def _personal(request: Request) -> Any:
 
 
 def _service_error(exc: AccountServiceError) -> HTTPException:
-    status = exc.status if exc.status in (401, 403, 409, 422, 423, 429) else 503 if exc.status in (0, 503) else 502
+    status = exc.status if exc.status in (401, 403, 404, 409, 422, 423, 429) else 503 if exc.status in (0, 503) else 502
     return HTTPException(status_code=status, detail=exc.detail)
 
 
@@ -121,6 +121,52 @@ async def personal_credits(request: Request):
     await get_principal(request)
     try:
         return await personal.credits()
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+
+
+class CheckoutRequest(BaseModel):
+    item: str = Field(max_length=64, pattern=r"^(plan:(personal|professional)|credits:\d{1,7})$")
+
+
+def _back(request: Request) -> str:
+    """Stripe sends the customer back to this Argus, on this computer."""
+    return f"{public_base_url(request).rstrip('/')}/"
+
+
+@router.get("/billing")
+async def personal_billing(request: Request):
+    """The plans and credit packs on sale, with their prices."""
+    personal = _personal(request)
+    await get_principal(request)
+    try:
+        return await personal.billing("catalogue")
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+
+
+@router.post("/billing/checkout")
+async def personal_checkout(body: CheckoutRequest, request: Request):
+    """A Stripe payment page for a plan or credit pack (opened in the browser; Argus never sees the card)."""
+    personal = _personal(request)
+    _csrf(request)
+    principal = await get_principal(request)
+    try:
+        page = await personal.billing("checkout", {"item": body.item, "return_url": _back(request)})
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+    await audit(request, principal, "billing.checkout", principal.key_id, details={"item": body.item})
+    return page
+
+
+@router.post("/billing/portal")
+async def personal_portal(request: Request):
+    """Stripe's billing page: card, invoices, change plan or cancel."""
+    personal = _personal(request)
+    _csrf(request)
+    await get_principal(request)
+    try:
+        return await personal.billing("portal", {"return_url": _back(request)})
     except AccountServiceError as exc:
         raise _service_error(exc) from exc
 

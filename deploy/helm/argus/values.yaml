@@ -99,6 +99,10 @@ secrets:
   # (argus --generate-licence-keys). Keep it secret and back it up: a new key means every
   # Argus Personal installation must be given the new public key.
   licenceSigningKey: ""
+  # Account service payments: Stripe's secret API key (sk_live_...) and the signing secret of the
+  # webhook endpoint https://<account service>/api/billing/webhook (whsec_...).
+  stripeSecretKey: ""
+  stripeWebhookSecret: ""
   # UK Companies House API key: on the account service it pays for Argus Connect lookups; on any
   # other deployment it makes lookups direct (private, no credits).
   companiesHouseApiKey: ""
@@ -133,6 +137,11 @@ config:
   accountSignup: false           # anyone may create a trial account
   trialDays: 14
   licenceOfflineDays: 14         # how long Argus Personal works without reaching the account service
+  # Payments (account service): the Stripe price ids on sale. Prices themselves are set in Stripe.
+  stripePricePersonal: ""        # e.g. price_1Q...
+  stripePriceProfessional: ""
+  stripeCreditPacks: ""          # credits=price id, comma-separated: "500=price_1...,2000=price_2..."
+  billingReturnUrl: ""           # page customers return to when not paying from Argus Personal
   ransomwareFeedUrl: https://api.ransomware.live/v2   # ransomware leak-site research feed; "" turns it off
   scanStaleSeconds: 120          # a scan whose replica stops heart-beating this long is failed
   allowPrivateTargets: false     # keep false: scanning private networks from a cluster is SSRF-prone

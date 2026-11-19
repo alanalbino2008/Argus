@@ -158,6 +158,12 @@
         },
         "webSearchApiKey": {
           "type": "string"
+        },
+        "stripeSecretKey": {
+          "type": "string"
+        },
+        "stripeWebhookSecret": {
+          "type": "string"
         }
       }
     },
@@ -274,6 +280,18 @@
           "type": "string"
         },
         "secUserAgent": {
+          "type": "string"
+        },
+        "stripePricePersonal": {
+          "type": "string"
+        },
+        "stripePriceProfessional": {
+          "type": "string"
+        },
+        "stripeCreditPacks": {
+          "type": "string"
+        },
+        "billingReturnUrl": {
           "type": "string"
         }
       }

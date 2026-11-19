@@ -207,6 +207,24 @@ class Settings(BaseSettings):
     licence_public_key: str = Field(
         default="", description="Personal edition: the account service's public key, to check licences offline"
     )
+    stripe_secret_key: SecretStr | None = Field(
+        default=None, description="Account service: Stripe secret key (sk_live_... or sk_test_...) for payments"
+    )
+    stripe_webhook_secret: SecretStr | None = Field(
+        default=None, description="Account service: the signing secret of the Stripe webhook (whsec_...)"
+    )
+    stripe_api_url: str = Field(default="https://api.stripe.com", description="Stripe's API (changed only in tests)")
+    stripe_price_personal: str = Field(default="", description="Account service: Stripe price id of the Personal plan")
+    stripe_price_professional: str = Field(
+        default="", description="Account service: Stripe price id of the Professional plan"
+    )
+    stripe_credit_packs: str = Field(
+        default="", description="Account service: credit packs for sale, as credits=price id (500=price_1,2000=price_2)"
+    )
+    billing_return_url: str = Field(
+        default="",
+        description="Account service: page customers return to after paying, when not paying from Argus Personal",
+    )
     licence_refresh_seconds: float = Field(default=6 * 3600, ge=60, description="Personal edition: renewal attempts")
     # ---------------------------------------------------------------- cryptocurrency
     bitcoin_api_url: str = Field(

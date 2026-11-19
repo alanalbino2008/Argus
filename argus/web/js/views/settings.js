@@ -38,6 +38,7 @@ const VAULT_FORMS = {
 
 export function initSettings(el) {
   root = el;
+  window.addEventListener("argus:billing-updated", () => refresh());
   root.addEventListener("submit", async (e) => {
     const handler = VAULT_FORMS[e.target.id];
     if (!handler) return;
@@ -67,6 +68,18 @@ export function initSettings(el) {
       if (act === "vault-lock") {
         await api.post("/api/vault/lock");
         window.dispatchEvent(new CustomEvent("argus:vault-locked"));
+        return;
+      }
+      if (act === "buy" || act === "billing-portal") {
+        btn.disabled = true;
+        try {
+          const page = act === "buy" ? await api.post("/api/personal/billing/checkout", { item: btn.dataset.item })
+            : await api.post("/api/personal/billing/portal");
+          if (page.url?.startsWith("https://")) { location.assign(page.url); return; }
+          toast("The payment page could not be opened", "error");
+        } finally {
+          btn.disabled = false;
+        }
         return;
       }
       if (act === "licence-check") {
@@ -229,8 +242,11 @@ export async function refresh() {
     platform ? api.get("/api/vault/status").catch(() => null) : null,
   ];
   const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault] = await Promise.all(tasks);
-  const credits = personal?.signed_in ? await api.get("/api/personal/credits").catch(() => null) : null;
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, vault };
+  const [credits, billing] = personal?.signed_in ? await Promise.all([
+    api.get("/api/personal/credits").catch(() => null),
+    api.get("/api/personal/billing").catch(() => null),
+  ]) : [null, null];
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, vault };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -427,8 +443,30 @@ function subscriptionCard() {
         ${Object.values(data.credits.prices).map((p) => { const costs = Object.entries(p.lookups); const same = costs.every(([, c]) => c === costs[0][1]);
           return html`<dt>${p.label}</dt><dd>${same ? `${costs[0][1]} credit${costs[0][1] === 1 ? "" : "s"} per lookup` : costs.map(([n, c]) => `${n.replace(/_/g, " ")} ${c}`).join(" · ")}</dd>`; })}</dl>
       <p class="muted small" style="margin-top:6px">A brokered lookup tells the Argus account service what was looked up (a company number or name). The AI analyst sends the case material you confirm through it to Anthropic; the service keeps none of it. To keep even that private, set your own key for the source (or your own Claude API key); requests then go directly and cost no credits.</p>` : ""}
+    ${billingSection(p)}
     <p class="muted small" style="margin-top:10px">If a subscription ends, nothing is lost: your cases stay readable, verifiable and exportable, and only new work waits until it is renewed.</p>
   </div>`;
+}
+
+function money(price) {
+  if (!price || price.amount == null) return "";
+  const amount = new Intl.NumberFormat(undefined, { style: "currency", currency: price.currency || "USD" }).format(price.amount / 100);
+  return price.interval ? `${amount} a ${price.interval}` : amount;
+}
+
+function billingSection(p) {
+  const b = data.billing;
+  if (!b?.enabled) return "";
+  const subscribed = ["active", "past_due"].includes(p.status) && p.plan && p.plan !== "trial";
+  const plans = b.plans.filter((x) => !(subscribed && x.plan === p.plan));
+  return html`<div class="section-title" style="margin-top:14px">Plans and payment</div>
+    <p class="muted small">Payment is taken by Stripe on its own secure page: Argus never sees your card. ${subscribed ? "Change plan, update your card, download invoices or cancel in Manage billing; a cancelled plan keeps working to the end of the period you have paid for." : ""}</p>
+    ${p.status === "past_due" ? html`<div class="callout warn" style="margin:8px 0">${ico("alert")}<span>Your last payment didn't go through. Argus keeps working while Stripe retries; update your card in Manage billing.</span></div>` : ""}
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+      ${subscribed ? "" : plans.map((x) => html`<button class="btn sm primary" data-act="buy" data-item="${x.item}" title="${x.monthly_credits} credits a month, ${x.max_devices} computer${x.max_devices === 1 ? "" : "s"}">${ico("check")}Subscribe: ${x.label}${x.price ? ` (${money(x.price)})` : ""}</button>`)}
+      ${b.credit_packs.map((x) => html`<button class="btn sm" data-act="buy" data-item="${x.item}">${ico("plus")}Buy ${x.credits} credits${x.price ? ` (${money(x.price)})` : ""}</button>`)}
+      ${b.has_billing ? html`<button class="btn sm ghost" data-act="billing-portal">${ico("external")}Manage billing</button>` : ""}
+    </div>`;
 }
 
 function workspacesCard() {

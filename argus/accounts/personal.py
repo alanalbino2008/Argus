@@ -142,6 +142,14 @@ class PersonalLicence:
             raise AccountServiceError(401, "Sign in to see your credits")
         return await self.client.call("/api/connect/balance", {"licence": self.token})
 
+    async def billing(self, action: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Payments, through the account service: the catalogue, a checkout page, or the billing page."""
+        if action == "catalogue":
+            return await self.client.call("/api/billing/catalogue", {"licence": self.token} if self.token else {})
+        if not self.token:
+            raise AccountServiceError(401, "Sign in first")
+        return await self.client.call(f"/api/billing/{action}", {"licence": self.token, **(body or {})})
+
     async def sign_up(self, email: str, password: str, name: str) -> dict[str, Any]:
         return await self.client.call("signup", {"email": email, "password": password, "name": name})
 

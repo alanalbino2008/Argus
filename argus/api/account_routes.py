@@ -7,10 +7,10 @@ and renews it in the background.
 What this service learns: that an account signed in from a device, and when it renewed. It never
 receives anything about cases, evidence or searches; those stay on the person's computer.
 
-**Ready for payments.** An account has a plan, a status (trialing, active, past_due, cancelled,
-suspended) and ``valid_until`` (the end of the paid period). A payment provider's webhook only
-needs to update those through ``PATCH /api/accounts/{id}`` (or the same repository call): licences
-pick the change up at their next renewal, within a day.
+**Payments.** An account has a plan, a status (trialing, active, past_due, cancelled, suspended)
+and ``valid_until`` (the end of the paid period). Stripe's webhook keeps them in step
+(``billing_routes``); an admin can also change them with ``PATCH /api/accounts/{id}``. Licences
+pick a change up at their next renewal, or straight away after a payment.
 """
 
 from __future__ import annotations
@@ -198,7 +198,7 @@ async def get_account(account_id: str, request: Request, _: Principal = Depends(
 @router.patch("/{account_id}")
 async def update_account(account_id: str, body: AccountUpdate, request: Request,
                          principal: Principal = Depends(require_platform_admin)):  # fmt: skip
-    """Change plan, status or paid-until date (what a payment provider's webhook will call)."""
+    """Change plan, status or paid-until date by hand (payments do this automatically)."""
     repo, _private = _service(request)
     changes = body.model_dump(exclude_none=True)
     if "valid_until" in changes and changes["valid_until"].tzinfo is None:

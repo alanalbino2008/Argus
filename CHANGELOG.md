@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.46.0] — Phase 46: Payments
+
+### Added
+- **Stripe payments** on the account service:
+  - subscribe to the Personal or Professional plan, or buy a credit pack, on Stripe's own
+    payment page (Argus never sees card details);
+  - **Manage billing** opens Stripe's customer portal: card, invoices, change plan, cancel;
+  - prices are set in Stripe and shown as Stripe has them.
+- **Webhook** `POST /api/billing/webhook` keeps accounts in step:
+  - paid or renewed: plan, *active*, paid until the period's end;
+  - failed payment: *past_due*, still usable for at least 7 days while Stripe retries;
+  - cancelled: usable to the end of the paid period, then read-only;
+  - credit pack paid: credits added;
+  - upgrade mid-month: the bigger allowance at once.
+- Safeguards: signature checked (secret, exact message, five-minute window), each event applied
+  once (new `billing_events` table, migration 0021), subscriptions re-read from Stripe so
+  out-of-order events can't undo a payment, an old subscription ending can't cancel a new one,
+  test-mode services refuse live events, return addresses restricted, audit entries.
+- Argus Personal: Subscribe, Buy credits and Manage billing in Settings; returning from Stripe
+  checks the subscription straight away.
+- API: `GET /api/billing/catalogue`, `POST /api/billing/checkout`, `POST /api/billing/portal`;
+  Argus Personal: `GET /api/personal/billing`, `POST /api/personal/billing/checkout`,
+  `POST /api/personal/billing/portal`.
+- Settings: `ARGUS_STRIPE_SECRET_KEY`, `ARGUS_STRIPE_WEBHOOK_SECRET`,
+  `ARGUS_STRIPE_PRICE_PERSONAL`, `ARGUS_STRIPE_PRICE_PROFESSIONAL`, `ARGUS_STRIPE_CREDIT_PACKS`,
+  `ARGUS_BILLING_RETURN_URL`. Helm chart 0.36.0: `secrets.stripeSecretKey`,
+  `secrets.stripeWebhookSecret` and the `config.stripe*` values.
+
 ## [1.45.0] — Phase 45: Relationships over time, and exports
 
 ### Added

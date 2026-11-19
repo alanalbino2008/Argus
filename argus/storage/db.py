@@ -202,6 +202,17 @@ class CreditLedgerRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class BillingEventRow(Base):
+    """A payment provider event already applied (each is applied once, however often it is re-sent)."""
+
+    __tablename__ = "billing_events"
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)  # the provider's event id
+    type: Mapped[str] = mapped_column(String(64))
+    account_id: Mapped[str] = mapped_column(String(32), default="")
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AppStateRow(Base):
     """Small facts about this installation (its device id, the personal edition's licence...)."""
 

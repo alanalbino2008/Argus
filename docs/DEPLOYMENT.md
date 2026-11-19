@@ -292,9 +292,30 @@ Set on the central deployment:
   `ARGUS_LICENCE_OFFLINE_DAYS`.
 
 Plans (trial, personal, professional), statuses (trialing, active, past_due, cancelled,
-suspended) and the paid-until date are changed with `PATCH /api/accounts/{id}`. When payments are
-added, the payment provider's webhook handler calls exactly that. Back up the signing key: if it
-changes, every Argus Personal installation needs the new public key.
+suspended) and the paid-until date are kept in step with Stripe automatically (below); an admin
+can also change them with `PATCH /api/accounts/{id}`. Back up the signing key: if it changes,
+every Argus Personal installation needs the new public key.
+
+#### Payments with Stripe
+
+1. In the Stripe dashboard, create a product for each plan with a **recurring** price (Personal,
+   Professional) and, for credit packs, products with **one-off** prices.
+2. Add a webhook endpoint `https://accounts.example.com/api/billing/webhook` for the events
+   `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+   `customer.subscription.created`, `customer.subscription.updated` and
+   `customer.subscription.deleted`.
+3. Turn on the **customer portal** (Settings → Billing → Customer portal) so customers can update
+   their card, see invoices, change plan and cancel.
+4. Set on the account service:
+   * `ARGUS_STRIPE_SECRET_KEY=sk_live_...` (Helm: `secrets.stripeSecretKey`);
+   * `ARGUS_STRIPE_WEBHOOK_SECRET=whsec_...` (Helm: `secrets.stripeWebhookSecret`);
+   * `ARGUS_STRIPE_PRICE_PERSONAL`, `ARGUS_STRIPE_PRICE_PROFESSIONAL`: the plans' price ids;
+   * `ARGUS_STRIPE_CREDIT_PACKS=500=price_...,2000=price_...` (credits = price id);
+   * optionally `ARGUS_BILLING_RETURN_URL`: where customers land after paying, when they did not
+     start from Argus Personal.
+
+Try it first with test keys (`sk_test_...`) and Stripe's test cards. Card details never reach
+Argus: customers pay on Stripe's own pages.
 
 **Argus Personal** (each investigator's computer):
 

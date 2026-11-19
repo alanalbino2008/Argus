@@ -383,8 +383,29 @@ async function boot() {
   const ssoError = takeSsoError();
   await setupSignInOptions();
   const me = await whoAmI();
-  if (me) await enterApp(me);
-  else showSignIn(ssoError);
+  if (me) {
+    await enterApp(me);
+    await billingReturn();
+  } else showSignIn(ssoError);
+}
+
+// Back from Stripe's payment page: check the subscription straight away and show the result.
+async function billingReturn() {
+  const outcome = new URLSearchParams(location.search).get("billing");
+  if (!outcome) return;
+  history.replaceState(null, "", location.pathname + location.search.replace(/[?&]billing=[^&#]*/, "").replace(/^&/, "?") + "#/settings");
+  route();
+  if (outcome !== "done") return toast("Payment cancelled: nothing was charged", "info", 5000);
+  toast("Thank you: your payment is being confirmed…", "success", 5000);
+  for (const wait of [1500, 3000, 6000]) { // Stripe tells the account service within seconds
+    await new Promise((r) => setTimeout(r, wait));
+    const status = await fetch("/api/personal/refresh", { method: "POST" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (status?.access === "full") {
+      showReadOnly("");
+      window.dispatchEvent(new CustomEvent("argus:billing-updated"));
+      return;
+    }
+  }
 }
 
 boot();

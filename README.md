@@ -487,6 +487,15 @@ the addresses published on a website) and it follows the money.
 - Profiles can be downloaded as PDFs for editors, lawyers and courts
   ([`docs/explained/45-time-and-exports.md`](docs/explained/45-time-and-exports.md)).
 
+**Payments**
+
+- Customers subscribe and buy credit packs on Stripe's own payment pages: Argus never sees a card.
+- Payments, renewals, failed payments and cancellations update the account automatically; a
+  failed payment keeps working while Stripe retries, and a cancellation runs to the end of the
+  paid period.
+- "Manage billing" opens Stripe's page for cards, invoices, plan changes and cancelling
+  ([`docs/explained/46-payments.md`](docs/explained/46-payments.md)).
+
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.
 

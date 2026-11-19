@@ -7,9 +7,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from argus.accounts.licence import PLANS
-from argus.storage.db import AppStateRow, CreditLedgerRow, Database, SubscriberAccountRow, SubscriberDeviceRow
+from argus.storage.db import (
+    AppStateRow,
+    BillingEventRow,
+    CreditLedgerRow,
+    Database,
+    SubscriberAccountRow,
+    SubscriberDeviceRow,
+)
 
 LOCK_AFTER = 5  # failed sign-ins in a row
 LOCK_FOR = timedelta(minutes=15)
@@ -101,6 +109,39 @@ class SubscriberRepository:
             for key, value in changes.items():
                 setattr(row, key, value)
         return await self.get(account_id)
+
+    async def by_billing_reference(self, reference: str) -> dict[str, Any] | None:
+        if not reference:
+            return None
+        async with self.db.session() as s:
+            row = await s.scalar(
+                select(SubscriberAccountRow).where(SubscriberAccountRow.billing_reference == reference)
+            )
+        return _account(row) if row else None
+
+    async def claim_event(self, event_id: str, kind: str) -> bool:
+        """Record a payment event; False if it was already recorded (applied before, or being applied)."""
+        try:
+            async with self.db.session() as s, s.begin():
+                if await s.get(BillingEventRow, event_id) is not None:
+                    return False
+                s.add(BillingEventRow(id=event_id, type=kind[:64], account_id="", received_at=_now()))
+        except IntegrityError:  # the same event delivered twice at once: only one gets here
+            return False
+        return True
+
+    async def event_done(self, event_id: str, account_id: str) -> None:
+        async with self.db.session() as s, s.begin():
+            row = await s.get(BillingEventRow, event_id)
+            if row is not None:
+                row.account_id = account_id[:32]
+
+    async def release_event(self, event_id: str) -> None:
+        """Forget an event whose handling failed, so Stripe's retry applies it."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(BillingEventRow, event_id)
+            if row is not None:
+                await s.delete(row)
 
     async def login_failed(self, account_id: str) -> None:
         async with self.db.session() as s, s.begin():
@@ -246,6 +287,23 @@ class CreditRepository:
                                   balance_after=row.allowance_remaining + row.purchased_credits, detail=detail[:255],
                                   created_at=_now()))  # fmt: skip
             return _balance(row)
+
+    async def upgrade_allowance(self, account_id: str, old_plan: str, new_plan: str) -> None:
+        """A move to a bigger plan mid-month: the extra allowance is available straight away."""
+        extra = monthly_allowance(new_plan) - monthly_allowance(old_plan)
+        if extra <= 0:
+            return
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id, with_for_update=True)
+            if row is None:
+                return
+            if row.allowance_month != _month():
+                _roll(row, s)  # a fresh month already gives the new plan's whole allowance
+                return
+            row.allowance_remaining += extra
+            s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="allowance", delta=extra,
+                                  balance_after=row.allowance_remaining + row.purchased_credits,
+                                  detail=f"upgrade to {new_plan}", created_at=_now()))  # fmt: skip
 
     async def ledger(self, account_id: str, limit: int = 100) -> list[dict[str, Any]]:
         async with self.db.session() as s:
