@@ -260,3 +260,24 @@ def test_the_owners_own_security(console, clock):
 def test_not_in_argus_personal(make_client):
     c = make_client(edition="personal", monitors_enabled="false", capture_browser="off")
     assert c.get("/api/owner/state").status_code in (401, 404)  # never reachable on someone's own computer
+
+
+def test_a_new_server_never_inherits_an_old_ones_values():
+    import weakref
+
+    from argus.core.settings import Settings
+
+    class Gone:
+        pass
+
+    fresh = Settings(smtp_host=None)
+    dead = weakref.ref(Gone())  # an old settings object, since freed, that had the same id
+    runtime_config._defaults_by[id(fresh)] = (dead, {"smtp_host": "smtp.old.test"})
+    runtime_config.apply(fresh, None, runtime_config_box_for(fresh))
+    assert fresh.smtp_host is None
+
+
+def runtime_config_box_for(settings):
+    from argus.accounts.owner import box
+
+    return box(settings)

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -158,7 +159,9 @@ FIELDS: list[Setting] = [
 ]
 BY_NAME = {f.name: f for f in FIELDS}
 PLAN_LIMITS = {"monthly_credits": (0, 1_000_000), "max_devices": (1, 20)}
-_defaults_by: dict[int, dict[str, Any]] = {}  # each server's own (deployment) values, to go back to
+# each server's own (deployment) values, to go back to; the weak reference makes sure a new
+# settings object never inherits the values of an old one that happened to share its id
+_defaults_by: dict[int, tuple[weakref.ref[Settings], dict[str, Any]]] = {}
 _plan_defaults: dict[str, dict[str, int]] = {}
 _version: str = ""
 
@@ -202,6 +205,8 @@ def validate(name: str, value: Any) -> Any:
 
 def _apply_one(settings: Settings, name: str, value: Any) -> None:
     annotation = Settings.model_fields[name].annotation
+    if annotation is None:
+        raise ValueError(f"{name} has no type")
     if value in ("", None) and BY_NAME[name].kind in ("secret", "text", "email", "url"):
         value = "" if annotation is str else None
     object.__setattr__(settings, name, TypeAdapter(annotation).validate_python(value))
@@ -215,7 +220,13 @@ def _apply_safely(settings: Settings, name: str, value: Any) -> None:
 
 
 def _defaults(settings: Settings) -> dict[str, Any]:
-    return _defaults_by.setdefault(id(settings), {f.name: getattr(settings, f.name) for f in FIELDS})
+    known = _defaults_by.get(id(settings))
+    if known is None or known[0]() is not settings:
+        for key in [k for k, (ref, _v) in _defaults_by.items() if ref() is None]:
+            del _defaults_by[key]
+        known = (weakref.ref(settings), {f.name: getattr(settings, f.name) for f in FIELDS})
+        _defaults_by[id(settings)] = known
+    return known[1]
 
 
 def remember_defaults(settings: Settings) -> None:
