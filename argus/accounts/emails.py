@@ -90,6 +90,23 @@ def _content(kind: str, a: dict[str, Any], ctx: dict[str, Any]) -> tuple[str, li
         return f"{credits} Argus credits added", [
             f"Thank you: {credits} credits have been added to your account. Bought credits never expire.",
             "They're used for premium sources and the AI analyst once your monthly allowance runs out."]  # fmt: skip
+    if kind == "refund_issued":
+        amount = f"{int(ctx.get('amount') or 0) / 100:.2f} {ctx.get('currency') or ''}".strip()
+        taken = int(ctx.get("credits") or 0)
+        return "Your Argus refund", [
+            f"We've refunded {amount}. It usually reaches your account within 5 to 10 working days, depending on "
+            "your bank.",
+            *([f"The {taken} credits bought with it have been removed from your balance."] if taken else [])]  # fmt: skip
+    if kind == "account_on_hold":
+        return "Your Argus account is on hold", [
+            "Your bank has told us you disputed a payment to Argus, so your account is on hold while the dispute is "
+            "looked at. Your cases stay on your computer, readable and exportable; new work waits.",
+            "If you didn't mean to dispute the payment, or don't recognise it, reply to this email or contact "
+            "support: we're happy to sort it out."]  # fmt: skip
+    if kind == "hold_lifted":
+        return "Your Argus account is active again", [
+            "The payment dispute has been closed and your account is active again. Thank you for your patience."
+        ]
     if kind == "password_reset":
         return "Reset your Argus password", [
             "Someone (hopefully you) asked to reset the password of your Argus account.",

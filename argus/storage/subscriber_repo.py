@@ -13,6 +13,7 @@ from argus.accounts.licence import PLANS
 from argus.storage.db import (
     AppStateRow,
     BillingEventRow,
+    BillingPaymentRow,
     CreditLedgerRow,
     Database,
     SubscriberAccountRow,
@@ -59,6 +60,15 @@ def max_devices(row: SubscriberAccountRow) -> int:
 def _device(row: SubscriberDeviceRow) -> dict[str, Any]:
     return {"id": row.id, "device_id": row.device_id, "name": row.name, "revoked": bool(row.revoked),
             "first_seen": _iso(row.first_seen), "last_seen": _iso(row.last_seen)}  # fmt: skip
+
+
+def _payment(row: BillingPaymentRow) -> dict[str, Any]:
+    return {"id": row.id, "account_id": row.account_id, "kind": row.kind, "credits": row.credits,
+            "amount": row.amount, "currency": row.currency, "refunded": row.refunded,
+            "refund_credits_taken": row.refund_credits_taken, "dispute_id": row.dispute_id,
+            "dispute_status": row.dispute_status, "dispute_credits_taken": row.dispute_credits_taken,
+            "status_before_hold": row.status_before_hold, "created_at": _iso(row.created_at),
+            "updated_at": _iso(row.updated_at)}  # fmt: skip
 
 
 class SubscriberRepository:
@@ -151,6 +161,48 @@ class SubscriberRepository:
             row = await s.get(BillingEventRow, event_id)
             if row is not None:
                 await s.delete(row)
+
+    # ------------------------------------------------------------------ payments (refunds, disputes)
+    async def record_payment(self, payment_id: str, account_id: str, *, kind: str, credits: int = 0, amount: int = 0,
+                             currency: str = "") -> dict[str, Any]:  # fmt: skip
+        """The payment, recorded once (a repeat returns what is stored)."""
+        try:
+            async with self.db.session() as s, s.begin():
+                row = await s.get(BillingPaymentRow, payment_id)
+                if row is None:
+                    row = BillingPaymentRow(id=payment_id[:255], account_id=account_id, kind=kind, credits=credits,
+                                            amount=amount, currency=currency[:8].upper(), refunded=0,
+                                            refund_credits_taken=0, dispute_id="", dispute_status="",
+                                            dispute_credits_taken=0, status_before_hold="", created_at=_now(),
+                                            updated_at=_now())  # fmt: skip
+                    s.add(row)
+                return _payment(row)
+        except IntegrityError:  # recorded by another request at the same moment
+            found = await self.payment(payment_id)
+            if found is None:
+                raise
+            return found
+
+    async def payment(self, payment_id: str) -> dict[str, Any] | None:
+        async with self.db.session() as s:
+            row = await s.get(BillingPaymentRow, payment_id)
+        return _payment(row) if row else None
+
+    async def update_payment(self, payment_id: str, **changes: Any) -> None:
+        async with self.db.session() as s, s.begin():
+            row = await s.get(BillingPaymentRow, payment_id)
+            if row is not None:
+                for key, value in changes.items():
+                    setattr(row, key, value)
+                row.updated_at = _now()
+
+    async def payments(self, account_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        query = select(BillingPaymentRow).order_by(BillingPaymentRow.created_at.desc()).limit(limit)
+        if account_id:
+            query = query.where(BillingPaymentRow.account_id == account_id)
+        async with self.db.session() as s:
+            rows = (await s.scalars(query)).all()
+        return [_payment(r) for r in rows]
 
     async def login_failed(self, account_id: str) -> None:
         async with self.db.session() as s, s.begin():
@@ -305,6 +357,25 @@ class CreditRepository:
                                   balance_after=row.allowance_remaining + row.purchased_credits, detail=detail[:255],
                                   created_at=_now()))  # fmt: skip
             return _balance(row)
+
+    async def take_back(self, account_id: str, amount: int, detail: str) -> int:
+        """Remove up to ``amount`` purchased credits (after a refund or dispute); how many were removed.
+
+        Credits already spent can't be taken back: the balance never goes below zero.
+        """
+        if amount <= 0:
+            return 0
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id, with_for_update=True)
+            if row is None:
+                return 0
+            _roll(row, s)
+            taken = min(amount, row.purchased_credits)
+            row.purchased_credits -= taken
+            s.add(CreditLedgerRow(id=f"cl_{secrets.token_hex(8)}", account_id=account_id, kind="reversal", delta=-taken,
+                                  balance_after=row.allowance_remaining + row.purchased_credits, detail=detail[:255],
+                                  created_at=_now()))  # fmt: skip
+            return taken
 
     async def upgrade_allowance(self, account_id: str, old_plan: str, new_plan: str) -> None:
         """A move to a bigger plan mid-month: the extra allowance is available straight away."""

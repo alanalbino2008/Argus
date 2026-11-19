@@ -240,6 +240,28 @@ class PasswordResetRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class BillingPaymentRow(Base):
+    """A payment Argus may have to undo: credits it bought, and any refund or dispute of it."""
+
+    __tablename__ = "billing_payments"
+    __table_args__ = (Index("ix_billing_payments_account", "account_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)  # the provider's payment id (pi_..., ch_...)
+    account_id: Mapped[str] = mapped_column(String(32), ForeignKey("subscriber_accounts.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(16))  # credits | subscription
+    credits: Mapped[int] = mapped_column(Integer, default=0)  # credits this payment bought
+    amount: Mapped[int] = mapped_column(Integer, default=0)  # in the currency's smallest unit
+    currency: Mapped[str] = mapped_column(String(8), default="")
+    refunded: Mapped[int] = mapped_column(Integer, default=0)  # amount refunded so far
+    refund_credits_taken: Mapped[int] = mapped_column(Integer, default=0)
+    dispute_id: Mapped[str] = mapped_column(String(255), default="")
+    dispute_status: Mapped[str] = mapped_column(String(32), default="")  # open | won | lost
+    dispute_credits_taken: Mapped[int] = mapped_column(Integer, default=0)
+    status_before_hold: Mapped[str] = mapped_column(String(16), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class BillingEventRow(Base):
     """A payment provider event already applied (each is applied once, however often it is re-sent)."""
 

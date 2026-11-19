@@ -27,6 +27,7 @@ class FakeStripe(ThreadingHTTPServer):
     def __init__(self):
         self.calls: list[tuple[str, str, dict, dict]] = []  # method, path, form, headers
         self.subscriptions: dict[str, dict] = {}
+        self.charges: dict[str, dict] = {}
         super().__init__(("127.0.0.1", 0), StripeHandler)
         threading.Thread(target=self.serve_forever, daemon=True).start()
 
@@ -56,6 +57,9 @@ class StripeHandler(BaseHTTPRequestHandler):
         if path.path.startswith("/v1/subscriptions/"):
             sub = s.subscriptions.get(path.path.rsplit("/", 1)[1])
             return self._send(200, sub) if sub else self._send(404, {"error": {"message": "No such subscription"}})
+        if path.path.startswith("/v1/charges/"):
+            charge = s.charges.get(path.path.rsplit("/", 1)[1])
+            return self._send(200, charge) if charge else self._send(404, {"error": {"message": "No such charge"}})
         if path.path == "/v1/subscriptions":
             subs = [x for x in s.subscriptions.values() if x["customer"] == form.get("customer")]
             return self._send(200, {"data": subs})

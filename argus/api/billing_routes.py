@@ -243,6 +243,12 @@ async def _apply(request: Request, event: dict[str, Any]) -> str | None:
             )
             return await _subscription(request, account, subscription, event)
         return account["id"]
+    if kind == "charge.refunded":
+        return await _refunded(request, obj, event)
+    if kind == "charge.dispute.created":
+        return await _dispute_opened(request, obj, event)
+    if kind == "charge.dispute.closed":
+        return await _dispute_closed(request, obj, event)
     if kind.startswith("customer.subscription."):
         account = await _account_for(request, obj)
         if account is None:
@@ -267,6 +273,11 @@ async def _credits_paid(request: Request, account: dict[str, Any], obj: dict[str
         return account["id"]
     await request.app.state.credits.add(account["id"], int(credits), kind="purchase",
                                         detail=f"credit pack {credits} ({obj.get('id', '')})")  # fmt: skip
+    payment_id = obj.get("payment_intent") or obj.get("id")
+    if isinstance(payment_id, str) and payment_id:  # remembered, in case it is refunded or disputed
+        await request.app.state.subscribers.record_payment(
+            payment_id, account["id"], kind="credits", credits=int(credits), amount=int(obj.get("amount_total") or 0),
+            currency=str(obj.get("currency") or ""))  # fmt: skip
     await audit(request, SERVICE, "billing.credits_purchased", account["id"],
                 details={"credits": int(credits), "event": event["id"]})  # fmt: skip
     await request.app.state.mailer.notify(account, "credits_added", str(obj.get("id") or event["id"]),
@@ -290,6 +301,11 @@ async def _subscription(request: Request, account: dict[str, Any], sub: dict[str
     if until:
         changes["valid_until"] = until
     repo = request.app.state.subscribers
+    disputed = [p for p in await repo.payments(account["id"]) if p["dispute_status"] == "open"]
+    if disputed:  # on hold while a payment is disputed: remember what to return to
+        for p in disputed:
+            await repo.update_payment(p["id"], status_before_hold=status)
+        changes["status"] = "suspended"
     updated = await repo.update(account["id"], **changes)
     if plan and plan != account["plan"]:
         await request.app.state.credits.upgrade_allowance(account["id"], account["plan"], plan)
@@ -319,3 +335,133 @@ async def _tell(request: Request, before: dict[str, Any], after: dict[str, Any],
         await mailer.notify(after, "plan_changed", f"{sid}:{after['plan']}:{period}")
     if sub.get("cancel_at_period_end") and after["status"] in ("active", "trialing", "past_due"):
         await mailer.notify(after, "cancellation_scheduled", f"{sid}:{period}")
+
+
+# ---------------------------------------------------------------------------- refunds and disputes
+async def _payment_for(request: Request, charge: dict[str, Any]) -> dict[str, Any] | None:
+    """The recorded payment a charge belongs to; a subscription payment is recorded the first time it is seen."""
+    repo = request.app.state.subscribers
+    for key in (charge.get("payment_intent"), charge.get("id")):
+        if isinstance(key, str) and key and (found := await repo.payment(key)):
+            return found
+    customer = charge.get("customer")
+    account = await repo.by_billing_reference(customer) if isinstance(customer, str) else None
+    key = charge.get("payment_intent") or charge.get("id")
+    if account is None or not isinstance(key, str) or not key:
+        return None
+    return await repo.record_payment(key, account["id"], kind="subscription", amount=int(charge.get("amount") or 0),
+                                     currency=str(charge.get("currency") or ""))  # fmt: skip
+
+
+async def _refunded(request: Request, charge: dict[str, Any], event: dict[str, Any]) -> str | None:
+    """A refund: credits bought with the refunded part are taken back (never below zero)."""
+    payment = await _payment_for(request, charge)
+    if payment is None:
+        return None
+    refunded = int(charge.get("amount_refunded") or 0)
+    if refunded <= payment["refunded"]:
+        return payment["account_id"]  # nothing new
+    repo, credits = request.app.state.subscribers, request.app.state.credits
+    account_id = payment["account_id"]
+    to_take = taken = 0
+    if payment["kind"] == "credits" and payment["amount"] > 0:
+        share = min(refunded, payment["amount"])
+        target = (payment["credits"] * share + payment["amount"] // 2) // payment["amount"]  # rounded
+        left = payment["credits"] - payment["refund_credits_taken"] - payment["dispute_credits_taken"]
+        to_take = max(0, min(target - payment["refund_credits_taken"], left))
+        taken = await credits.take_back(account_id, to_take, f"refund of credit pack ({payment['id']})")
+    await repo.update_payment(payment["id"], refunded=refunded,
+                              refund_credits_taken=payment["refund_credits_taken"] + to_take)  # fmt: skip
+    await audit(request, SERVICE, "billing.refund", account_id,
+                details={"payment": payment["id"], "refunded": refunded, "currency": payment["currency"],
+                         "credits_taken": taken, "already_spent": to_take - taken})  # fmt: skip
+    account = await repo.get(account_id)
+    if account:
+        await request.app.state.mailer.notify(account, "refund_issued", f"{payment['id']}:{refunded}",
+                                              amount=refunded, currency=payment["currency"], credits=taken)  # fmt: skip
+    return account_id
+
+
+async def _dispute_charge(request: Request, dispute: dict[str, Any]) -> dict[str, Any]:
+    """The charge a dispute is about (Stripe sends only its id)."""
+    charge = dispute.get("charge")
+    if isinstance(charge, dict):
+        return charge
+    found: dict[str, Any] = {"id": charge, "payment_intent": dispute.get("payment_intent"),
+                             "amount": dispute.get("amount"), "currency": dispute.get("currency")}  # fmt: skip
+    if isinstance(charge, str) and charge and not await _known(request, found):
+        found = {**found, **await stripe.call(request.app.state.settings, "GET", f"/v1/charges/{charge}")}
+    return found
+
+
+async def _known(request: Request, charge: dict[str, Any]) -> bool:
+    repo = request.app.state.subscribers
+    for key in (charge.get("payment_intent"), charge.get("id")):
+        if isinstance(key, str) and key and await repo.payment(key) is not None:
+            return True
+    return False
+
+
+async def _dispute_opened(request: Request, dispute: dict[str, Any], event: dict[str, Any]) -> str | None:
+    """A chargeback: the account goes on hold (read-only, cases kept) and the payment's credits are held back."""
+    payment = await _payment_for(request, await _dispute_charge(request, dispute))
+    if payment is None:
+        return None
+    if payment["dispute_status"] == "open":
+        return payment["account_id"]
+    repo, account_id = request.app.state.subscribers, payment["account_id"]
+    account = await repo.get(account_id)
+    if account is None:
+        return None
+    taken = 0
+    if payment["kind"] == "credits":
+        left = payment["credits"] - payment["refund_credits_taken"] - payment["dispute_credits_taken"]
+        taken = await request.app.state.credits.take_back(account_id, left, f"disputed payment ({payment['id']})")
+    others_open = any(p["dispute_status"] == "open" for p in await repo.payments(account_id))
+    before = account["status"] if account["status"] != "suspended" else ""
+    if others_open:  # already on hold for another dispute: keep that one's record of what to return to
+        before = ""
+    await repo.update_payment(payment["id"], dispute_id=str(dispute.get("id") or "")[:255], dispute_status="open",
+                              dispute_credits_taken=payment["dispute_credits_taken"] + taken,
+                              status_before_hold=before)  # fmt: skip
+    if account["status"] != "suspended":
+        await repo.update(account_id, status="suspended")
+    await audit(request, SERVICE, "billing.dispute_opened", account_id,
+                details={"payment": payment["id"], "dispute": dispute.get("id"), "reason": dispute.get("reason"),
+                         "credits_held": taken})  # fmt: skip
+    await request.app.state.mailer.notify(account, "account_on_hold", str(dispute.get("id") or payment["id"]))
+    return account_id
+
+
+async def _dispute_closed(request: Request, dispute: dict[str, Any], event: dict[str, Any]) -> str | None:
+    """Won (or withdrawn): the hold is lifted and held credits returned. Lost: the hold stays for the operator."""
+    payment = await _payment_for(request, await _dispute_charge(request, dispute))
+    if payment is None or payment["dispute_status"] != "open":
+        return payment["account_id"] if payment else None
+    repo, account_id = request.app.state.subscribers, payment["account_id"]
+    won = dispute.get("status") in ("won", "warning_closed")
+    if not won:
+        await repo.update_payment(payment["id"], dispute_status="lost")
+        await audit(request, SERVICE, "billing.dispute_lost", account_id,
+                    details={"payment": payment["id"], "dispute": dispute.get("id")})  # fmt: skip
+        return account_id
+    if payment["dispute_credits_taken"]:
+        await request.app.state.credits.add(account_id, payment["dispute_credits_taken"], kind="reversal",
+                                            detail=f"dispute closed in your favour ({payment['id']})")  # fmt: skip
+    await repo.update_payment(payment["id"], dispute_status="won", dispute_credits_taken=0)
+    still_open = [p for p in await repo.payments(account_id) if p["dispute_status"] == "open"]
+    account = await repo.get(account_id)
+    restore = payment["status_before_hold"]
+    if account and not still_open and account["status"] == "suspended":
+        if not restore:  # this dispute arrived while another hold was on: return to what that one remembered
+            restore = next((p["status_before_hold"] for p in await repo.payments(account_id)
+                            if p["status_before_hold"]), "active")  # fmt: skip
+        account = await repo.update(account_id, status=restore)
+        for p in await repo.payments(account_id):
+            if p["status_before_hold"]:
+                await repo.update_payment(p["id"], status_before_hold="")
+        if account:
+            await request.app.state.mailer.notify(account, "hold_lifted", str(dispute.get("id") or payment["id"]))
+    await audit(request, SERVICE, "billing.dispute_won", account_id,
+                details={"payment": payment["id"], "dispute": dispute.get("id"), "restored": restore or None})  # fmt: skip
+    return account_id

@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.49.0] — Phase 49: Refunds and disputes
+
+### Added
+- **Refunds** (`charge.refunded`):
+  - for a credit pack, the credits bought with the refunded part are taken back (a partial
+    refund takes back its share). Credits already spent can't be taken back: the balance never
+    goes below zero, and the shortfall is recorded;
+  - for a subscription payment, the refund is recorded and the customer emailed. Access is
+    unchanged: cancelling the subscription in Stripe ends it as usual.
+- **Disputes / chargebacks** (`charge.dispute.created`, `charge.dispute.closed`):
+  - the account is put **on hold**: read-only, cases kept, sign-in refused with "contact
+    support";
+  - the payment's credits are held back, and the customer is emailed kindly in case it was a
+    mistake;
+  - subscription changes arriving during the hold don't lift it;
+  - **won** (or withdrawn): the hold is lifted, the account returns to its earlier status and the
+    credits are returned, with an email;
+  - **lost**: the hold stays, and the Business page asks the operator to decide.
+- Business page: open and lost disputes under "Needs attention"; refunds and disputes for the
+  period; each account's payments with refund and dispute state.
+- Emails: refund issued, account on hold, account active again.
+- New table `billing_payments` (migration 0023). Credit ledger entries of kind `reversal`.
+- Stripe webhook: also send `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`.
+
 ## [1.48.0] — Phase 48: Account emails and password resets
 
 ### Added

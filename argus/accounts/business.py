@@ -53,7 +53,8 @@ def _week(day: datetime) -> datetime:
 
 
 def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, plan_prices: dict[str, Any],
-            pack_prices: dict[int, Any], days: int, trial_days: int, now: datetime | None = None) -> dict[str, Any]:  # fmt: skip
+            pack_prices: dict[int, Any], days: int, trial_days: int, now: datetime | None = None,
+            payments: list[dict[str, Any]] | None = None) -> dict[str, Any]:  # fmt: skip
     now = now or datetime.now(timezone.utc)
     by_id = {a["id"]: a for a in accounts}
 
@@ -134,6 +135,22 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
                   if a["locked_until"] and datetime.fromisoformat(a["locked_until"]) > now]  # fmt: skip
     attention += [row(a, "out of credits") for a in customers if a["allowance_month"] == month
                   and a["allowance_remaining"] == 0 and a["purchased_credits"] == 0]  # fmt: skip
+    payments = payments or []
+    for status, why in (("open", "payment disputed"), ("lost", "dispute lost: decide whether to lift the hold")):
+        flagged = {p["account_id"] for p in payments if p["dispute_status"] == status}
+        # a lost dispute only needs a decision while the account is still on hold
+        attention += [row(by_id[i], why) for i in sorted(flagged) if i in by_id
+                      and (status == "open" or by_id[i]["status"] == "suspended")]  # fmt: skip
+    recent = [p for p in payments if p["updated_at"] and datetime.fromisoformat(p["updated_at"]) >= start]
+    refunds: dict[str, int] = defaultdict(int)
+    for p in recent:
+        if p["refunded"]:
+            refunds[p["currency"] or "?"] += p["refunded"]
+    money_back = {"refunds": sum(1 for p in recent if p["refunded"]), "refunded": dict(refunds),
+                  "disputes_opened": sum(1 for p in recent if p["dispute_status"]),
+                  "disputes_open": sum(1 for p in payments if p["dispute_status"] == "open"),
+                  "disputes_won": sum(1 for p in recent if p["dispute_status"] == "won"),
+                  "disputes_lost": sum(1 for p in recent if p["dispute_status"] == "lost")}  # fmt: skip
 
     return {
         "period_days": days,
@@ -151,4 +168,5 @@ def summary(accounts: list[dict[str, Any]], ledger: list[dict[str, Any]], *, pla
                     "top_accounts": [{"id": k, "email": by_id[k]["email"] if k in by_id else k, "credits": v}
                                      for k, v in top]},
         "attention": attention,
+        "refunds_and_disputes": money_back,
     }  # fmt: skip

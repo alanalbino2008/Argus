@@ -294,7 +294,8 @@ async def get_account(account_id: str, request: Request, _: Principal = Depends(
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
     return {**account, "device_list": await repo.devices(account_id),
-            "emails": await request.app.state.account_mail.for_account(account_id)}  # fmt: skip
+            "emails": await request.app.state.account_mail.for_account(account_id),
+            "payments": await repo.payments(account_id, limit=50)}  # fmt: skip
 
 
 @router.patch("/{account_id}")

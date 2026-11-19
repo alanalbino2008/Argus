@@ -302,8 +302,9 @@ every Argus Personal installation needs the new public key.
    Professional) and, for credit packs, products with **one-off** prices.
 2. Add a webhook endpoint `https://accounts.example.com/api/billing/webhook` for the events
    `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
-   `customer.subscription.created`, `customer.subscription.updated` and
-   `customer.subscription.deleted`.
+   `customer.subscription.created`, `customer.subscription.updated`,
+   `customer.subscription.deleted`, and for refunds and disputes `charge.refunded`,
+   `charge.dispute.created` and `charge.dispute.closed`.
 3. Turn on the **customer portal** (Settings → Billing → Customer portal) so customers can update
    their card, see invoices, change plan and cancel.
 4. Set on the account service:

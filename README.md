@@ -501,6 +501,9 @@ the addresses published on a website) and it follows the money.
 - **Account emails**: welcome, payment received or failed, cancellation, credits added, trial
   reminders (with one-click unsubscribe), and "Forgot your password?"
   ([`docs/explained/48-account-emails.md`](docs/explained/48-account-emails.md)).
+- **Refunds and disputes**: refunding a credit pack takes back its credits; a chargeback puts the
+  account on hold until the dispute is settled
+  ([`docs/explained/49-refunds-and-disputes.md`](docs/explained/49-refunds-and-disputes.md)).
 
 **Argus Personal and Argus accounts** (subscription-ready): Argus can run on an investigator's own
 laptop (`argus --personal`), with cases kept on that computer.

@@ -49,7 +49,7 @@ async def business_summary(request: Request, days: int = Query(30, ge=7, le=365)
     ledger = await request.app.state.credits.since(now - timedelta(days=days))
     plans, packs = await _prices(settings)
     out = business.summary(accounts, ledger, plan_prices=plans, pack_prices=packs, days=days,
-                           trial_days=settings.trial_days, now=now)  # fmt: skip
+                           trial_days=settings.trial_days, now=now, payments=await repo.payments(limit=10_000))  # fmt: skip
     out["payments_enabled"] = stripe.enabled(settings)
     return out
 

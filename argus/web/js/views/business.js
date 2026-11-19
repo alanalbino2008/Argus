@@ -55,12 +55,26 @@ function sourceBars(rows) {
     <td class="mono" style="text-align:right;width:70px">${r.credits}</td></tr>`)}</tbody></table>`;
 }
 
+function refundsLine(r) {
+  if (!r) return "";
+  const amounts = Object.entries(r.refunded).map(([cur, amt]) => money(amt, cur === "?" ? null : cur)).join(" + ");
+  return html`<div class="section-title" style="margin-top:12px">Refunds and disputes</div>
+    <p class="small" style="margin:0">${r.refunds ? `${r.refunds} refund${r.refunds === 1 ? "" : "s"} (${amounts})` : "No refunds"} in this period ·
+      ${r.disputes_open ? html`<b style="color:var(--sev-critical)">${r.disputes_open} dispute${r.disputes_open === 1 ? "" : "s"} open</b>` : "no open disputes"}${r.disputes_won || r.disputes_lost ? ` · ${r.disputes_won} won, ${r.disputes_lost} lost` : ""}</p>
+    <p class="muted small" style="margin:4px 0 0">Answer disputes in Stripe's dashboard (Payments → Disputes) with your evidence. Argus puts the account on hold meanwhile and lifts it if you win.</p>`;
+}
+
+const PAY_STATE = (p) => p.dispute_status === "open" ? html`<span class="pill critical">disputed</span>`
+  : p.dispute_status === "lost" ? html`<span class="pill critical">dispute lost</span>`
+  : p.dispute_status === "won" ? html`<span class="pill ok">dispute won</span>`
+  : p.refunded ? html`<span class="pill warn">${p.refunded >= p.amount ? "refunded" : "part refunded"}</span>` : html`<span class="pill">paid</span>`;
+
 function attentionCard(rows) {
   return html`<div class="card card-pad">
     <div class="card-head"><div><h2>Needs attention</h2><p class="muted small">Customers to help or follow up with.</p></div></div>
     ${rows.length ? html`<table class="table"><tbody>${rows.map((a) => html`<tr class="clickable" data-open="${a.id}">
       <td><b>${a.email}</b><div class="muted small">${PLAN[a.plan] || a.plan}</div></td>
-      <td><span class="pill ${a.why === "payment failing" || a.why.startsWith("locked") ? "warn" : ""}">${a.why}</span></td>
+      <td><span class="pill ${a.why.startsWith("dispute") || a.why === "payment disputed" ? "critical" : a.why === "payment failing" || a.why.startsWith("locked") ? "warn" : ""}">${a.why}</span></td>
       <td class="muted small">${a.valid_until ? formatDay(a.valid_until) : ""}</td></tr>`)}</tbody></table>`
       : html`<p class="muted">${ico("check")} Nothing needs attention.</p>`}
   </div>`;
@@ -97,6 +111,12 @@ function detailCard() {
         ${(a.device_list || []).length ? html`<table class="table"><tbody>${a.device_list.map((d) => html`<tr style="${d.revoked ? "opacity:.5" : ""}">
           <td>${d.name || d.device_id.slice(0, 10)}<div class="muted small">last seen ${timeAgo(d.last_seen)}</div></td>
           <td class="actions">${d.revoked ? html`<span class="pill">signed out</span>` : html`<button class="btn sm ghost danger" data-act="device-out" data-id="${d.device_id}">Sign out</button>`}</td></tr>`)}</tbody></table>` : html`<p class="muted small">Never signed in.</p>`}
+        ${(a.payments || []).length ? html`<div class="section-title" style="margin-top:12px">Refunds and disputes</div>
+          ${a.status === "suspended" ? html`<p class="muted small" style="margin:0 0 6px">On hold. Once a dispute is settled (or if you decide to), set the status back above.</p>` : ""}
+          <table class="table"><tbody>${a.payments.slice(0, 10).map((p) => html`<tr>
+            <td class="muted small">${formatDate(p.created_at)}</td>
+            <td class="small">${p.kind === "credits" ? `${p.credits} credits` : "subscription"} · ${money(p.amount, p.currency || null)}</td>
+            <td>${PAY_STATE(p)}${p.refund_credits_taken || p.dispute_credits_taken ? html`<div class="muted small">${p.refund_credits_taken + p.dispute_credits_taken} credits taken back</div>` : ""}</td></tr>`)}</tbody></table>` : ""}
         <div class="section-title" style="margin-top:12px">Emails</div>
         <p class="muted small" style="margin:0 0 6px">Reminder emails: <b>${a.reminder_emails ? "on" : "off (unsubscribed)"}</b>. Emails about the account itself are always sent.</p>
         ${(a.emails || []).length ? html`<table class="table"><tbody>${a.emails.slice(0, 10).map((m) => html`<tr>
@@ -172,6 +192,7 @@ function render() {
       <div class="card card-pad">
         <div class="card-head"><div><h2>Credit packs sold</h2><p class="muted small">Last ${d.period_days} days: <b>${d.credits.bought}</b> credits bought${packRevenue.length && packCurrency ? `, about ${money(packRevenue.reduce((s, p) => s + p.revenue, 0), packCurrency)} at today's prices` : ""}.</p></div></div>
         ${packs.length ? html`<table class="table"><thead><tr><th>Pack</th><th>Sold</th><th>Takings</th></tr></thead><tbody>${packs.map((p) => html`<tr><td>${p.credits} credits</td><td>${p.sold}</td><td>${money(p.revenue, p.currency)}</td></tr>`)}</tbody></table>` : html`<p class="muted">No credit packs sold in this period.</p>`}
+        ${refundsLine(d.refunds_and_disputes)}
         <p class="muted small" style="margin-top:8px">Stripe's dashboard is the record of what was actually paid, refunded and paid out; these figures are for steering.</p>
       </div>
     </div>
