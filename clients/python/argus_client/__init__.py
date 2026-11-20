@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.69.0"
+__version__ = "1.70.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -252,6 +252,10 @@ class ArgusClient:
 
     def fingerprint_watches(self) -> list[dict[str, Any]]:
         return self.get("/api/fingerprint-watches")
+
+    def case_report(self, case_id: str) -> bytes:
+        """The whole case as one self-contained HTML file (opens offline; loads nothing, runs no scripts)."""
+        return self.request("GET", f"/api/cases/{case_id}/report.html", raw=True).content
 
     def saved_queries(self) -> list[dict[str, Any]]:
         return self.get("/api/saved-queries")

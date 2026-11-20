@@ -153,6 +153,7 @@ function renderCase() {
           <button class="btn sm" data-act="image-search" title="Where else a picture appears on the web">${ico("search")}Reverse image search</button>
           <button class="btn sm" data-act="case-scan">${ico("search")}Scan for this case</button>
           <button class="btn sm" data-act="safety">${ico("shield")}Safety</button>
+          <button class="btn sm" data-act="case-report" title="The whole case in one HTML file that opens offline in any browser">${ico("report")}Case report</button>
           <button class="btn sm" data-act="export">${ico("download")}Evidence bundle</button>
           <select class="select" data-act-select="status" aria-label="Case status" style="max-width:130px">${["open", "closed", "archived"].map((s) => html`<option value="${s}" ${c.status === s ? "selected" : ""}>${s}</option>`)}</select>` : ""}
       </div>
@@ -512,6 +513,7 @@ export function initCases(el, actions) {
         return refresh();
       }
       if (act === "case-scan") return actionsRef.newInvestigation({ caseId: current.id, caseTitle: current.title, egress: current.egress, anonymous: anonymous(current) });
+      if (act === "case-report") return download(`/api/cases/${enc(current.id)}/report.html`, `argus-case-${current.id}-report.html`);
       if (act === "export") return download(`/api/cases/${enc(current.id)}/export`, `argus-case-${current.id}.zip`);
       if (act === "file") return download(`/api/evidence/${enc(id)}/files/${enc(btn.dataset.file)}?download=true`, btn.dataset.file);
       if (act === "tsr") return download(`/api/evidence/${enc(id)}/timestamp.tsr`, `${id}.tsr`);

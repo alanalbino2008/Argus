@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.70.0] — Phase 70: The case report, in one file
+
+### Added
+- **Case report.** On a case, the **Case report** button downloads the whole case as a single
+  HTML file for an editor, a lawyer, a client, a court or the file. It contains:
+  - the case's purpose, status, handling, tags and summary, with key figures;
+  - the **network** as a chart (people, organisations and their links, coloured by type, with
+    dashed lines for likely and possible links), the most connected entities and every link with
+    its confidence and dates;
+  - the **timeline**, oldest first: events, evidence, scans, and the dated facts inside the scans;
+  - the **evidence**: each capture's files with their SHA-256, the RFC 3161 timestamp, the chain
+    of custody, and an **integrity check made at export** (tampered evidence shows as a problem);
+  - the scans and the notes.
+- **Safe to open anywhere, for years.** The report is one file. Styles are inline, the chart is
+  inline SVG, and its Content-Security-Policy forbids scripts and every outside request, so opening
+  it never contacts anyone, a subject's server included. Captured addresses are text, not links.
+  It prints cleanly and reads on a phone.
+- **Provable.** The report's SHA-256 is returned in `X-Argus-Report-SHA256` and recorded in the audit
+  log; each piece of evidence listed gets a `reported` entry in its chain of custody. Protected
+  people stay unnamed, and the files themselves stay in the evidence bundle, whose hashes match.
+- API: `GET /api/cases/{id}/report.html` (viewers and up; restricted cases stay restricted).
+  Python client: `case_report()`. Helm chart 0.60.0.
+
 ## [1.69.0] — Phase 69: Fingerprint watches
 
 ### Added

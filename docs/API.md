@@ -222,6 +222,13 @@ curl -X POST https://argus.example.com/api/cases/case_…/watches \
 Each inspection, analysis and clean copy is written to the evidence's chain of custody; the
 evidence itself is never changed.
 
+## Case report
+
+* `GET /api/cases/{id}/report.html` (viewer): the whole case as one self-contained HTML file:
+  summary, network chart (inline SVG), timeline with the facts from its scans, evidence (file
+  hashes, chain of custody, integrity checked at export), scans and notes. No scripts, nothing
+  fetched. The file's SHA-256 is in `X-Argus-Report-SHA256` and in the audit log (`case.report`).
+
 ## Case timeline and map
 
 * `GET /api/cases/{id}/timeline`: every dated entry, oldest first, each with `at`, `kind`
