@@ -17,6 +17,9 @@ let pivots = [];
 // Argus Query Language: the last query, its result or error, the syntax help and link analysis.
 let query = { text: "", result: null, error: null, busy: false };
 let queryHelp = null;
+let savedQueries = null; // the workspace's saved queries (loaded with the Query tab)
+let hunt = null; // { text, busy, result, error } for a hunt across investigations
+let saving = false; // the save form is open
 let links = null; // { for: investigation id, data } from /links
 let communityColours = false;
 // Text that looks like a query rather than a name to find (operators, arrows, "path from", "*").
@@ -91,6 +94,21 @@ export function initGraphView(appActions) {
   });
   on($("#pane-query"), "click", "[data-query-all]", () => highlightQuery());
   on($("#pane-query"), "click", "[data-query-clear]", () => { $("#graph-search").value = ""; clearQuery(); });
+  on($("#pane-query"), "click", "[data-query-hunt]", () => runHunt(query.text));
+  on($("#pane-query"), "click", "[data-query-save]", () => { saving = !saving; renderQuery(); });
+  on($("#pane-query"), "submit", "form[data-save-form]", (e, form) => { e.preventDefault(); saveQuery(form); });
+  on($("#pane-query"), "click", "[data-saved-run]", (_e, el) => {
+    const sq = savedQueries?.find((q) => q.id === el.dataset.savedRun);
+    if (sq) { $("#graph-search").value = sq.query; runQuery(sq.query); }
+  });
+  on($("#pane-query"), "click", "[data-saved-hunt]", (_e, el) => {
+    const sq = savedQueries?.find((q) => q.id === el.dataset.savedHunt);
+    if (sq) runHunt(sq.query);
+  });
+  on($("#pane-query"), "click", "[data-saved-alert]", (_e, el) => toggleSavedAlert(el.dataset.savedAlert));
+  on($("#pane-query"), "click", "[data-saved-delete]", (_e, el) => deleteSaved(el.dataset.savedDelete));
+  on($("#pane-query"), "click", "[data-hunt-open]", (_e, el) => actions.open(el.dataset.huntOpen, { view: "graph" }));
+  on($("#pane-query"), "click", "[data-hunt-close]", () => { hunt = null; renderQuery(); });
   on($("#pane-intel"), "click", "[data-community-colours]", () => toggleCommunityColours());
   on($("#pane-intel"), "click", "[data-community]", (_e, el) => {
     const index = Number(el.dataset.community);
@@ -120,7 +138,7 @@ export function initGraphView(appActions) {
   onState("graph", () => { renderLegend(); renderEmpty(); });
   onState("entities-refreshed", () => renderDetails());
   onState("reset", () => {
-    selected = null; pivotsFor = null; links = null; communityColours = false;
+    selected = null; pivotsFor = null; links = null; communityColours = false; hunt = null; saving = false; savedQueries = null;
     query = { text: "", result: null, error: null, busy: false };
     renderAll();
   });
@@ -181,6 +199,12 @@ async function ensureQueryHelp() {
 function renderQuery() {
   const pane = $("#pane-query");
   if (!pane) return;
+  if (hunt) { setHTML(pane, renderHunt()); return; }
+  renderQueryMain(pane);
+  pane.insertAdjacentHTML("beforeend", String(renderSaved()));
+}
+
+function renderQueryMain(pane) {
   const { text, result, error, busy } = query;
   if (busy) { setHTML(pane, html`<p class="muted small">Running <code>${text}</code>…</p>`); return; }
   if (error) {
@@ -197,7 +221,10 @@ ${caret}</pre>` : ""}</div>${queryExamples()}`);
     return;
   }
   const head = html`<div class="query-meta"><span><b>${result.count}</b> ${result.kind === "paths" ? "reachable" : "matches"} <span class="muted small">· ${result.elapsed_ms} ms</span></span>
-    <span><button class="btn sm" data-query-all title="Highlight all results">Show all</button> <button class="btn sm" data-query-clear>Clear</button></span></div>`;
+    <span><button class="btn sm" data-query-all title="Highlight all results">Show all</button> <button class="btn sm" data-query-clear>Clear</button></span></div>
+    <div class="query-actions"><button class="btn sm" data-query-hunt title="Run this query on every investigation">${ico("search")}Hunt across investigations</button>
+      <button class="btn sm" data-query-save>${ico("plus")}Save</button></div>
+    ${saving ? saveForm() : ""}`;
   let body = "";
   if (result.kind === "count") {
     body = html`<p class="muted small">Matching entities are highlighted on the graph.</p>`;
@@ -215,7 +242,7 @@ ${caret}</pre>` : ""}</div>${queryExamples()}`);
       <div class="section-title" style="margin-top:12px">Results</div>` : ""}
       ${result.rows.length ? result.rows.map((r) => html`<div class="list-row clickable" data-select="${r.id}">${entityIcon(r.type)}
         <div class="list-main"><div class="list-title">${r.label}</div><div class="muted small">${r.type.replaceAll("_", " ")}${r.key_score != null ? ` · key ${r.key_score}` : ""}</div></div>
-        <span class="muted small">${r.degree} links</span></div>`)
+        <span class="muted small">${r.degree} link${r.degree === 1 ? "" : "s"}</span></div>`)
         : html`<p class="muted small">Nothing matches. Check the field names, or try a broader filter.</p>`}
       ${result.truncated ? html`<p class="muted small">Showing ${result.rows.length} of ${result.count}. Add <code>| limit n</code> or narrow the filter.</p>` : ""}`;
   }
@@ -228,6 +255,93 @@ function queryExamples() {
     ${queryHelp.examples.map((ex) => html`<button class="query-example" data-example="${ex.query}"><code>${ex.query}</code><span>${ex.explains}</span></button>`)}
     <details class="more" style="margin-top:10px"><summary class="muted small">Syntax</summary>
       ${queryHelp.syntax.map((s) => html`<div class="flag" style="display:block"><code>${s.form}</code><div class="muted small">${s.means}</div></div>`)}</details>`;
+}
+
+function saveForm() {
+  return html`<form class="save-query" data-save-form>
+    <input class="input" name="name" maxlength="120" placeholder="Name, e.g. Exploited CVEs" required>
+    <label class="small"><input type="checkbox" name="alert"> Alert when a scan finds new matches</label>
+    <select class="select" name="severity" aria-label="Alert severity">
+      <option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="critical">Critical</option>
+    </select>
+    <button class="btn sm primary" type="submit">Save query</button></form>`;
+}
+
+let savedLoading = false;
+async function loadSaved() {
+  if (savedLoading) return;
+  savedLoading = true;
+  try { savedQueries = await api.get("/api/saved-queries"); } catch { savedQueries = []; } finally { savedLoading = false; }
+  renderQuery();
+}
+
+function renderSaved() {
+  if (savedQueries === null) { loadSaved(); return html`<p class="muted small">Loading saved queries…</p>`; }
+  if (!savedQueries.length) return html`<div class="section"><div class="section-title">Saved queries</div><p class="muted small">Save a query to reuse it, share it with your team, hunt with it, or be alerted when a scan finds something new.</p></div>`;
+  return html`<div class="section"><div class="section-title">Saved queries</div>
+    ${savedQueries.map((q) => html`<div class="saved-query">
+      <div class="list-main"><div class="list-title">${q.name}</div>
+        ${q.alert ? html`<span class="pill ${q.severity === "critical" || q.severity === "high" ? "high" : "accent"}" title="Alerts when a scan finds new matches">alerts · ${q.severity}</span>` : ""}
+        <code class="small">${q.query}</code>
+        ${q.alerts_raised ? html`<div class="muted small">${q.alerts_raised} alert${q.alerts_raised === 1 ? "" : "s"} raised · last ${timeAgo(q.last_alert_at)}</div>` : ""}</div>
+      <div class="saved-actions">
+        <button class="btn sm" data-saved-run="${q.id}" title="Run on this investigation">Run</button>
+        <button class="btn sm" data-saved-hunt="${q.id}" title="Run on every investigation">Hunt</button>
+        <button class="btn sm" data-saved-alert="${q.id}" title="${q.alert ? "Stop alerting" : "Alert when a scan finds new matches"}">${q.alert ? "Mute" : "Alert"}</button>
+        <button class="btn sm" data-saved-delete="${q.id}" title="Delete">✕</button></div></div>`)}</div>`;
+}
+
+async function saveQuery(form) {
+  const data = new FormData(form);
+  try {
+    await api.post("/api/saved-queries", { name: String(data.get("name") || "").trim(), query: query.text, alert: data.get("alert") === "on", severity: data.get("severity") });
+    saving = false;
+    toast("Query saved", "success");
+    await loadSaved();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function toggleSavedAlert(id) {
+  const sq = savedQueries?.find((q) => q.id === id);
+  if (!sq) return;
+  try { await api.patch(`/api/saved-queries/${enc(id)}`, { alert: !sq.alert }); await loadSaved(); } catch (err) { toast(err.message, "error"); }
+}
+
+async function deleteSaved(id) {
+  const sq = savedQueries?.find((q) => q.id === id);
+  if (!sq || !confirm(`Delete the saved query “${sq.name}”?`)) return;
+  try { await api.del(`/api/saved-queries/${enc(id)}`); await loadSaved(); } catch (err) { toast(err.message, "error"); }
+}
+
+// ------------------------------------------------------------------ hunts across investigations
+async function runHunt(text) {
+  if (!text) return;
+  hunt = { text, busy: true, result: null, error: null };
+  showPane("query");
+  renderQuery();
+  try {
+    const result = await api.post("/api/hunt", { query: text, investigations: 50 });
+    if (hunt?.text === text) hunt = { text, busy: false, result, error: null };
+  } catch (err) {
+    if (hunt?.text === text) hunt = { text, busy: false, result: null, error: err.message };
+  }
+  renderQuery();
+}
+
+function renderHunt() {
+  const { text, busy, result, error } = hunt;
+  const head = html`<div class="query-meta"><span><b>Hunt</b> <code class="small">${text}</code></span><button class="btn sm" data-hunt-close>Back</button></div>`;
+  if (busy) return html`${head}<p class="muted small">Searching your investigations…</p>`;
+  if (error) return html`${head}<div class="query-error">${error}</div>`;
+  const r = result;
+  return html`${head}
+    <p class="small"><b>${r.investigations_matched}</b> of ${r.investigations_searched} investigations match · ${r.total_matches} matches · ${r.elapsed_ms} ms
+      ${r.partial ? html`<br><span class="muted">Stopped at the time limit: the oldest investigations were not searched.</span>` : ""}</p>
+    ${r.results.length ? r.results.map((hit) => html`<div class="list-row clickable" data-hunt-open="${hit.investigation_id}">
+      <div class="list-main"><div class="list-title">${hit.target}</div>
+        <div class="muted small">${timeAgo(hit.created_at)} · ${hit.rows.map((row) => row.label).join(", ")}${hit.count > hit.rows.length ? "…" : ""}</div></div>
+      <span class="pill">${hit.count}</span></div>`)
+      : html`<p class="muted small">No investigation matches.</p>`}`;
 }
 
 // ------------------------------------------------------------------ link analysis

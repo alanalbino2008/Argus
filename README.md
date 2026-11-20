@@ -117,7 +117,9 @@ type:vulnerability intel.kev:* | sort pagerank desc | limit 10
 
 Matches light up on the graph. Link analysis ranks every entity by **PageRank** (influence),
 **betweenness** (the brokers tying clusters together) and **articulation** (single points of
-failure), and splits the graph into **clusters** you can colour the graph by. See
+failure), and splits the graph into **clusters** you can colour the graph by. **Save** a query to
+share it with your team, **hunt** with it across every investigation, or let it **alert** you
+whenever a new scan matches something the last one didn't. See
 [`docs/explained/59-query-language-and-link-analysis.md`](docs/explained/59-query-language-and-link-analysis.md).
 
 ### Deep Recon — finding what is hidden

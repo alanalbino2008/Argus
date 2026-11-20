@@ -118,6 +118,9 @@ events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then 
 | `POST /api/investigation/{id}/query` | Run an AQL query: `{"query": "type:domain -[RESOLVES_TO]-> ip \| limit 20"}` |
 | `GET /api/investigation/{id}/links` | Link analysis: key entities, brokers, single points of failure, clusters, `community_of` |
 | `GET /api/query/help` | Syntax summary and example queries |
+| `POST /api/hunt` | Run a query across recent investigations: `{"query": "...", "investigations": 25}` |
+| `GET/POST /api/saved-queries` · `PATCH/DELETE /api/saved-queries/{id}` | Saved queries; `alert: true` checks every finished scan |
+| `POST /api/saved-queries/{id}/hunt` | Hunt with a saved query |
 
 A query returns `kind` (`nodes`, `paths`, `groups` or `count`), `count`, `rows`, `groups`,
 `node_ids` and `edge_ids` (to highlight), `paths` and `elapsed_ms`. A query that cannot be

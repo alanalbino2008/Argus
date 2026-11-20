@@ -87,6 +87,7 @@ from argus.api.personal_routes import licence_gate
 from argus.api.personal_routes import router as personal_router
 from argus.api.playbook_routes import RUNS as PLAYBOOK_RUNS
 from argus.api.playbook_routes import router as playbook_router
+from argus.api.query_routes import router as query_router
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
@@ -107,6 +108,7 @@ from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import EgressRoute, Settings, get_settings
 from argus.demo import DEMO_TARGET, load_demo
+from argus.intel import hunt as hunting
 from argus.intel.account_watch import AccountWatcher
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
@@ -152,6 +154,7 @@ from argus.storage.rating_repo import RatingRepository
 from argus.storage.remediation_repo import RemediationRepository
 from argus.storage.report_repo import ReportRepository
 from argus.storage.repository import ACTIVE_STATUSES
+from argus.storage.saved_query_repo import SavedQueryRepository
 from argus.storage.schedule_repo import ScheduleRepository
 from argus.storage.security_repo import ApiKeyRepository, AuditLog, TicketStore
 from argus.storage.subscriber_repo import (
@@ -280,6 +283,7 @@ async def lifespan(app: FastAPI):
     app.state.credits = CreditRepository(db)
     app.state.teams = TeamRepository(db)
     app.state.playbooks = PlaybookRepository(db)
+    app.state.saved_queries = SavedQueryRepository(db)
     app.state.playbook_scan = _playbook_scan
     app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
 
@@ -534,6 +538,7 @@ Python client (`clients/python`) does it for you.
 
 API_TAGS = [
     {"name": "investigations", "description": "Launch scans; read graphs, attack paths, people and exports."},
+    {"name": "query", "description": "Argus Query Language: saved queries, hunts across investigations, query alerts."},
     {"name": "ratings", "description": "A-F security ratings with factor breakdowns, benchmarks and history."},
     {"name": "supplier risk", "description": "The supplier register, passive assessments and the risk matrix."},
     {
@@ -614,6 +619,7 @@ app.include_router(owner_console_router)
 app.include_router(connect_router)
 app.include_router(personal_router)
 app.include_router(analyst_router)
+app.include_router(query_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
 app.include_router(backup_router)
@@ -843,6 +849,9 @@ async def launch_scan(
     )
     if monitor_id:
         task.add_done_callback(lambda _t: _spawn(_evaluate_drift(app, engine), f"drift-{engine.investigation_id}"))
+    task.add_done_callback(
+        lambda _t: _spawn(_evaluate_saved_queries(app, engine), f"saved-queries-{engine.investigation_id}")
+    )
     SCAN_TASKS[engine.investigation_id] = task
     metrics.SCANS_STARTED.labels("monitor" if monitor_id else "manual").inc()
     return engine
@@ -963,6 +972,35 @@ async def _evaluate_supplier(app: FastAPI, inv: Investigation, graph: Intelligen
         workspace_id=inv.workspace_id,
     )  # fmt: skip
     return True
+
+
+async def _evaluate_saved_queries(app: FastAPI, engine: ArgusEngine) -> None:
+    """After any completed scan: the workspace's alerting saved queries, alerting on new matches."""
+    inv = engine.investigation
+
+    async def raise_alert(saved: dict[str, Any], new: dict[str, str], total: int, previous_id: str | None):
+        alert = await app.state.monitors.create_alert(
+            monitor_id=inv.monitor_id,
+            investigation_id=inv.id,
+            previous_investigation_id=previous_id or inv.id,
+            target=inv.config.target,
+            severity=saved["severity"],
+            headline=hunting.alert_headline(saved, len(new), inv.config.target),
+            summary=hunting.alert_summary(saved, new, total),
+            workspace_id=inv.workspace_id,
+            public_url=app.state.settings.public_url,
+        )
+        metrics.ALERTS_RAISED.labels(saved["severity"]).inc()
+        await app.state.audit.record(
+            SCHEDULER, "saved_query.alert", alert["id"],
+            details={"saved_query": saved["id"], "new_matches": len(new)}, workspace_id=inv.workspace_id,
+        )  # fmt: skip
+        return alert
+
+    await hunting.check_after_scan(
+        investigation=inv, graph=engine.graph, repo=app.state.repo, saved_queries=app.state.saved_queries,
+        raise_alert=raise_alert,
+    )  # fmt: skip
 
 
 async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:

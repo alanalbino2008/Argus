@@ -69,8 +69,14 @@ def alert_event(alert: dict[str, Any], workspace: dict[str, Any], public_url: st
             "new_paths": paths,
             "url": _link(public_url, _alert_path(summary, workspace.get("id"), alert["investigation_id"])),
             **{key: summary[key] for key in ("exposure", "remediation") if summary.get(key)},
+            **({"saved_query": _saved_query_event(summary["saved_query"])} if summary.get("saved_query") else {}),
         },
     }
+
+
+def _saved_query_event(sq: dict[str, Any]) -> dict[str, Any]:
+    """What a query alert tells a webhook: which query, and a sample of what it newly matched."""
+    return {k: sq.get(k) for k in ("id", "name", "query", "new_count", "total_count", "new_matches")}
 
 
 def probe_event(workspace: dict[str, Any], channel_name: str, by: str) -> dict[str, Any]:

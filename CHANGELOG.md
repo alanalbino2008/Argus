@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.61.0] — Phase 61: Saved queries, hunts and query alerts
+
+### Added
+- **Saved queries**: name an Argus Query Language query and share it with the team (up to 200 per
+  workspace; name, query and description are encrypted at rest when the vault is on). Run it,
+  hunt with it, mute it or delete it from the graph's Query tab.
+- **Hunts**: run any query across the workspace's most recent investigations (25 by default, up to
+  200), newest first. See which investigations match, how many times and with what, and open one
+  with a click. Hunts are bounded by a 25-second budget (`partial` when it runs out) and a
+  per-user rate limit, every graph is queried in a worker thread, and each hunt is audited.
+- **Query alerts**: a saved query marked *alert* runs after every completed scan in its workspace.
+  It raises an alert, with its own severity, when the scan matches something the previous scan of
+  the same target did not. Entity IDs are deterministic, so "new" is exact. The first scan of a
+  target alerts on any match, and `| limit` or `| count` never hide matches from the comparison.
+  Alerts go through the existing outbox: email, webhooks, Slack, Teams, Jira, ServiceNow, Splunk
+  and Sentinel. Webhook events carry `alert.saved_query` (name, query, counts, sample of new
+  matches).
+- **API**: `GET/POST /api/saved-queries`, `PATCH/DELETE /api/saved-queries/{id}`,
+  `POST /api/saved-queries/{id}/hunt`, `POST /api/hunt`. Queries that don't parse are refused with
+  the position of the problem.
+- **Python client**: `query()`, `links()`, `hunt()`, `saved_queries()`, `save_query()`.
+- Database migration 0028 (`saved_queries`). Helm chart 0.51.0.
+
 ## [1.60.0] — Phase 60: Favicon pivoting
 
 ### Added

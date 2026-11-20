@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.60.0"
+__version__ = "1.61.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -214,6 +214,31 @@ class ArgusClient:
 
     def attack_paths(self, investigation_id: str) -> dict[str, Any]:
         return self.get(f"/api/investigation/{investigation_id}/paths")
+
+    def query(self, investigation_id: str, aql: str) -> dict[str, Any]:
+        """Run an Argus Query Language query on one investigation's graph."""
+        return self.post(f"/api/investigation/{investigation_id}/query", {"query": aql})
+
+    def links(self, investigation_id: str) -> dict[str, Any]:
+        """Link analysis: key entities, brokers, single points of failure and clusters."""
+        return self.get(f"/api/investigation/{investigation_id}/links")
+
+    def hunt(self, aql: str, *, investigations: int = 25, include_running: bool = False) -> dict[str, Any]:
+        """Run one query across the workspace's most recent investigations."""
+        return self.post(
+            "/api/hunt", {"query": aql, "investigations": investigations, "include_running": include_running}
+        )
+
+    def saved_queries(self) -> list[dict[str, Any]]:
+        return self.get("/api/saved-queries")
+
+    def save_query(self, name: str, aql: str, *, alert: bool = False, severity: str = "medium",
+                   description: str = "") -> dict[str, Any]:  # fmt: skip
+        """Save a query; with ``alert`` it runs after every scan and alerts on new matches."""
+        return self.post(
+            "/api/saved-queries",
+            {"name": name, "query": aql, "alert": alert, "severity": severity, "description": description},
+        )
 
     def stix(self, investigation_id: str) -> dict[str, Any]:
         """A STIX 2.1 bundle, for threat-intelligence platforms."""

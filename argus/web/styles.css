@@ -528,6 +528,12 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .query-path { font-size: 12.5px; line-height: 1.6; }
 .query-path b { color: var(--text-3); font-weight: 500; }
 .group-bar { height: 6px; border-radius: 3px; background: var(--accent); opacity: .65; }
+.query-actions { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.save-query { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+.save-query label { display: flex; gap: 6px; align-items: center; }
+.saved-query { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); }
+.saved-query code { display: block; color: var(--text-3); word-break: break-word; margin-top: 2px; }
+.saved-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
 .community-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 .floating .select { width: auto; padding-right: 8px; }
 .toolbar .grow { flex: 1; }

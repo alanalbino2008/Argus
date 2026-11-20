@@ -493,8 +493,12 @@ def _any_value(value: Any, test: Callable[[Any], bool]) -> bool:
 
 
 # ----------------------------------------------------------------------------- evaluation
-def run_query(graph: IntelligenceGraph, text: str) -> dict[str, Any]:
-    """Parse and run ``text`` against ``graph``; raises :class:`QueryError` on bad input."""
+def run_query(graph: IntelligenceGraph, text: str, *, collect_ids: bool = False) -> dict[str, Any]:
+    """Parse and run ``text`` against ``graph``; raises :class:`QueryError` on bad input.
+
+    ``collect_ids`` adds ``match_ids``: every matching entity, before ``limit`` or ``count`` shape the
+    rows (what query alerts compare between scans).
+    """
     started = time.perf_counter()
     text = (text or "").strip()
     if not text:
@@ -505,7 +509,10 @@ def run_query(graph: IntelligenceGraph, text: str) -> dict[str, Any]:
     parsed = _Parser(text, context).parse()
 
     result = _run_paths(graph, parsed) if parsed.kind == "path" else _run_chain(graph, parsed)
+    all_ids = sorted(result["_rows"]) if collect_ids else None
     result = _apply_commands(result, parsed.commands, context)
+    if all_ids is not None:
+        result["match_ids"] = all_ids
     result["query"] = text
     result["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 2)
     return result

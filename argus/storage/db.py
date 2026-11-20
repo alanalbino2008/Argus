@@ -806,6 +806,25 @@ class PlaybookRunRow(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SavedQueryRow(Base):
+    """A named Argus Query Language query, optionally checked after every scan (alerting on new matches)."""
+
+    __tablename__ = "saved_queries"
+    __table_args__ = (Index("ix_saved_queries_workspace", "workspace_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"))
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="saved_queries.data"))  # name, query, description
+    alert: Mapped[bool] = mapped_column(Boolean, default=False)
+    severity: Mapped[str] = mapped_column(String(16), default="medium")
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_alert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    alerts_raised: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class CaseItemRow(Base):
     """Something in a case: a note, a person or other entity, a link between two, a scan, an event."""
 
