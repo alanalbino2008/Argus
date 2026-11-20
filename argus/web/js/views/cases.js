@@ -449,6 +449,20 @@ function syncSafety(prefix) {
   if (prefix === "safety") showWarning("#safety-warning", routeWarning(routes, select.value));
 }
 
+/** Open a scan on its graph and select one entity once the scan's graph has arrived. */
+async function showEntity(actions, investigationId, entityId) {
+  await actions.open(investigationId, { view: "graph" });
+  const { selectEntity } = await import("./graphview.js");
+  for (let waited = 0; waited < 20000; waited += 200) {
+    if (state.investigation?.id === investigationId && state.entities.has(entityId)) {
+      if (!selectEntity(entityId)) toast("That entity is no longer in this scan's graph");
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  toast("The scan is taking a while to open: find the entity with the search box");
+}
+
 export function initCases(el, actions) {
   root = el;
   actionsRef = actions;
@@ -467,7 +481,8 @@ export function initCases(el, actions) {
   });
   onState("workspace", () => { cases = null; current = null; });
   on(root, "click", "[data-open-case]", (_e, btn) => openCase(btn.dataset.openCase).catch((err) => toast(err.message, "error")));
-  on(root, "click", "[data-open-scan]", (_e, row) => actions.open(row.dataset.openScan));
+  on(root, "click", "[data-open-scan]", (e, row) => { e.preventDefault(); actions.open(row.dataset.openScan); });
+  on(root, "click", "[data-open-entity]", (e, link) => { e.preventDefault(); showEntity(actions, link.dataset.inv, link.dataset.openEntity); });
   root.addEventListener("change", async (e) => {
     if (e.target.dataset?.actSelect !== "status") return;
     try { await api.patch(`/api/cases/${enc(current.id)}`, { status: e.target.value }); toast(`Case ${e.target.value}`, "success"); } catch (err) { toast(err.message, "error"); }

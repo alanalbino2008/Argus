@@ -19,7 +19,8 @@ from collections import OrderedDict
 from typing import Any
 
 import aiohttp
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
+import anyio
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from argus.api.case_routes import _case, _repo
 from argus.api.deps import WorkspaceContext, audit, in_workspace
@@ -27,6 +28,7 @@ from argus.api.opsec_routes import route_for
 from argus.core.http import DEFAULT_USER_AGENT
 from argus.evidence.inspect import photo_facts
 from argus.intel.account_watch import client
+from argus.intel.fact_timeline import case_facts
 from argus.intel.places import build_places, build_timeline, kml, timeline_csv
 from argus.security.auth import Role
 from argus.security.network import GuardedResolver, configured_proxy_hosts
@@ -78,13 +80,55 @@ async def _scans(request: Request, items: list[dict[str, Any]]) -> list[dict[str
     return scans
 
 
-@router.get("/cases/{case_id}/timeline")
-async def case_timeline(case_id: str, request: Request, ws: WorkspaceContext = VIEWER):
-    """Everything dated in the case, oldest first: events, account changes, evidence, scans, photo dates."""
-    await _case(request, ws, case_id)
+MAX_FACT_SCANS = 20  # the most recent finished scans of a case whose facts go on its timeline
+FINISHED = ("completed", "cancelled", "failed")
+
+
+async def _fact_entries(request: Request, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Dated facts from the case's finished scans, and what changed between them (read-only graphs)."""
+    repo = request.app.state.repo
+    ids = []
+    for item in items:
+        inv_id = (item.get("data") or {}).get("investigation_id") if item["kind"] == "scan" else None
+        if inv_id and inv_id not in ids:
+            ids.append(inv_id)
+    scans = []
+    for inv_id in ids:
+        inv = await repo.get_investigation(inv_id)
+        if inv is None or inv.status.value not in FINISHED:
+            continue
+        scans.append(inv)
+    scans = sorted(scans, key=lambda i: i.created_at)[-MAX_FACT_SCANS:]
+    loaded = []
+    for inv in scans:
+        graph = await repo.load_graph(inv.id, shared=True)  # read-only
+        if graph is not None:
+            loaded.append((inv, graph))
+    return await anyio.to_thread.run_sync(case_facts, loaded) if loaded else []
+
+
+async def _timeline(request: Request, case_id: str, facts: bool) -> list[dict[str, Any]]:
     repo = _repo(request)
     items, captures = await repo.items(case_id), await repo.captures(case_id)
-    return build_timeline(items, captures, await _scans(request, items), await _photos_of(request, captures))
+    entries = build_timeline(items, captures, await _scans(request, items), await _photos_of(request, captures))
+    if facts:
+        entries = sorted(entries + await _fact_entries(request, items), key=lambda e: e["at"])
+    return entries
+
+
+@router.get("/cases/{case_id}/timeline")
+async def case_timeline(
+    case_id: str,
+    request: Request,
+    facts: bool = Query(
+        True, description="Include dated facts found by the case's scans, and what changed between them"
+    ),
+    ws: WorkspaceContext = VIEWER,
+):
+    """Everything dated in the case, oldest first: events, account changes, evidence, scans, photo dates,
+    and the facts inside its scans (registrations, certificates, breaches, accounts, companies...)."""
+    await _case(request, ws, case_id)
+    return await _timeline(request, case_id, facts)
 
 
 @router.get("/cases/{case_id}/places")
@@ -112,9 +156,7 @@ async def export_places(case_id: str, request: Request, ws: WorkspaceContext = V
 @router.get("/cases/{case_id}/timeline.csv")
 async def export_timeline(case_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     await _case(request, ws, case_id)
-    repo = _repo(request)
-    items, captures = await repo.items(case_id), await repo.captures(case_id)
-    entries = build_timeline(items, captures, await _scans(request, items), await _photos_of(request, captures))
+    entries = await _timeline(request, case_id, facts=True)
     await audit(request, ws.principal, "case.export_timeline", case_id, details={"entries": len(entries)})
     return Response(timeline_csv(entries), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="argus-{case_id}-timeline.csv"'})  # fmt: skip

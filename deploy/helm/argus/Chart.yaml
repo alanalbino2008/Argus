@@ -2,8 +2,8 @@ apiVersion: v2
 name: argus
 description: Argus OSINT - reconnaissance, intelligence graph and attack-path analysis, deployed as a highly available service on PostgreSQL
 type: application
-version: 0.55.0
-appVersion: "1.65.0"
+version: 0.56.0
+appVersion: "1.66.0"
 kubeVersion: ">=1.25.0-0"
 keywords: [osint, security, reconnaissance, threat-intelligence]
 home: https://github.com/alanalbino2008/Argus

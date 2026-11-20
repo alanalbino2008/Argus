@@ -220,7 +220,8 @@ def test_the_case_timeline_and_places(client):
     places = client.get(f"/api/cases/{case['id']}/places").json()
     assert {p["kind"] for p in places["places"]} == {"entity", "photo"} and places["tiles"] and places["geocoding"]
     assert places["unplaced"] == [{"id": downing["id"], "type": "address", "label": "10 Downing Street, London"}]
-    custody = [c["action"] for c in client.get(f"/api/evidence/{timeline[-1]['ref']['id']}").json()["custody"]]
+    upload = next(e for e in reversed(timeline) if e["kind"] == "upload")  # facts can be dated in the future
+    custody = [c["action"] for c in client.get(f"/api/evidence/{upload['ref']['id']}").json()["custody"]]
     assert "viewed" not in custody and "inspected" not in custody  # Argus reading dates is not a person viewing
 
     csv_export = client.get(f"/api/cases/{case['id']}/timeline.csv")

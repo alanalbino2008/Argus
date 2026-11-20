@@ -12,8 +12,10 @@ import { state } from "../state.js";
 const TILE = 256;
 const KIND = {
   event: ["accent", "Event"], account: ["warn", "Account change"], capture: ["ok", "Capture"], upload: ["ok", "Evidence added"],
-  scan: ["", "Scan"], photo: ["", "Photo taken"],
+  scan: ["", "Scan"], photo: ["", "Photo taken"], fact: ["accent", "Found in a scan"], change: ["warn", "Change between scans"],
 };
+// Facts keep the precision their source gave: a year is not "1 January at 00:00".
+const PRECISION = { year: "year only", month: "month only", day: "date" };
 const canEdit = () => ["analyst", "admin"].includes(state.workspace?.role);
 
 // ---------------------------------------------------------------------------- timeline
@@ -79,10 +81,12 @@ function drawTimeline(el) {
     </div>
     <div class="muted small" style="display:flex;justify-content:space-between;margin:4px 0 12px"><span>${keys[0] || ""}</span>${tl.bucket ? html`<a href="#" data-tl="all">Showing ${tl.bucket} only · show everything</a>` : html`<span>per ${scale}: click a bar to focus on it</span>`}<span>${keys.at(-1) || ""}</span></div>
     ${[...groups.entries()].map(([day, list]) => html`<div class="tl-day"><div class="section-title">${new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "long", year: "numeric" })}</div>
-      ${list.map((e) => html`<div class="tl-entry"><span class="mono small muted">${e.approximate ? "~" : ""}${new Date(e.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
+      ${list.map((e) => html`<div class="tl-entry"><span class="mono small muted">${PRECISION[e.precision] || `${e.approximate ? "~" : ""}${new Date(e.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`}</span>
         <span class="pill ${KIND[e.kind]?.[0] || ""}">${KIND[e.kind]?.[1] || e.kind}</span>
         <div style="min-width:0"><b>${e.title}</b>${e.detail ? html`<div class="muted small" style="white-space:pre-line">${e.detail.slice(0, 600)}</div>` : ""}
-          <div class="muted small">${e.by ? `by ${e.by}` : ""}${e.approximate ? " · approximate: the camera's time zone is unknown" : ""}</div></div></div>`)}</div>`)}
+          <div class="muted small">${e.by ? `by ${e.by}` : ""}${e.approximate ? " · approximate: the camera's time zone is unknown" : ""}
+            ${e.ref?.type === "entity" ? html`<a href="#" data-open-entity="${e.ref.entity_id}" data-inv="${e.ref.investigation_id}">Show on graph</a>` : ""}
+            ${e.kind === "change" ? html`<a href="#" data-open-scan="${e.ref.id}">Open the scan</a>` : ""}</div></div></div>`)}</div>`)}
   </div>`);
 }
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.66.0] — Phase 66: The facts inside a case's scans, on its timeline
+
+### Added
+- **Dated facts from every scan** of a case now appear on its timeline, each tied to its entity,
+  scan and source:
+  - domains registered, last changed and expiring (RDAP);
+  - certificates' validity;
+  - data breaches;
+  - accounts created (platforms' public profiles);
+  - companies incorporated and dissolved, and directors appointed and resigned (registers);
+  - wallets' first and latest transactions;
+  - pages archived by the Internet Archive;
+  - documents written and edited (their own metadata);
+  - PGP keys created;
+  - software end-of-life dates;
+  - CVEs added to CISA's exploited list.
+- **What changed between scans**: for consecutive scans of the same target, "9 new on
+  acme-corp.example" and "1 gone", with the kinds and names of what appeared or disappeared.
+- **Honest dates**: a fact keeps the precision its source gave (year, month, day or exact time).
+  A date-only fact shows "date" rather than a midnight time, and implausible years (0001, 9999)
+  are ignored.
+- **One fact, once**: a fact seen by several scans appears once ("seen in 2 scans") and links to the
+  latest.
+- **In the case's Timeline tab**:
+  - two new kinds, *Found in a scan* and *Change between scans*, each with a filter pill;
+  - every fact names its source ("Source: the breach notification service · found by hibp");
+  - **Show on graph** opens the scan and selects the entity, and **Open the scan** opens a change's scan.
+- **API**: `GET /api/cases/{id}/timeline` includes facts (`?facts=false` leaves them out). The CSV
+  export includes them too. Uses the 20 most recent finished scans, read from the graph cache and
+  processed in a worker thread.
+- Helm chart 0.56.0.
+
 ## [1.65.0] — Phase 65: Very large graphs stay fast
 
 ### Changed
