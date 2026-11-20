@@ -78,7 +78,7 @@ def test_fingerprint_and_search_queries():
     queries = fp.queries()
     assert queries["shodan"] == f"http.favicon.hash:{fp.mmh3}"
     assert queries["fofa"] == f'icon_hash="{fp.mmh3}"'
-    assert fp.md5 in queries["censys"]
+    assert queries["censys"] == f'host.services.endpoints.http.favicons.hash_sha256 = "{fp.sha256}"'
     assert fingerprint(b"<html></html>") is None
     assert fingerprint(b"\x89PNG\r\n\x1a\n" + b"x" * (300 * 1024)) is None  # too big to be an icon
 

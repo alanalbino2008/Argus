@@ -11,7 +11,7 @@ hashed into a 62-character fingerprint:
 
 Identical JARMs mean "configured the same way", which clusters a C2 framework's servers, a
 phishing kit's hosting or an organisation's estate. Shodan (``ssl.jarm:``) and Censys
-(``services.jarm.fingerprint:``) index it. A hash of all zeros means no TLS answer at all.
+(``host.services.jarm.fingerprint``) index it. A hash of all zeros means no TLS answer at all.
 
 This follows the original reference implementation byte for byte. The tests check it against an
 independent implementation (pyjarm) on live local TLS servers in several configurations.

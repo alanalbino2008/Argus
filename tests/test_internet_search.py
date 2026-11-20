@@ -45,7 +45,7 @@ def _entity_id(client, prefix):
 
 def test_status(make_client, shodan_client):
     client, _ = shodan_client
-    assert client.get("/api/internet-search").json() == {"shodan": True}
+    assert client.get("/api/internet-search").json() == {"shodan": True, "censys": False}
 
 
 def test_count_is_free_and_rates_the_fingerprint(shodan_client):
@@ -86,7 +86,7 @@ def test_refusals(shodan_client, make_client):
 def test_without_a_key(make_client):
     client = make_client(monitors_enabled="false")
     client.post("/api/demo")
-    assert client.get("/api/internet-search").json() == {"shodan": False}
+    assert client.get("/api/internet-search").json() == {"shodan": False, "censys": False}
     jarm_id = _entity_id(client, "jarm:")
     response = client.post(f"/api/investigation/{DEMO_ID}/internet-search", json={"entity_id": jarm_id})
     assert response.status_code == 409 and "ARGUS_SHODAN_API_KEY" in response.json()["detail"]
@@ -138,3 +138,108 @@ async def test_real_request_shape():
     http = _Http(200, COUNT)
     result = await internet_search.shodan(http, KEY, "ssh.hassh:abc", mode="count")
     assert http.seen == ["https://api.shodan.io/shodan/host/count"] and result["total"] == 12
+
+
+# ----------------------------------------------------------------------------- Censys Platform
+TOKEN = "censys-test-token-0123456789abcdef"
+AGG_ORGS = {"result": {"total_count": 3, "other_count": 0, "query_duration_millis": 5, "is_more_than_total_hits": False,
+                       "buckets": [{"key": "Bad Hosting Ltd", "count": 3}]}}  # fmt: skip
+AGG_COUNTRIES = {
+    "result": {"total_count": 3, "buckets": [{"key": "Netherlands", "count": 2}, {"key": "Germany", "count": 1}]}
+}
+QUERY = {
+    "result": {
+        "total_hits": 2.0, "next_page_token": "", "previous_page_token": "", "query_duration_millis": 9,
+        "hits": [
+            {"host_v1": {"resource": {"ip": "198.51.100.9", "dns": {"names": ["c2.bad.example"]},
+                                      "autonomous_system": {"asn": 64500, "name": "Bad Hosting Ltd"},
+                                      "location": {"country": "Netherlands", "city": "Amsterdam"}},
+                         "matched_services": [{"port": 8443, "protocol": "HTTP", "transport_protocol": "tcp"}]}},
+            {"certificate_v1": {"resource": {"fingerprint_sha256": "ab"}}},  # not a server: skipped
+        ],
+    }
+}  # fmt: skip
+
+
+class _Post:
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls: list[dict] = []
+
+    def post(self, url, params=None, json=None, headers=None):
+        self.calls.append({"url": url, "params": params, "json": json, "headers": headers})
+        status, body = self.answers.pop(0)
+        return _Response(status, body)
+
+
+async def test_censys_count_uses_aggregates():
+    http = _Post([(200, AGG_ORGS), (200, AGG_COUNTRIES)])
+    query = 'host.services.jarm.fingerprint = "abc"'
+    result = await internet_search.censys(http, TOKEN, query, mode="count", organization="org-uuid")
+    assert [c["url"] for c in http.calls] == ["https://api.platform.censys.io/v3/global/search/aggregate"] * 2
+    first = http.calls[0]
+    assert first["headers"]["Authorization"] == f"Bearer {TOKEN}" and first["params"] == {"organization_id": "org-uuid"}
+    assert first["json"] == {"query": query, "field": "host.autonomous_system.name", "number_of_buckets": 5}
+    assert http.calls[1]["json"]["field"] == "host.location.country"
+    assert result["engine"] == "censys" and result["total"] == 3 and result["rarity"]["level"] == "rare"
+    assert result["top_orgs"] == [{"value": "Bad Hosting Ltd", "count": 3}]
+    assert result["top_countries"][0] == {"value": "Netherlands", "count": 2}
+
+
+async def test_censys_search_lists_hosts():
+    http = _Post([(200, QUERY)])
+    result = await internet_search.censys(http, TOKEN, "q", mode="search")
+    call = http.calls[0]
+    assert call["url"] == "https://api.platform.censys.io/v3/global/search/query" and call["params"] is None
+    assert call["json"]["page_size"] == 100 and "host.services.port" in call["json"]["fields"]
+    assert result["total"] == 2
+    assert result["hosts"] == [{"ip": "198.51.100.9", "port": 8443, "transport": "tcp", "hostnames": ["c2.bad.example"],
+                                "domains": [], "org": "Bad Hosting Ltd", "asn": "AS64500", "country": "Netherlands",
+                                "city": "Amsterdam", "product": "HTTP", "seen": None}]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "status, body, expected",
+    [
+        (401, {}, 409),
+        (403, {}, 402),
+        (422, {}, 502),
+        (400, {}, 502),
+        (429, {}, 429),
+        (500, {}, 502),
+        (200, {"x": 1}, 502),
+    ],
+)
+async def test_censys_errors_are_explained_without_the_token(status, body, expected):
+    with pytest.raises(SearchError) as info:
+        await internet_search.censys(_Post([(status, body)]), TOKEN, "q", mode="search")
+    assert info.value.status == expected and TOKEN not in info.value.detail
+
+
+def test_censys_through_the_api(make_client, monkeypatch):
+    sent = []
+
+    async def fake_post(http, token, organization, path, body):
+        sent.append((token, organization, path, body))
+        return AGG_ORGS["result"] if path.endswith("aggregate") else QUERY["result"]
+
+    monkeypatch.setattr(internet_search, "_censys_post", fake_post)
+    client = make_client(censys_api_token=TOKEN, censys_organization_id="org-uuid", monitors_enabled="false")
+    client.post("/api/demo")
+    assert client.get("/api/internet-search").json() == {"shodan": False, "censys": True}
+    jarm_id = _entity_id(client, "jarm:")
+    url = f"/api/investigation/{DEMO_ID}/internet-search"
+    counted = client.post(url, json={"entity_id": jarm_id, "engine": "censys"}).json()
+    assert counted["engine"] == "censys" and counted["total"] == 3
+    token, organization, _, body = sent[0]
+    assert (
+        token == TOKEN and organization == "org-uuid" and body["query"].startswith("host.services.jarm.fingerprint = ")
+    )
+    listed = client.post(url, json={"entity_id": jarm_id, "engine": "censys", "mode": "search"}).json()
+    assert listed["hosts"][0]["ip"] == "198.51.100.9"
+    favicon_id = _entity_id(client, "favicon:")
+    assert client.post(url, json={"entity_id": favicon_id, "engine": "censys"}).status_code == 200
+    shodan = client.post(url, json={"entity_id": jarm_id, "engine": "shodan"})
+    assert shodan.status_code == 409 and "ARGUS_SHODAN_API_KEY" in shodan.json()["detail"]
+    audit = [e for e in client.get("/api/audit").json() if e["action"] == "investigation.internet_search"]
+    assert {e["details"]["engine"] for e in audit} == {"censys"} and TOKEN not in json.dumps(audit)

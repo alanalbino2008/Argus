@@ -159,7 +159,7 @@ Watch a target and Argus re-scans it on a schedule, compares each scan with the 
 | **STIX 2.1 bundle** | Import into OpenCTI, MISP or any STIX platform (TLP:AMBER) |
 | **Maltego CSV / JSON graph** | Link analysis in Maltego or your own tooling |
 
-Optional modules unlock with an API key — `ARGUS_VIRUSTOTAL_API_KEY`, `ARGUS_HIBP_API_KEY`, `ARGUS_SHODAN_API_KEY`, `ARGUS_GITHUB_TOKEN` (public code-leak search) — and third-party plugins load only when allowlisted in `ARGUS_PLUGINS`. See [`docs/explained/05-intelligence-features.md`](docs/explained/05-intelligence-features.md).
+Optional modules unlock with an API key — `ARGUS_VIRUSTOTAL_API_KEY`, `ARGUS_HIBP_API_KEY`, `ARGUS_SHODAN_API_KEY`, `ARGUS_CENSYS_API_TOKEN` (fingerprint pivots on the Censys Platform), `ARGUS_GITHUB_TOKEN` (public code-leak search) — and third-party plugins load only when allowlisted in `ARGUS_PLUGINS`. See [`docs/explained/05-intelligence-features.md`](docs/explained/05-intelligence-features.md).
 
 ### Security Model
 

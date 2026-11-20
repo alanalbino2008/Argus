@@ -1,4 +1,4 @@
-"""Internet-wide pivots on demand: who else serves this fingerprint, according to Shodan.
+"""Internet-wide pivots on demand: who else serves this fingerprint, according to Shodan or Censys.
 
 A fingerprint node (favicon, JARM, HASSH, certificate) carries the Shodan search that finds
 every other server with the same fingerprint. With an API key configured, an analyst can run it
@@ -24,6 +24,12 @@ from argus.core.http import HttpClient
 from argus.security.secrets import register_secret
 
 SHODAN_API = "https://api.shodan.io"
+CENSYS_API = "https://api.platform.censys.io"  # the Censys Platform API (v3)
+CENSYS_FIELDS = [  # only what Argus shows; the port and protocol fields keep "matched_services" in the answer
+    "host.ip", "host.services.port", "host.services.protocol", "host.services.transport_protocol",
+    "host.autonomous_system.name", "host.autonomous_system.asn", "host.location.country", "host.location.city",
+    "host.dns.names",
+]  # fmt: skip
 FACETS = "org:5,country:5"
 MAX_HOSTS = 100
 
@@ -106,3 +112,82 @@ async def shodan(http: HttpClient, key: str, query: str, *, mode: str) -> dict[s
         "hosts": [_host(m) for m in (data.get("matches") or [])[:MAX_HOSTS]] if mode == "search" else [],
     }
     return result
+
+
+# ----------------------------------------------------------------------------- Censys Platform
+async def _censys_post(http: HttpClient, token: str, organization: str | None, path: str, body: dict[str, Any]) -> Any:
+    params = {"organization_id": organization} if organization else None
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    async with http.post(f"{CENSYS_API}{path}", params=params, json=body, headers=headers) as resp:
+        if resp.status == 401:
+            raise SearchError(409, "Censys refused the token: check ARGUS_CENSYS_API_TOKEN")
+        if resp.status in (402, 403):
+            raise SearchError(402, "This Censys account cannot run this search (API access role, plan or credits)")
+        if resp.status in (400, 422):
+            raise SearchError(502, "Censys did not accept the search: its query syntax may have changed")
+        if resp.status == 429:
+            raise SearchError(429, "Censys is rate-limiting this token: try again in a minute")
+        if resp.status != 200:
+            raise SearchError(502, f"Censys answered {resp.status}: try again later")
+        data = await resp.json(content_type=None)
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, dict):
+        raise SearchError(502, "Censys sent an unexpected answer")
+    return result
+
+
+def _buckets(result: dict[str, Any]) -> list[dict[str, Any]]:
+    return [{"value": b.get("key"), "count": b.get("count")} for b in (result.get("buckets") or [])[:5]]
+
+
+def _censys_host(hit: dict[str, Any]) -> dict[str, Any] | None:
+    asset = hit.get("host_v1") or {}
+    host = asset.get("resource") or {}
+    if not host.get("ip"):
+        return None  # a certificate or web property hit: not a server to list
+    matched = (asset.get("matched_services") or [{}])[0]
+    routing = host.get("autonomous_system") or {}
+    location = host.get("location") or {}
+    return {
+        "ip": host.get("ip"),
+        "port": matched.get("port"),
+        "transport": matched.get("transport_protocol") or None,
+        "hostnames": ((host.get("dns") or {}).get("names") or [])[:5],
+        "domains": [],
+        "org": routing.get("name"),
+        "asn": f"AS{routing['asn']}" if routing.get("asn") else None,
+        "country": location.get("country"),
+        "city": location.get("city"),
+        "product": matched.get("protocol") or None,
+        "seen": None,
+    }
+
+
+async def censys(
+    http: HttpClient, token: str, query: str, *, mode: str, organization: str | None = None
+) -> dict[str, Any]:
+    """Run a CenQL ``query`` on the Censys Platform: "count" (aggregates) or "search" (up to 100 hosts)."""
+    register_secret(token)
+    if mode == "count":
+        orgs = await _censys_post(http, token, organization, "/v3/global/search/aggregate",
+                                  {"query": query, "field": "host.autonomous_system.name", "number_of_buckets": 5})  # fmt: skip
+        countries = await _censys_post(http, token, organization, "/v3/global/search/aggregate",
+                                       {"query": query, "field": "host.location.country", "number_of_buckets": 5})  # fmt: skip
+        total, hosts = int(orgs.get("total_count") or 0), []
+        top_orgs, top_countries = _buckets(orgs), _buckets(countries)
+    else:
+        found = await _censys_post(http, token, organization, "/v3/global/search/query",
+                                   {"query": query, "page_size": MAX_HOSTS, "fields": CENSYS_FIELDS})  # fmt: skip
+        total = int(found.get("total_hits") or 0)
+        hosts = [h for h in (_censys_host(hit) for hit in (found.get("hits") or [])[:MAX_HOSTS]) if h]
+        top_orgs, top_countries = [], []
+    return {
+        "engine": "censys",
+        "mode": mode,
+        "query": query,
+        "total": total,
+        "rarity": rarity(total),
+        "top_orgs": top_orgs,
+        "top_countries": top_countries,
+        "hosts": hosts,
+    }

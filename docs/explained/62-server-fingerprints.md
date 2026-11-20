@@ -8,9 +8,9 @@ same goes for an organisation's estate, which is usually built from a few templa
 
 | Fingerprint | What it captures | Indexed by |
 |---|---|---|
-| **JARM** | How the TLS stack answers ten unusual handshakes | Shodan `ssl.jarm:`, Censys `services.jarm.fingerprint:` |
-| **HASSH-server** | The SSH server's algorithm preferences | Shodan `ssh.hassh:` |
-| **Certificate** | The exact certificate (SHA-1 / SHA-256) | Shodan `ssl.cert.fingerprint:`, Censys `services.tls.certificates.leaf_data.fingerprint:` |
+| **JARM** | How the TLS stack answers ten unusual handshakes | Shodan `ssl.jarm:`, Censys `host.services.jarm.fingerprint` |
+| **HASSH-server** | The SSH server's algorithm preferences | Shodan `ssh.hassh:`, Censys `host.services.ssh.hassh_fingerprint` |
+| **Certificate** | The exact certificate (SHA-1 / SHA-256) | Shodan `ssl.cert.fingerprint:`, Censys `host.services.cert.fingerprint_sha256` |
 | **Favicon** (Phase 60) | The site's icon | Shodan, FOFA, ZoomEye, Censys |
 
 In Argus each fingerprint is a node, keyed by its hash. Every host that shares it links to the
@@ -74,8 +74,9 @@ every other server presenting the same certificate.
 
 One panel serves favicons, JARMs, HASSHes and certificates. It shows what the fingerprint means,
 how many hosts in this graph share it, its facts, and searches with Copy buttons. The searches
-are pasted by the analyst. Argus never queries Shodan or Censys with them, so those services see
-the analyst's query, not the target.
+are pasted by the analyst, or, with a Shodan or Censys key configured, run from Argus when the
+analyst clicks (phases 63 and 67). Either way only the fingerprint is searched: the target itself is
+not contacted.
 
 ## Limits and safety
 

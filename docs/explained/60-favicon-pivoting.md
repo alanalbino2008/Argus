@@ -14,7 +14,7 @@ Internet-scan engines index favicons by hash, so one icon can be searched across
 | Shodan | `http.favicon.hash:-568180311` | MurmurHash3 of the base64 text |
 | FOFA | `icon_hash="-568180311"` | same |
 | ZoomEye | `iconhash:"-568180311"` | same |
-| Censys | `services.http.response.favicons.md5_hash:<md5>` | MD5 of the bytes |
+| Censys | `host.services.endpoints.http.favicons.hash_sha256 = "<sha256>"` | SHA-256 of the bytes (Platform CenQL, phase 67) |
 
 ## What Argus does
 
@@ -56,9 +56,9 @@ category:favicon | sort degree desc                 the most widely shared icons
   sites, so the relation's confidence is 0.6. Check the hosts before treating them as one operator.
 - **Active**: the module requests the icon from the target, so *passive only* scans skip it.
   Routed scans (Tor, VPN) send it through the route like every other request.
-- **No outside searches**: Argus never queries Shodan, FOFA, ZoomEye or Censys with the hash. The
-  analyst pastes the search in, so the engine sees the analyst's query, never the target's
-  infrastructure.
+- **Outside searches only on request**: Argus never queries FOFA or ZoomEye, and queries Shodan or
+  Censys only when the analyst clicks and a key is configured (phases 63 and 67). Otherwise the
+  analyst pastes the search in. Either way the engine sees a hash, never a request to the target.
 - **SSRF-safe**: icon links are fetched through the shared client, so a page declaring
   `http://10.0.0.5/icon.png` is refused by the egress guard and the module carries on.
 - Icons are capped at 256 KB and homepages at 512 KB. Third parties' assets (`out_of_scope`) are

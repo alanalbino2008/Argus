@@ -1387,33 +1387,43 @@ async def get_attack_paths(inv_id: str, request: Request, ws: WorkspaceContext =
 
 class InternetSearchRequest(BaseModel):
     entity_id: str = Field(min_length=1, max_length=64, description="A fingerprint or certificate entity in the graph")
+    engine: Literal["shodan", "censys"] = Field(default="shodan", description="Which internet-scan search to ask")
     mode: Literal["count", "search"] = Field(
-        default="count", description="count: free, with top organisations and countries; search: lists hosts (credit)"
+        default="count", description="count: how common, with top organisations and countries; search: lists hosts"
     )
 
 
 _internet_search_limiter = SlidingWindowLimiter(limit=10, window=60)
+ENGINE_NAMES = {"shodan": "Shodan", "censys": "Censys"}
+
+
+def _secret(value: Any) -> str:
+    return value.get_secret_value().strip() if value else ""
 
 
 def _shodan_key(settings: Settings) -> str:
-    key = settings.shodan_api_key
-    return key.get_secret_value().strip() if key else ""
+    return _secret(settings.shodan_api_key)
+
+
+def _engine_keys(settings: Settings) -> dict[str, str]:
+    return {"shodan": _shodan_key(settings), "censys": _secret(settings.censys_api_token)}
 
 
 @app.get("/api/internet-search")
 async def internet_search_status(request: Request, ws: WorkspaceContext = VIEWER):
     """Which internet-wide searches this server can run for fingerprint pivots."""
-    return {"shodan": bool(_shodan_key(request.app.state.settings))}
+    return {engine: bool(key) for engine, key in _engine_keys(request.app.state.settings).items()}
 
 
 @app.post("/api/investigation/{inv_id}/internet-search")
 async def internet_search_pivot(
     inv_id: str, request: Request, req: InternetSearchRequest | None = None, ws: WorkspaceContext = ANALYST
 ):
-    """Who else on the internet shares this entity's fingerprint, according to Shodan (on demand).
+    """Who else on the internet shares this entity's fingerprint, according to Shodan or Censys (on demand).
 
-    ``count`` is free and says how common the fingerprint is; ``search`` lists up to 100 servers
-    and spends one Shodan query credit. The search is the entity's own, never free text.
+    Shodan: ``count`` is free and says how common the fingerprint is; ``search`` lists up to 100 servers
+    and spends one query credit. Censys: the same, through its Platform API (credit use depends on the
+    account's plan). The search is the entity's own, never free text.
     """
     graph = await _resolve_graph(inv_id, get_repo(request), ws.id)  # tenant check before anything else
     if req is None:
@@ -1421,25 +1431,32 @@ async def internet_search_pivot(
     entity = graph.get_entity(req.entity_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found in this investigation")
-    query = str((entity.metadata.get("search_queries") or {}).get("shodan") or "")
+    name = ENGINE_NAMES[req.engine]
+    query = str((entity.metadata.get("search_queries") or {}).get(req.engine) or "")
     if not query:
-        raise HTTPException(status_code=422, detail="This entity has no Shodan search")
+        raise HTTPException(status_code=422, detail=f"This entity has no {name} search")
     settings = request.app.state.settings
-    key = _shodan_key(settings)
+    key = _engine_keys(settings)[req.engine]
     if not key:
-        raise HTTPException(status_code=409, detail="Internet search needs a Shodan API key (ARGUS_SHODAN_API_KEY)")
+        setting = "ARGUS_SHODAN_API_KEY" if req.engine == "shodan" else "ARGUS_CENSYS_API_TOKEN"
+        raise HTTPException(status_code=409, detail=f"Internet search needs a {name} key ({setting})")
     if not _internet_search_limiter.hit(f"{ws.id}:{ws.principal.key_id}"):
         raise HTTPException(status_code=429, detail="Too many internet searches: try again in a minute")
     try:
         async with outbound_client(settings, None) as http:
-            result = await internet_search.shodan(http, key, query, mode=req.mode)
+            if req.engine == "shodan":
+                result = await internet_search.shodan(http, key, query, mode=req.mode)
+            else:
+                result = await internet_search.censys(
+                    http, key, query, mode=req.mode, organization=settings.censys_organization_id
+                )
     except internet_search.SearchError as exc:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-        raise HTTPException(status_code=502, detail="Shodan could not be reached; try again later") from exc
+        raise HTTPException(status_code=502, detail=f"{name} could not be reached; try again later") from exc
     await audit(
         request, ws.principal, "investigation.internet_search", inv_id,
-        details={"engine": "shodan", "mode": req.mode, "entity_type": entity.type.value, "total": result["total"]},
+        details={"engine": req.engine, "mode": req.mode, "entity_type": entity.type.value, "total": result["total"]},
     )  # fmt: skip
     return {**result, "entity_id": entity.id}
 

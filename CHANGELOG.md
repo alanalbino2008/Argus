@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.67.0] — Phase 67: Censys searches from Argus, on the Censys Platform
+
+### Added
+- **Search Censys from a fingerprint.** With `ARGUS_CENSYS_API_TOKEN` (a Censys Platform personal
+  access token) and optionally `ARGUS_CENSYS_ORGANIZATION_ID` (whose credits are used), favicon,
+  JARM, HASSH and certificate panels gain Censys buttons next to Shodan's:
+  - **How common?**: the number of matching hosts, the top organisations and countries, and the
+    rarity verdict, from two aggregates (`POST /v3/global/search/aggregate`);
+  - **List hosts**: up to 100 hosts (`POST /v3/global/search/query`), only the fields Argus shows,
+    each with **Investigate**.
+  - Censys does not document whether searches cost credits, so the buttons say they use the
+    plan's credits where it charges. Shodan's count stays labelled free.
+- `POST /api/investigation/{id}/internet-search` takes `"engine": "shodan" | "censys"`.
+  `GET /api/internet-search` reports both.
+
+### Fixed
+- **Censys searches use the Platform's query language.** The copyable searches still used the
+  retired Search 2.0 syntax. They now use CenQL exact matches, built in one place
+  (`argus/intel/cenql.py`):
+  - certificates: `host.services.cert.fingerprint_sha256`;
+  - favicons: `host.services.endpoints.http.favicons.hash_sha256` (both listed in Censys's CenQL
+    documentation; favicons now match on SHA-256 rather than MD5);
+  - JARM: `host.services.jarm.fingerprint`;
+  - SSH: `host.services.ssh.hassh_fingerprint`, which is new (the last two from the Platform API's
+    data schema).
+- Helm chart 0.57.0.
+
 ## [1.66.0] — Phase 66: The facts inside a case's scans, on its timeline
 
 ### Added

@@ -17,7 +17,7 @@ let pivots = [];
 // Argus Query Language: the last query, its result or error, the syntax help and link analysis.
 let query = { text: "", result: null, error: null, busy: false };
 let queryHelp = null;
-let shodanReady = null; // whether the server has a Shodan key (asked once)
+let searchEngines = null; // which internet searches the server has keys for: { shodan, censys } (asked once)
 let internetSearch = null; // { entityId, mode, busy, result, error } for the selected fingerprint
 let savedQueries = null; // the workspace's saved queries (loaded with the Query tab)
 let hunt = null; // { text, busy, result, error } for a hunt across investigations
@@ -133,7 +133,7 @@ export function initGraphView(appActions) {
     graph.setTypeVisible(chip.dataset.type, visible);
     chip.classList.toggle("off", !visible);
   });
-  on($("#pane-details"), "click", "[data-shodan]", (_e, el) => runInternetSearch(el.dataset.shodan));
+  on($("#pane-details"), "click", "[data-search-engine]", (_e, el) => runInternetSearch(el.dataset.searchEngine, el.dataset.searchMode));
   on($("#pane-details"), "click", "[data-investigate-ip]", (_e, el) => actions.newInvestigation({ target: el.dataset.investigateIp, type: "ip_address" }));
   on($("#pane-details"), "click", "[data-copy]", async (_e, el) => {
     try { await navigator.clipboard.writeText(el.dataset.copy); toast("Copied", "success"); } catch { toast("Copy failed: select the text instead", "error"); }
@@ -749,44 +749,55 @@ function fingerprintBlock(entity) {
       <div class="list-main"><code class="small" style="word-break:break-all">${q}</code></div>
       <button class="btn sm" data-copy="${q}" title="Copy">Copy</button></div>`)}
     <p class="muted small" style="margin-top:6px">Paste into the search engine yourself: it sees the query and your connection, not the target.</p>` : ""}
-    ${md.search_queries?.shodan ? shodanPanel(entity) : ""}</div>`;
+    ${internetPanel(entity)}</div>`;
 }
 
-function shodanPanel(entity) {
-  if (shodanReady === null) { loadShodanStatus(); return ""; }
-  if (!shodanReady) return "";
+// What each engine's buttons cost: Shodan's count is free; Censys's depends on the account's plan.
+const ENGINE_COSTS = {
+  shodan: { count: "How common? (free)", search: "List hosts (1 credit)", hint: "Spends one Shodan query credit" },
+  censys: { count: "How common?", search: "List hosts", hint: "Uses your Censys plan's credits where it charges for searches" },
+};
+
+/** Search the fingerprint from Argus, with each engine that has a key on this server. */
+function internetPanel(entity) {
+  if (searchEngines === null) { loadEngines(); return ""; }
+  const queries = entity.metadata?.search_queries || {};
+  const engines = Object.keys(ENGINE_COSTS).filter((e) => searchEngines[e] && queries[e]);
+  if (!engines.length) return "";
   const s = internetSearch?.entityId === entity.id ? internetSearch : null;
   const r = s?.result;
-  return html`<div class="section-title" style="margin-top:12px">Search Shodan from Argus</div>
-    <div class="query-actions"><button class="btn sm" data-shodan="count" ${s?.busy ? "disabled" : ""}>How common? (free)</button>
-      <button class="btn sm" data-shodan="search" ${s?.busy ? "disabled" : ""} title="Spends one Shodan query credit">List hosts (1 credit)</button></div>
-    ${s?.busy ? html`<p class="muted small">Asking Shodan…</p>` : ""}
+  const name = (e) => SEARCH_ENGINES[e] || e;
+  return html`<div class="section-title" style="margin-top:12px">Search from Argus</div>
+    ${engines.map((e) => html`<div class="query-actions"><span class="pill accent">${name(e)}</span>
+      <button class="btn sm" data-search-engine="${e}" data-search-mode="count" ${s?.busy ? "disabled" : ""}>${ENGINE_COSTS[e].count}</button>
+      <button class="btn sm" data-search-engine="${e}" data-search-mode="search" ${s?.busy ? "disabled" : ""} title="${ENGINE_COSTS[e].hint}">${ENGINE_COSTS[e].search}</button></div>`)}
+    ${s?.busy ? html`<p class="muted small">Asking ${name(s.engine)}…</p>` : ""}
     ${s?.error ? html`<div class="query-error">${s.error}</div>` : ""}
     ${r ? html`<p class="small"><span class="pill ${r.rarity.level === "rare" || r.rarity.level === "unique" ? "high" : "accent"}">${r.rarity.level}</span>
-        <b>${Number(r.total).toLocaleString()}</b> server${r.total === 1 ? "" : "s"} on Shodan. ${r.rarity.meaning}</p>
+        <b>${Number(r.total).toLocaleString()}</b> server${r.total === 1 ? "" : "s"} on ${name(r.engine)}. ${r.rarity.meaning}</p>
       ${r.top_orgs.length ? html`<p class="muted small">Mostly: ${r.top_orgs.map((o) => `${o.value} (${o.count})`).join(", ")}${r.top_countries.length ? ` · ${r.top_countries.map((c) => `${c.value} (${c.count})`).join(", ")}` : ""}</p>` : ""}
-      ${r.hosts.map((h) => html`<div class="list-row"><div class="list-main"><div class="list-title">${h.ip}:${h.port}</div>
+      ${r.hosts.map((h) => html`<div class="list-row"><div class="list-main"><div class="list-title">${h.ip}${h.port ? `:${h.port}` : ""}</div>
         <div class="muted small">${[h.hostnames.join(", "), h.org, h.country, h.product, h.seen && `seen ${h.seen}`].filter(Boolean).join(" · ")}</div></div>
         <button class="btn sm" data-investigate-ip="${h.ip}" title="Start a separate, authorised investigation">Investigate</button></div>`)}
       ${r.mode === "search" && r.total > r.hosts.length ? html`<p class="muted small">Showing ${r.hosts.length} of ${Number(r.total).toLocaleString()}.</p>` : ""}` : ""}`;
 }
 
-async function loadShodanStatus() {
-  try { shodanReady = (await api.get("/api/internet-search")).shodan; } catch { shodanReady = false; }
-  if (shodanReady) renderDetails();
+async function loadEngines() {
+  try { searchEngines = await api.get("/api/internet-search"); } catch { searchEngines = {}; }
+  if (Object.values(searchEngines).some(Boolean)) renderDetails();
 }
 
-async function runInternetSearch(mode) {
+async function runInternetSearch(engine, mode) {
   const id = state.investigation?.id;
   if (!id || !selected) return;
   const entityId = selected;
-  internetSearch = { entityId, mode, busy: true, result: null, error: null };
+  internetSearch = { entityId, engine, mode, busy: true, result: null, error: null };
   renderDetails();
   try {
-    const result = await api.post(`/api/investigation/${enc(id)}/internet-search`, { entity_id: entityId, mode });
-    if (internetSearch?.entityId === entityId) internetSearch = { entityId, mode, busy: false, result, error: null };
+    const result = await api.post(`/api/investigation/${enc(id)}/internet-search`, { entity_id: entityId, engine, mode });
+    if (internetSearch?.entityId === entityId) internetSearch = { entityId, engine, mode, busy: false, result, error: null };
   } catch (err) {
-    if (internetSearch?.entityId === entityId) internetSearch = { entityId, mode, busy: false, result: null, error: err.message };
+    if (internetSearch?.entityId === entityId) internetSearch = { entityId, engine, mode, busy: false, result: null, error: err.message };
   }
   renderDetails();
 }

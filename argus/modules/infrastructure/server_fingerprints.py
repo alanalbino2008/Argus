@@ -20,8 +20,8 @@ from typing import ClassVar
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel import cenql, ssh_fingerprint
 from argus.intel import jarm as jarm_intel
-from argus.intel import ssh_fingerprint
 from argus.modules.base import BaseModule
 from argus.security.network import BlockedDestinationError, resolve_public
 
@@ -100,7 +100,7 @@ class JarmModule(_FingerprintModule):
                 "jarm": digest,
                 "probes_answered": result["answered"],
                 "pivot_hub": True,
-                "search_queries": {"shodan": f"ssl.jarm:{digest}", "censys": f"services.jarm.fingerprint: {digest}"},
+                "search_queries": {"shodan": f"ssl.jarm:{digest}", "censys": cenql.jarm(digest)},
             },
         )
         yield node
@@ -150,7 +150,7 @@ class SshFingerprintModule(_FingerprintModule):
                 "hassh_server": digest,
                 "hassh_server_algorithms": info["hassh_server_algorithms"],
                 "pivot_hub": True,
-                "search_queries": {"shodan": f"ssh.hassh:{digest}"},
+                "search_queries": {"shodan": f"ssh.hassh:{digest}", "censys": cenql.hassh(digest)},
             },
         )
         yield node

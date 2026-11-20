@@ -8,7 +8,7 @@ phishing kit, and the scan engines let anyone search by it:
   **ZoomEye** ``iconhash:"<mmh3>"``. All three use the *Shodan hash*: MurmurHash3 (x86, 32-bit,
   seed 0, signed) of the icon's **base64 text with a newline every 76 characters**
   (Python's ``base64.encodebytes``).
-* **Censys** ``services.http.response.favicons.md5_hash:<md5>``.
+* **Censys** (Platform CenQL) ``host.services.endpoints.http.favicons.hash_sha256 = "<sha256>"``.
 
 MurmurHash3 is implemented here in pure Python (checked against the reference vectors in the
 tests), so no compiled dependency is needed.
@@ -21,6 +21,8 @@ import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
+
+from argus.intel import cenql
 
 MAX_ICON_BYTES = 256 * 1024
 
@@ -129,7 +131,7 @@ class Fingerprint:
             "shodan": f"http.favicon.hash:{self.mmh3}",
             "fofa": f'icon_hash="{self.mmh3}"',
             "zoomeye": f'iconhash:"{self.mmh3}"',
-            "censys": f"services.http.response.favicons.md5_hash:{self.md5}",
+            "censys": cenql.favicon(self.sha256),
         }
 
     def as_metadata(self) -> dict[str, Any]:

@@ -174,6 +174,13 @@ class Settings(BaseSettings):
         default=400_000, ge=10_000, le=2_000_000, description="Most case material (characters) sent in one request"
     )
     shodan_api_key: SecretStr | None = Field(default=None, description="Shodan API key (full host API)")
+    censys_api_token: SecretStr | None = Field(
+        default=None, description="Censys Platform personal access token: fingerprint pivots searched from Argus"
+    )
+    censys_organization_id: str | None = Field(
+        default=None,
+        description="Censys organisation (UUID) whose credits are used; unset uses the token's free wallet",
+    )
     github_token: SecretStr | None = Field(
         default=None, description="GitHub token: enables public code-leak search (GitHub requires auth for code search)"
     )

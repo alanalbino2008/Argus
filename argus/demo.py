@@ -30,6 +30,7 @@ from argus.core.models import (
     RelationType,
     ScanConfig,
 )
+from argus.intel import cenql
 from argus.intel.favicon import fingerprint
 from argus.intel.jarm import jarm_hash
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
@@ -637,13 +638,13 @@ _ENTITIES.update(
         "jarm": (E.GENERIC, f"jarm:{_DEMO_JARM}", f"JARM {_DEMO_JARM[:12]}…", 2, "jarm",
                  {"category": "jarm", "jarm": _DEMO_JARM, "probes_answered": 7, "pivot_hub": True,
                   "search_queries": {"shodan": f"ssl.jarm:{_DEMO_JARM}",
-                                     "censys": f"services.jarm.fingerprint: {_DEMO_JARM}"}}),
+                                     "censys": cenql.jarm(_DEMO_JARM)}}),
         "p22": (E.PORT, "203.0.113.30:22", "Port 22 (SSH)", 3, "shodan_internetdb",
                 {"port_number": 22, "service_guess": "SSH", "ip": "203.0.113.30"}),
         "hassh": (E.GENERIC, f"hassh:{_DEMO_HASSH}", f"HASSH {_DEMO_HASSH[:12]}…", 4, "ssh_fingerprint",
                   {"category": "hassh", "hassh_server": _DEMO_HASSH, "pivot_hub": True,
                    "hassh_server_algorithms": _DEMO_HASSH_ALGORITHMS,
-                   "search_queries": {"shodan": f"ssh.hassh:{_DEMO_HASSH}"}}),
+                   "search_queries": {"shodan": f"ssh.hassh:{_DEMO_HASSH}", "censys": cenql.hassh(_DEMO_HASSH)}}),
         "openssh": (E.TECHNOLOGY, "OpenSSH 7.4", "OpenSSH 7.4", 4, "ssh_fingerprint",
                     {"category": "SSH Server", "banner": "SSH-2.0-OpenSSH_7.4"}),
     }
@@ -659,7 +660,7 @@ _RELATIONS.extend(
 )
 _ENTITIES["cert"][5]["search_queries"] = {
     "shodan": "ssl.cert.fingerprint:9f3c",
-    "censys": "services.tls.certificates.leaf_data.fingerprint: 9f3c",
+    "censys": cenql.certificate("9f3c"),
 }
 
 # A month earlier the surface looked different - used to demonstrate drift detection.

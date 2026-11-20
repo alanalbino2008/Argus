@@ -147,7 +147,7 @@ async def test_jarm_module_links_a_shared_hub(certificate):
     digest = hub.metadata["jarm"]
     assert hub.metadata["search_queries"] == {
         "shodan": f"ssl.jarm:{digest}",
-        "censys": f"services.jarm.fingerprint: {digest}",
+        "censys": f'host.services.jarm.fingerprint = "{digest}"',
     }
     assert relation.type == RelationType.USES_TECH and relation.confidence == 0.5
 
@@ -262,7 +262,10 @@ async def test_ssh_module_yields_hub_and_software():
         items = [i async for i in module.run(entity, None, LOCAL)]
     hub, link, software, runs = items
     digest = hashlib.md5(EXPECTED_ALGORITHMS.encode(), usedforsecurity=False).hexdigest()
-    assert hub.value == f"hassh:{digest}" and hub.metadata["search_queries"] == {"shodan": f"ssh.hassh:{digest}"}
+    assert hub.value == f"hassh:{digest}" and hub.metadata["search_queries"] == {
+        "shodan": f"ssh.hassh:{digest}",
+        "censys": f'host.services.ssh.hassh_fingerprint = "{digest}"',
+    }
     assert link.metadata["banner"] == "SSH-2.0-OpenSSH_9.6 FreeBSD-20240104"
     assert software.type == EntityType.TECHNOLOGY and software.value == "OpenSSH 9.6"
     assert runs.target_id == software.id

@@ -24,6 +24,7 @@ from cryptography.x509.oid import NameOID
 
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
+from argus.intel import cenql
 from argus.modules.base import BaseModule
 from argus.security.network import resolve_public
 
@@ -144,7 +145,7 @@ class TlsAnalyzerModule(BaseModule):
                 "sans_count": len(info["sans"]),
                 "search_queries": {  # every other host serving this certificate
                     "shodan": f"ssl.cert.fingerprint:{info['sha1_fingerprint']}",
-                    "censys": f"services.tls.certificates.leaf_data.fingerprint: {info['sha256_fingerprint']}",
+                    "censys": cenql.certificate(info["sha256_fingerprint"]),
                 },
                 "tls_version": tls_version,
                 "cipher": cipher[0] if cipher else "Unknown",
