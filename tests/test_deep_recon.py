@@ -347,4 +347,6 @@ def test_passive_only_scans_skip_active_modules():
         "site_crawler",
         "cloud_storage",
         "favicon_pivot",
+        "jarm",
+        "ssh_fingerprint",
     }

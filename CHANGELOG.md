@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.62.0] — Phase 62: Server fingerprints (JARM, HASSH) and certificate pivots
+
+### Added
+- **JARM** (`jarm`, active): the Salesforce TLS fingerprint. Ten unusual ClientHellos go to port
+  443 of each domain and sub-domain, and to known TLS ports (443, 4443, 8443, 9443, 10443). The
+  server's choices are hashed into 62 characters. Servers with the same JARM are configured the
+  same way, which clusters C2 servers, phishing kits and an organisation's estate.
+  - A shared node links every host with the same JARM. It carries Shodan (`ssl.jarm:`) and Censys
+    (`services.jarm.fingerprint:`) searches.
+  - The implementation follows the original reference byte for byte. It was checked against
+    pyjarm on five live OpenSSL configurations (identical hashes), and the tests pin a hash
+    computed by pyjarm's hasher.
+  - pyjarm itself has two quirks Argus avoids: it fails the whole fingerprint when one probe's
+    connection is reset, and it merges two ALPN entries.
+- **HASSH-server** (`ssh_fingerprint`, active), on SSH ports found by other modules (22, 2222,
+  22222, or anything identified as SSH): the banner, and the MD5 of the server's key-exchange,
+  cipher, MAC and compression lists, read from its first clear-text packet.
+  - No key exchange and no login attempt.
+  - A shared node links identically built SSH servers, with a Shodan search (`ssh.hassh:`).
+  - The SSH software and version (e.g. *OpenSSH 7.4*) become a technology.
+  - Checked against a live paramiko server.
+- **Certificate pivots**: certificates now carry their SHA-1 fingerprint and searches for every
+  other host serving them (Shodan `ssl.cert.fingerprint:`, Censys
+  `services.tls.certificates.leaf_data.fingerprint:`).
+- **One fingerprint panel** in the graph for favicons, JARMs, HASSHes and certificates: what the
+  hash means, how many hosts here share it, its facts, and copyable searches.
+- Both modules are active and use raw sockets. Passive-only and routed scans skip them, and they
+  connect only to vetted public addresses. Shared fingerprints link with confidence 0.5.
+- The demo gains a JARM shared by two hosts, an SSH server with its HASSH, and certificate searches.
+- Helm chart 0.52.0.
+
 ## [1.61.0] — Phase 61: Saved queries, hunts and query alerts
 
 ### Added

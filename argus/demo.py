@@ -15,6 +15,7 @@ Load it with ``argus --load-demo`` (or ``POST /api/demo`` as an admin).
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -30,6 +31,7 @@ from argus.core.models import (
     ScanConfig,
 )
 from argus.intel.favicon import fingerprint
+from argus.intel.jarm import jarm_hash
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.storage.repository import InvestigationRepository
 
@@ -618,6 +620,47 @@ _ENTITIES["favicon"] = (
     {**_DEMO_ICON.as_metadata(), "pivot_hub": True},
 )
 _RELATIONS.extend((host, "favicon", R.USES_TECH, "serves favicon") for host in ("www", "shop", "legacy"))
+
+# Server fingerprints (Phase 62): one TLS configuration on the VPN and legacy hosts, and an SSH server.
+# Computed from fixed, fictional handshake answers and algorithm lists: no real server's fingerprint.
+_DEMO_JARM = jarm_hash(
+    ["c02f|0303|h2|ff01-0000-0001-000b-0023-0010-0017", "c030|0303|http/1.1|ff01-0000-0001-0023-0010-0017", "|||",
+     "1301|0303||002b-0033", "0035|0302||ff01-0000", "|||", "1302|0303||002b-0033", "|||", "c02c|0303||0000-ff01",
+     "cca8|0303|h2|0017-0010"]
+)  # fmt: skip
+_DEMO_HASSH_ALGORITHMS = (
+    "curve25519-sha256,diffie-hellman-group14-sha256;aes128-ctr,aes256-ctr,aes128-cbc;hmac-sha1,hmac-sha2-256;none"
+)
+_DEMO_HASSH = hashlib.md5(_DEMO_HASSH_ALGORITHMS.encode(), usedforsecurity=False).hexdigest()
+_ENTITIES.update(
+    {
+        "jarm": (E.GENERIC, f"jarm:{_DEMO_JARM}", f"JARM {_DEMO_JARM[:12]}…", 2, "jarm",
+                 {"category": "jarm", "jarm": _DEMO_JARM, "probes_answered": 7, "pivot_hub": True,
+                  "search_queries": {"shodan": f"ssl.jarm:{_DEMO_JARM}",
+                                     "censys": f"services.jarm.fingerprint: {_DEMO_JARM}"}}),
+        "p22": (E.PORT, "203.0.113.30:22", "Port 22 (SSH)", 3, "shodan_internetdb",
+                {"port_number": 22, "service_guess": "SSH", "ip": "203.0.113.30"}),
+        "hassh": (E.GENERIC, f"hassh:{_DEMO_HASSH}", f"HASSH {_DEMO_HASSH[:12]}…", 4, "ssh_fingerprint",
+                  {"category": "hassh", "hassh_server": _DEMO_HASSH, "pivot_hub": True,
+                   "hassh_server_algorithms": _DEMO_HASSH_ALGORITHMS,
+                   "search_queries": {"shodan": f"ssh.hassh:{_DEMO_HASSH}"}}),
+        "openssh": (E.TECHNOLOGY, "OpenSSH 7.4", "OpenSSH 7.4", 4, "ssh_fingerprint",
+                    {"category": "SSH Server", "banner": "SSH-2.0-OpenSSH_7.4"}),
+    }
+)  # fmt: skip
+_RELATIONS.extend(
+    [
+        ("vpn", "jarm", R.USES_TECH, "TLS fingerprint"),
+        ("legacy", "jarm", R.USES_TECH, "TLS fingerprint"),
+        ("ip_db", "p22", R.EXPOSES, "Exposes Port 22"),
+        ("p22", "hassh", R.USES_TECH, "SSH fingerprint"),
+        ("p22", "openssh", R.USES_TECH, "runs"),
+    ]
+)
+_ENTITIES["cert"][5]["search_queries"] = {
+    "shodan": "ssl.cert.fingerprint:9f3c",
+    "censys": "services.tls.certificates.leaf_data.fingerprint: 9f3c",
+}
 
 # A month earlier the surface looked different - used to demonstrate drift detection.
 _ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket", "lk_login", "lk_payroll"}

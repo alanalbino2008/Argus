@@ -134,6 +134,7 @@ Beyond live DNS and websites, Argus digs where organisations forget to look:
 | **GitHub** | The organisation (verified against the domain) and its public members' handles; public code mentioning the domain, scanned for leaked keys and passwords (stored only as a 4-character preview) |
 | **PGP keyservers** | Real names and the other email addresses bound to the same key |
 | **The website itself** *(active)* | `security.txt`, `robots.txt`, exposed `.git`/`.env`/`server-status` confirmed by content, published emails and phone numbers |
+| **Server fingerprints** *(active)* | JARM for TLS servers and HASSH for SSH servers: hosts configured the same way (C2 frameworks, phishing kits, one estate) linked through a shared node, with Shodan / Censys searches to find the rest |
 | **Favicons** *(active)* | Hosts serving the same icon (same operator, product or phishing kit), and Shodan / FOFA / ZoomEye / Censys searches to find the rest of the internet serving it |
 | **Cloud storage** *(active)* | Amazon S3 / Google Cloud buckets named after the organisation, and whether anyone can list them |
 

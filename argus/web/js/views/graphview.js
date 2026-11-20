@@ -49,6 +49,7 @@ const HIDDEN_META = new Set([
   "opencorporates_officer_matches", "opencorporates_url", "legal_form_code", "activity_code", "company_size",
   "establishments", "country", "employees", "in_group", "insolvency", "industry",
   "mmh3", "md5", "sha256", "size", "content_type", "search_queries", "pivot_hub",
+  "jarm", "probes_answered", "hassh_server", "hassh_server_algorithms",
 ]);
 
 const CATEGORY_LABEL = {
@@ -685,21 +686,42 @@ function officerBlock(md) {
   return out;
 }
 
-const FAVICON_ENGINES = { shodan: "Shodan", fofa: "FOFA", zoomeye: "ZoomEye", censys: "Censys" };
+const SEARCH_ENGINES = { shodan: "Shodan", fofa: "FOFA", zoomeye: "ZoomEye", censys: "Censys" };
 
-/** A favicon hub: who here serves it, and searches to find who else on the internet does. */
-function faviconBlock(entity) {
+// Fingerprint hubs: what the hash is, what sharing it suggests, and its facts.
+const FINGERPRINTS = {
+  favicon: {
+    title: "Favicon fingerprint", served: "Served by",
+    meaning: "The same icon often means the same operator or product, but default icons are shared by unrelated sites: treat it as a lead.",
+    facts: (md) => [["Shodan hash", md.mmh3], ["MD5", md.md5], ["Type", `${md.content_type} · ${md.size} bytes`]],
+  },
+  jarm: {
+    title: "TLS fingerprint (JARM)", served: "Shared by",
+    meaning: "Servers with the same JARM answer TLS the same way: the same software, version and configuration. Unusual JARMs cluster C2 servers and phishing kits; common ones (big CDNs, stock web servers) say little.",
+    facts: (md) => [["JARM", md.jarm], ["Probes answered", `${md.probes_answered} of 10`]],
+  },
+  hassh: {
+    title: "SSH fingerprint (HASSH)", served: "Shared by",
+    meaning: "The SSH server's algorithm list, hashed: the same software build and configuration. A stock OpenSSH is shared by millions of servers; a customised one is a strong link.",
+    facts: (md) => [["HASSH", md.hassh_server], ["Algorithms", md.hassh_server_algorithms]],
+  },
+};
+
+/** A fingerprint hub, or a certificate: who here shares it, and searches to find who else does. */
+function fingerprintBlock(entity) {
   const md = entity.metadata;
+  const kind = FINGERPRINTS[md.category];
   const hosts = graph.neighbors(entity.id).length;
-  return html`<div class="section"><div class="section-title">Favicon fingerprint</div>
-    <p class="small">${hosts > 1 ? html`<b>Served by ${hosts} hosts in this graph.</b> ` : ""}The same icon often means the same operator or product, but default icons are shared by unrelated sites: treat it as a lead.</p>
-    <dl class="kv"><dt>Shodan hash</dt><dd><code>${md.mmh3}</code></dd><dt>MD5</dt><dd><code>${md.md5}</code></dd>
-      <dt>Type</dt><dd>${md.content_type} · ${md.size} bytes</dd></dl>
-    <div class="section-title" style="margin-top:10px">Find it elsewhere</div>
-    ${Object.entries(md.search_queries || {}).map(([engine, q]) => html`<div class="list-row"><span class="pill accent">${FAVICON_ENGINES[engine] || engine}</span>
+  const searches = Object.entries(md.search_queries || {});
+  if (!kind && !searches.length) return "";
+  return html`<div class="section">${kind ? html`<div class="section-title">${kind.title}</div>
+    <p class="small">${hosts > 1 ? html`<b>${kind.served} ${hosts} hosts in this graph.</b> ` : ""}${kind.meaning}</p>
+    <dl class="kv">${kind.facts(md).map(([k, v]) => html`<dt>${k}</dt><dd><code style="word-break:break-all">${v}</code></dd>`)}</dl>` : ""}
+    ${searches.length ? html`<div class="section-title" style="margin-top:10px">${kind ? "Find it elsewhere" : "Other hosts with this certificate"}</div>
+    ${searches.map(([engine, q]) => html`<div class="list-row"><span class="pill accent">${SEARCH_ENGINES[engine] || engine}</span>
       <div class="list-main"><code class="small" style="word-break:break-all">${q}</code></div>
       <button class="btn sm" data-copy="${q}" title="Copy">Copy</button></div>`)}
-    <p class="muted small" style="margin-top:6px">Paste into the search engine yourself: it sees the query and your connection, not the target.</p></div>`;
+    <p class="muted small" style="margin-top:6px">Paste into the search engine yourself: it sees the query and your connection, not the target.</p>` : ""}</div>`;
 }
 
 function intelBlocks(entity) {
@@ -712,7 +734,7 @@ function intelBlocks(entity) {
   if (entity.type === "domain" || entity.type === "subdomain") blocks.push(...crawlBlock(md));
   blocks.push(...phoneBlock(entity));
   blocks.push(...networkBlock(entity));
-  if (md.category === "favicon") blocks.push(faviconBlock(entity));
+  if (FINGERPRINTS[md.category] || md.search_queries) blocks.push(fingerprintBlock(entity));
   if (md.found_on) blocks.push(html`<div class="section"><div class="section-title">Where it was found</div><p class="small">${/^https?:\/\//.test(md.found_on) ? ext(md.found_on, md.found_on) : md.found_on}</p></div>`);
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;

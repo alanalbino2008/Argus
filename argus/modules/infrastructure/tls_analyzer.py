@@ -65,6 +65,7 @@ def parse_certificate(der: bytes, now: datetime | None = None) -> dict[str, Any]
         "self_signed": cert.issuer == cert.subject,
         "serial": format(cert.serial_number, "x"),
         "sha256_fingerprint": cert.fingerprint(hashes.SHA256()).hex(),
+        "sha1_fingerprint": cert.fingerprint(hashes.SHA1()).hex(),  # noqa: S303 - an identifier, as Shodan indexes it
         "valid_from": not_before.isoformat(),
         "valid_to": not_after.isoformat(),
         "days_remaining": (not_after - now).days,
@@ -141,6 +142,10 @@ class TlsAnalyzerModule(BaseModule):
                 **{k: v for k, v in info.items() if k != "sans"},
                 "observed_on": domain,
                 "sans_count": len(info["sans"]),
+                "search_queries": {  # every other host serving this certificate
+                    "shodan": f"ssl.cert.fingerprint:{info['sha1_fingerprint']}",
+                    "censys": f"services.tls.certificates.leaf_data.fingerprint: {info['sha256_fingerprint']}",
+                },
                 "tls_version": tls_version,
                 "cipher": cipher[0] if cipher else "Unknown",
             },
