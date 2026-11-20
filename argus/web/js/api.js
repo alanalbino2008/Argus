@@ -73,6 +73,7 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
     return res;
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (res.status === 403 && data?.terms) window.argusAskTerms?.(); // updated terms to accept first
   if (!res.ok) throw new ApiError(res.status, describe(data, res.status));
   return data;
 }

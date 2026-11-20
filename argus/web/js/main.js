@@ -209,6 +209,7 @@ async function setupSignInOptions() {
     if (!config.personal.configured) $("#signin-account-hint").textContent = "This installation has no Argus account service configured (ARGUS_ACCOUNT_SERVER_URL and ARGUS_LICENCE_PUBLIC_KEY).";
     if (config.personal.access === "read_only") showReadOnly(config.personal.reason);
     if (/^https?:\/\//.test(config.personal.account_service || "")) {
+      for (const a of $$(".legal-link")) a.href = `${config.personal.account_service.replace(/\/+$/, "")}/legal/${a.dataset.doc}`;
       $("#signin-forgot").href = `${config.personal.account_service.replace(/\/+$/, "")}/reset-password`;
       $("#signin-forgot-wrap").hidden = false;
     }
@@ -259,6 +260,40 @@ async function switchWorkspace(id) {
   toast(`Switched to ${state.workspace?.name || "workspace"}`, "success", 2200);
 }
 
+// Argus Personal: the operator published new terms. New work waits until they're accepted.
+function askToAcceptTerms(terms) {
+  if (document.querySelector(".terms-modal")) return;
+  const docs = terms.documents || {};
+  const box = document.createElement("div");
+  box.className = "modal-root open terms-modal";
+  const close = () => box.parentNode?.removeChild(box);
+  setHTML(box, html`<div class="modal-backdrop"></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="terms-title" style="max-width:520px">
+      <div class="modal-head"><div><h2 id="terms-title">Updated terms</h2><p class="muted small">Version ${terms.version}</p></div></div>
+      <div class="modal-body"><p>The Terms of Service, Acceptable Use Policy and Privacy Policy have been updated. Please read them and accept to keep starting new work. Your cases stay readable meanwhile.</p>
+        <ul>${[["terms", "Terms of Service"], ["acceptable-use", "Acceptable Use Policy"], ["privacy", "Privacy Policy"]].filter(([d]) => /^https?:\/\//.test(docs[d] || "")).map(([d, t]) => html`<li><a href="${docs[d]}" target="_blank" rel="noopener">${t} ↗</a></li>`)}</ul>
+        <p class="error-text"></p>
+        <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"><button class="btn ghost" data-later>Later</button><button class="btn primary" data-accept>I agree</button></div></div></div>`);
+  document.body.append(box);
+  box.querySelector("[data-later]").addEventListener("click", close);
+  box.querySelector("[data-accept]").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      personalMode = await api.post("/api/personal/accept-terms");
+      close();
+      toast("Thank you: the updated terms are accepted", "success");
+    } catch (err) {
+      box.querySelector(".error-text").textContent = err.message;
+      e.target.disabled = false;
+    }
+  });
+}
+window.argusAskTerms = async () => {
+  const status = await fetch("/api/personal/status").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  if (status) personalMode = status;
+  if (status?.terms?.required) askToAcceptTerms(status.terms);
+};
+
 // Argus Personal: say so when backups are failing, and (at most once a week) when they're off.
 async function remindAboutBackups() {
   const b = await api.get("/api/backups").catch(() => null);
@@ -283,6 +318,7 @@ async function enterApp(me) {
   $("#user-name").textContent = `${me.name}`;
   await refreshVault();
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
+  if (personalMode?.terms?.required) askToAcceptTerms(personalMode.terms);
   if (personalMode) remindAboutBackups();
   if (personalMode?.update) toast(`Argus ${personalMode.update.version} is available: Settings → Argus on this computer`, "info", 8000);
   refreshMonitoring();
@@ -300,6 +336,7 @@ function setupAuth() {
     e.preventDefault();
     creating = !creating;
     $("#signin-name-field").hidden = !creating;
+    $("#signin-terms-field").hidden = !creating || !personalMode?.account_service;
     $("#signin-mode").textContent = creating ? "Already have an account? Sign in" : "New to Argus? Create an account";
     $("#signin-password").autocomplete = creating ? "new-password" : "current-password";
     $("#signin-form button[type=submit]").textContent = creating ? "Create account and start trial" : "Sign in";
@@ -309,8 +346,9 @@ function setupAuth() {
     if (personalMode) {
       const body = { email: $("#signin-email").value.trim(), password: $("#signin-password").value };
       if (!body.email || !body.password) { $("#signin-error").textContent = "Enter your email and password."; return; }
+      if (creating && personalMode?.account_service && !$("#signin-terms").checked) { $("#signin-error").textContent = "Agree to the Terms of Service and Acceptable Use Policy to create an account."; return; }
       try {
-        personalMode = await personalSignIn(creating ? "sign-up" : "sign-in", creating ? { ...body, name: $("#signin-name").value.trim() } : body);
+        personalMode = await personalSignIn(creating ? "sign-up" : "sign-in", creating ? { ...body, name: $("#signin-name").value.trim(), accept_terms: $("#signin-terms").checked } : body);
       } catch (err) {
         $("#signin-error").textContent = err.message;
         return;

@@ -52,6 +52,12 @@ class SignInRequest(BaseModel):
 
 class SignUpRequest(SignInRequest):
     name: str = Field(default="", max_length=255)
+    accept_terms: bool = False
+
+
+class DeleteAccount(BaseModel):
+    password: str = Field(max_length=256)
+    confirm: str = Field(max_length=32)
 
 
 def _personal(request: Request) -> Any:
@@ -127,7 +133,7 @@ async def personal_sign_up(body: SignUpRequest, request: Request, response: Resp
     personal = _personal(request)
     _csrf(request)
     try:
-        await personal.sign_up(body.email.strip(), body.password, body.name.strip())
+        await personal.sign_up(body.email.strip(), body.password, body.name.strip(), body.accept_terms)
         payload = await personal.sign_in(body.email.strip(), body.password)
     except AccountServiceError as exc:
         raise _service_error(exc) from exc
@@ -300,6 +306,50 @@ async def personal_key_remove(provider: str, request: Request):
     return {"keys": own_keys.listing()}
 
 
+@router.post("/accept-terms")
+async def personal_accept_terms(request: Request):
+    """Accept the published Terms, Acceptable Use Policy and Privacy Policy."""
+    personal = _personal(request)
+    principal = await get_principal(request)
+    try:
+        status = await personal.accept_terms()
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+    await audit(request, principal, "account.terms_accepted", principal.key_id,
+                details={"version": (status.get("terms") or {}).get("version")})  # fmt: skip
+    return status
+
+
+@router.get("/account-data")
+async def personal_account_data(request: Request):
+    """Download everything the Argus account service holds about this account."""
+    personal = _personal(request)
+    principal = await get_principal(request)
+    try:
+        data = await personal.export()
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+    await audit(request, principal, "account.exported", principal.key_id)
+    return JSONResponse(data, headers={"Content-Disposition": 'attachment; filename="argus-account-data.json"'})
+
+
+@router.post("/delete-account")
+async def personal_delete_account(body: DeleteAccount, request: Request, response: Response):
+    """Delete the Argus account. This computer is signed out; its cases stay here."""
+    personal = _personal(request)
+    principal = await get_principal(request)
+    try:
+        await personal.delete_account(body.password, body.confirm)
+    except AccountServiceError as exc:
+        raise _service_error(exc) from exc
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        await request.app.state.users.delete_session(token)
+    response.delete_cookie(SESSION_COOKIE, path="/")
+    await audit(request, principal, "account.deleted", principal.key_id)
+    return personal.status()
+
+
 @router.post("/refresh")
 async def personal_refresh(request: Request):
     """Check the subscription now (after renewing it, for example)."""
@@ -334,6 +384,10 @@ async def licence_gate(request: Request, call_next: Any) -> Any:
         return JSONResponse({"detail": reason, "sign_in": True}, status_code=401)
     if level == "read_only" and request.method in UNSAFE_METHODS and not any(p.match(path) for p in READ_ONLY_WRITES):
         return JSONResponse({"detail": reason, "read_only": True}, status_code=402)
+    terms = request.app.state.personal.terms or {}
+    if terms.get("required") and request.method in UNSAFE_METHODS and not any(p.match(path) for p in READ_ONLY_WRITES):
+        return JSONResponse({"detail": "The Terms of Service have been updated: accept them to continue "
+                                       "(everything stays readable meanwhile)", "terms": True}, status_code=403)  # fmt: skip
     feature = features.needed(path) if request.method in UNSAFE_METHODS else None
     if feature and not features.allows(feature):
         return JSONResponse({"detail": features.upgrade_message(feature), "upgrade": True, "feature": feature},

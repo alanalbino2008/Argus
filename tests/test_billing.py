@@ -76,6 +76,13 @@ class StripeHandler(BaseHTTPRequestHandler):
             return self._send(200, {"url": "https://billing.stripe.com/p/session/test_1"})
         return self._send(404, {"error": {"message": "nope"}})
 
+    def do_DELETE(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        self._record({})
+        if self.path.startswith("/v1/customers/"):
+            return self._send(200, {"id": self.path.rsplit("/", 1)[1], "deleted": True})
+        return self._send(404, {"error": {"message": "nope"}})
+
     def _send(self, status, payload):
         data = json.dumps(payload).encode()
         self.send_response(status)

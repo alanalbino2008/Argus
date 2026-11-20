@@ -48,7 +48,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import text
 
 from argus import __version__
-from argus.accounts import own_keys
+from argus.accounts import own_keys, privacy
 from argus.accounts.alerts import OwnerAlerts
 from argus.accounts.mailer import AccountMailer
 from argus.accounts.owner import box as owner_box
@@ -68,6 +68,7 @@ from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
 from argus.api.exposure_routes import router as exposure_router
 from argus.api.inspect_routes import router as inspect_router
+from argus.api.legal_routes import router as legal_router
 from argus.api.map_routes import router as map_router
 from argus.api.monitor_routes import router as monitor_router
 from argus.api.network_routes import router as network_router
@@ -354,6 +355,11 @@ async def lifespan(app: FastAPI):
         if settings.account_service_enabled
         else None
     )
+    privacy_task = (
+        asyncio.create_task(privacy.run_forever(app), name="privacy-retention")
+        if settings.account_service_enabled
+        else None
+    )
     app.state.owner_alerts = OwnerAlerts(app)
     alerts_task = (
         asyncio.create_task(app.state.owner_alerts.run_forever(), name="owner-alerts")
@@ -395,6 +401,7 @@ async def lifespan(app: FastAPI):
                 vault_task,
                 backup_task,
                 alerts_task,
+                privacy_task,
             )
             if t
         ]
@@ -594,6 +601,7 @@ app.include_router(analyst_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
 app.include_router(backup_router)
+app.include_router(legal_router)
 app.include_router(network_router)
 app.include_router(people_router)
 

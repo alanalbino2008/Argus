@@ -7,16 +7,18 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from argus.accounts.licence import PLANS
 from argus.storage.db import (
+    AccountEmailRow,
     AppStateRow,
     BillingEventRow,
     BillingPaymentRow,
     CreditLedgerRow,
     Database,
+    PasswordResetRow,
     SubscriberAccountRow,
     SubscriberDeviceRow,
     TeamInviteRow,
@@ -54,6 +56,8 @@ def _account(row: SubscriberAccountRow, devices: int | None = None) -> dict[str,
         "reminder_emails": bool(row.reminder_emails if row.reminder_emails is not None else True),
         "team_id": row.team_id, "seats": int(row.seats or 1),
         "last_login_at": _iso(row.last_login_at),
+        "terms_version": row.terms_version or "", "terms_accepted_at": _iso(row.terms_accepted_at),
+        "deleted_at": _iso(row.deleted_at),
     }  # fmt: skip
     if devices is not None:
         out["devices"] = devices
@@ -270,6 +274,33 @@ class SubscriberRepository:
             rows = (await s.scalars(select(SubscriberDeviceRow).where(SubscriberDeviceRow.account_id == account_id)
                                     .order_by(SubscriberDeviceRow.last_seen.desc()))).all()  # fmt: skip
         return [_device(r) for r in rows]
+
+    async def erase(self, account_id: str) -> None:
+        """Delete an account's personal details. Payment and credit records stay, under the anonymous id."""
+        now = datetime.now(timezone.utc)
+        async with self.db.session() as s, s.begin():
+            row = await s.get(SubscriberAccountRow, account_id)
+            if row is None:
+                return
+            row.email, row.name = f"deleted-{account_id}@deleted.invalid", ""
+            row.password_hash, row.billing_reference = "!deleted", ""
+            row.status, row.team_id, row.reminder_emails = "cancelled", None, False
+            row.valid_until, row.deleted_at = now, now
+            for table in (SubscriberDeviceRow, AccountEmailRow, PasswordResetRow):
+                await s.execute(delete(table).where(table.account_id == account_id))
+            await s.execute(delete(TeamInviteRow).where(TeamInviteRow.team_id == account_id))
+
+    async def purge(self, *, emails_before: datetime, devices_before: datetime) -> dict[str, int]:
+        """Retention: records of sent emails, and computers signed out long ago."""
+        async with self.db.session() as s, s.begin():
+            mails = await s.execute(delete(AccountEmailRow).where(AccountEmailRow.status != "pending",
+                                                                  AccountEmailRow.created_at < emails_before))  # fmt: skip
+            devices = await s.execute(delete(SubscriberDeviceRow).where(SubscriberDeviceRow.revoked.is_(True),
+                                                                        SubscriberDeviceRow.last_seen < devices_before))  # fmt: skip
+            resets = await s.execute(delete(PasswordResetRow).where(PasswordResetRow.expires_at < emails_before))
+            invites = await s.execute(delete(TeamInviteRow).where(TeamInviteRow.expires_at < emails_before))
+        return {"emails": mails.rowcount or 0, "devices": devices.rowcount or 0,  # type: ignore[attr-defined]
+                "resets": resets.rowcount or 0, "invites": invites.rowcount or 0}  # type: ignore[attr-defined]  # fmt: skip
 
     async def revoke_all_devices(self, account_id: str) -> int:
         """Sign every computer out (after a password reset)."""

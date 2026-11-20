@@ -266,6 +266,27 @@ class Settings(BaseSettings):
         default="", description="Account service: sender of account emails (default: ARGUS_SMTP_FROM)"
     )
     support_email: str = Field(default="", description="Account service: support address shown in emails and replies")
+    legal_company_name: str = Field(default="", description="Legal documents: your business's legal name")
+    legal_company_number: str = Field(default="", description="Legal documents: company registration number")
+    legal_company_address: str = Field(default="", description="Legal documents: registered address")
+    legal_contact_email: str = Field(default="", description="Legal documents: contact email")
+    legal_privacy_email: str = Field(
+        default="", description="Legal documents: privacy contact (default: contact email)"
+    )
+    legal_governing_law: str = Field(default="England and Wales", description="Legal documents: governing law")
+    legal_supervisory_authority: str = Field(
+        default="the Information Commissioner's Office (ico.org.uk)",
+        description="Legal documents: data protection regulator",
+    )
+    legal_hosting_provider: str = Field(default="", description="Legal documents: hosting provider | location")
+    legal_email_provider: str = Field(default="", description="Legal documents: email provider | location")
+    legal_terms_version: str = Field(
+        default="", description="Legal documents: published version (a date); empty = draft"
+    )
+    legal_reviewed: bool = Field(default=False, description="Legal documents: a lawyer has reviewed them")
+    case_review_months: int = Field(
+        default=12, ge=0, le=120, description="Remind about cases untouched for this many months (0: never)"
+    )
     owner_alerts_enabled: bool = Field(
         default=True, description="Owner console: email the owner when something needs attention"
     )

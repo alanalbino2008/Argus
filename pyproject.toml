@@ -57,7 +57,7 @@ version = { attr = "argus.__version__" }  # single source of truth: argus/__init
 include = ["argus*"]
 
 [tool.setuptools.package-data]
-argus = ["data/*.json", "web/*.html", "web/*.css", "web/js/*.js", "web/js/views/*.js", "web/vendor/*", "storage/migrations/*.mako"]
+argus = ["data/*.json", "data/legal/*.md", "web/*.html", "web/*.css", "web/js/*.js", "web/js/views/*.js", "web/vendor/*", "storage/migrations/*.mako"]
 
 [project.scripts]
 argus = "argus.cli.console:cli_entrypoint"

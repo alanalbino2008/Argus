@@ -96,6 +96,7 @@ class PersonalLicence:
         self.issuer = settings.account_server_url.rstrip("/") or None
         self.last_credits: dict[str, Any] | None = None  # balance after the latest Argus Connect lookup
         self.update: dict[str, Any] | None = None  # a newer desktop version, when the account service offers one
+        self.terms: dict[str, Any] | None = None  # the published legal documents, and whether to accept them again
         self._update_checked = 0.0
 
     async def load(self) -> None:
@@ -141,7 +142,7 @@ class PersonalLicence:
             "account_service": self.settings.account_server_url or None,
             "features": features.summary(p) if p else None,
             "configured": bool(self.settings.account_server_url and self._public),
-            "version": __version__, "update": self.update, "desktop": bool(os.environ.get("ARGUS_DESKTOP")),
+            "version": __version__, "update": self.update, "terms": self.terms, "desktop": bool(os.environ.get("ARGUS_DESKTOP")),
         }  # fmt: skip
 
     async def _store(self, token: str) -> dict[str, Any]:
@@ -154,9 +155,32 @@ class PersonalLicence:
         result = await self.client.call("token", {"email": email, "password": password, "device_id": self.device_id,
                                                   "device_name": device_name or platform.node()[:100]})  # fmt: skip
         try:
-            return await self._store(str(result.get("licence") or ""))
+            payload = await self._store(str(result.get("licence") or ""))
         except LicenceError as exc:
             raise AccountServiceError(502, f"The account service sent a licence Argus cannot trust: {exc}") from exc
+        self.terms = result.get("terms") if isinstance(result.get("terms"), dict) else None
+        return payload
+
+    async def accept_terms(self) -> dict[str, Any]:
+        if not self.token:
+            raise AccountServiceError(401, "Sign in first")
+        result = await self.client.call("accept-terms", {"licence": self.token})
+        self.terms = result.get("terms") if isinstance(result.get("terms"), dict) else None
+        return self.status()
+
+    async def export(self) -> dict[str, Any]:
+        """Everything the account service holds about this account."""
+        if not self.token:
+            raise AccountServiceError(401, "Sign in first")
+        return await self.client.call("export", {"licence": self.token})
+
+    async def delete_account(self, password: str, confirm: str) -> None:
+        """Delete the account at the account service; this computer is then signed out (its cases stay)."""
+        if not self.token:
+            raise AccountServiceError(401, "Sign in first")
+        await self.client.call("delete", {"licence": self.token, "password": password, "confirm": confirm})
+        self.token, self.payload, self.revoked, self.terms = None, None, None, None
+        await self.state.delete(LICENCE_KEY)
 
     async def credits(self) -> dict[str, Any]:
         """The account's Argus credits and what each lookup costs."""
@@ -178,8 +202,9 @@ class PersonalLicence:
             raise AccountServiceError(401, "Sign in first")
         return await self.client.call(f"/api/teams/{action}", {"licence": self.token, **(body or {})})
 
-    async def sign_up(self, email: str, password: str, name: str) -> dict[str, Any]:
-        return await self.client.call("signup", {"email": email, "password": password, "name": name})
+    async def sign_up(self, email: str, password: str, name: str, accept_terms: bool = False) -> dict[str, Any]:
+        return await self.client.call("signup", {"email": email, "password": password, "name": name,
+                                                 "accept_terms": accept_terms})  # fmt: skip
 
     async def refresh(self) -> bool:
         """Renew the licence. Never raises: offline is normal, and the licence covers it for a while."""
@@ -188,6 +213,8 @@ class PersonalLicence:
         try:
             result = await self.client.call("refresh", {"licence": self.token})
             await self._store(str(result.get("licence") or ""))
+            if isinstance(result.get("terms"), dict):
+                self.terms = result["terms"]
             return True
         except AccountServiceError as exc:
             if exc.status in (401, 403):  # the account refuses this computer: stop new work, keep the data

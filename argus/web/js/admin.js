@@ -130,7 +130,7 @@ function renderConfirm() {
 
 // ------------------------------------------------------------------ the console
 const TABS = [["overview", "Overview"], ["payments", "Payments"], ["email", "Email"], ["accounts", "Accounts & plans"],
-  ["sources", "Data sources"], ["alerts", "Alerts"], ["desktop", "Desktop app"], ["security", "Security"], ["activity", "Activity"]];
+  ["sources", "Data sources"], ["legal", "Legal"], ["alerts", "Alerts"], ["desktop", "Desktop app"], ["security", "Security"], ["activity", "Activity"]];
 const STATUS = { ok: ["ok", "Working"], warn: ["warn", "Check"], error: ["critical", "Problem"], off: ["", "Off"] };
 
 function shell(content) {
@@ -270,6 +270,8 @@ const VIEWS = {
   email: () => viewSection("email", "Email", "The mail server Argus sends customer emails and your security alerts through. Ask your email provider for these details.", html`<button class="btn" type="button" data-act="test-email">Send test email</button>`),
   accounts: viewAccounts,
   sources: () => viewSection("sources", "Paid data sources", "Your keys for the paid sources customers use through Argus Connect, paid for with their credits. Customers on Bring-your-own-keys use their own."),
+  legal: () => viewSection("legal", "Legal documents", "Your Terms of Service, Privacy Policy, Acceptable Use Policy, Refunds, Data Processing Agreement and Subprocessors, written for how Argus works and filled in with your details. They're a starting point, not legal advice: have a lawyer review them before you rely on them. Publish them by setting a version date; change the date whenever they change, and customers are asked to accept again.",
+    html`<div class="small" style="display:flex;gap:10px;flex-wrap:wrap">${["terms", "privacy", "acceptable-use", "refunds", "dpa", "subprocessors"].map((d) => html`<a href="/legal/${d}" target="_blank" rel="noopener">${d.replace("-", " ")} ↗</a>`)}</div>`),
   alerts: viewAlerts,
   desktop: () => viewSection("desktop", "Desktop app", "When you publish a new Argus Personal installer, enter its version and download page here. Installed copies check once a day and offer the update in Settings."),
   security: viewSecurity,

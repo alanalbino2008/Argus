@@ -175,6 +175,9 @@ class SubscriberAccountRow(Base):
     seats: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # a team owner: seats paid for
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terms_version: Mapped[str] = mapped_column(String(32), default="", server_default="")  # accepted version
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # details erased
 
 
 class SubscriberDeviceRow(Base):

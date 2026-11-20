@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.57.0] — Phase 57: Legal documents and privacy
+
+### Added
+- **Legal documents** served by the account service at `/legal/...`:
+  - Terms of Service, Privacy Policy, Acceptable Use Policy, Refunds and Cancellation, Data
+    Processing Agreement and Subprocessors.
+  - Written for how Argus works, and filled in with the owner's business details (owner
+    console → **Legal**).
+  - Marked as a draft until published. Health warns until they're complete, published and
+    reviewed by a lawyer.
+  - `GET /api/legal` lists them.
+- **Accepting them**:
+  - Once published, new accounts must agree (version and time recorded).
+  - Publishing a new version asks every customer to accept again: Argus Personal shows the
+    updated terms, and new work waits until they're accepted. Reading, exporting and
+    backups keep working.
+  - `POST /api/accounts/accept-terms`.
+- **Customers' data rights**, in Argus Personal (Settings → Your data):
+  - Download my account data: everything the account service holds about the account.
+  - Delete my account: the customer is deleted at Stripe (ending billing), and their
+    personal details, computers, emails, links and invitations are erased. Payment records
+    stay anonymously for tax law. Cases stay on the computer.
+  - `POST /api/accounts/export`, `POST /api/accounts/delete`, `GET /api/personal/account-data`,
+    `POST /api/personal/delete-account`.
+- **Retention**: records of sent emails, expired links and invitations go after 6 months;
+  computers signed out over a year ago are forgotten (daily).
+- **Case reviews**: cases untouched for 12 months are marked for review in the Cases list
+  (`ARGUS_CASE_REVIEW_MONTHS`).
+- Database migration 0027 (terms acceptance and account deletion). Helm chart 0.47.0.
+
 ## [1.56.0] — Phase 56: Backups and alerts
 
 ### Added

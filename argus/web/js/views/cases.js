@@ -52,10 +52,11 @@ function renderList() {
       <div><h1>Cases</h1><p>One place per story or inquiry: notes, people and how they connect, a timeline, scans, and web pages preserved as evidence with fingerprints and a chain of custody.</p></div>
       ${canEdit() ? html`<div class="page-actions"><button class="btn primary" data-act="new-case">${ico("plus")}New case</button></div>` : ""}
     </div>
+    ${cases.some((c) => c.review_due) ? html`<div class="callout warn" style="margin-bottom:12px">${ico("history")}<span><b>${cases.filter((c) => c.review_due).length} case(s) haven't been touched in a long time.</b> Data protection law expects you to keep personal information only while you need it: close, export or delete the ones you've finished with.</span></div>` : ""}
     ${!cases.length ? html`<div class="card">${empty("report", "No cases yet", "Open a case for each investigation. Capture pages before they change or disappear, and export a bundle anyone can verify.")}</div>`
       : html`<div class="case-grid">${cases.map((c) => html`<button class="card card-pad case-card" data-open-case="${c.id}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b>${c.title}</b>
-          <span>${c.restricted ? html`<span class="pill" title="Only the owner and members can open it">${ico("shield")}Restricted</span>` : ""} ${anonymous(c) ? html`<span class="pill ok">Anonymous</span>` : ""} <span class="pill ${c.status === "open" ? "accent" : ""}">${c.status}</span></span></div>
+          <span>${c.restricted ? html`<span class="pill" title="Only the owner and members can open it">${ico("shield")}Restricted</span>` : ""} ${anonymous(c) ? html`<span class="pill ok">Anonymous</span>` : ""} ${c.review_due ? html`<span class="pill warn" title="Untouched for a long time: keep it only if you still need it">Review</span>` : ""} <span class="pill ${c.status === "open" ? "accent" : ""}">${c.status}</span></span></div>
         <p class="muted small" style="margin:6px 0">${c.purpose}</p>
         <div class="muted small">${c.counts.entity || 0} people & entities · ${c.counts.evidence || 0} evidence · ${c.counts.note || 0} notes · updated ${timeAgo(c.updated_at)}</div>
       </button>`)}</div>`}

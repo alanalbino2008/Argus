@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from argus import __version__
-from argus.accounts import business
+from argus.accounts import business, legal
 from argus.accounts import stripe_billing as stripe
 from argus.accounts.owner import alert as owner_alert
 from argus.accounts.owner import box as owner_box
@@ -74,6 +74,9 @@ async def health(app: Any) -> list[dict[str, str]]:
     else:
         checks.append(_check("Account service", "off", "This server doesn't run the Argus account service",
                              "Set ARGUS_ACCOUNT_SERVICE_ENABLED=true on the server that sells Argus"))  # fmt: skip
+    if s.account_service_enabled:
+        status, detail, fix = legal.health(s)
+        checks.append(_check("Legal documents", status, detail, fix))
     checks.append(_check("Encryption", "ok" if owner_box(s).available else "error",
                          "Secrets are stored encrypted" if owner_box(s).available else "No encryption key"))  # fmt: skip
     # payments

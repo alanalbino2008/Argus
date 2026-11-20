@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from argus.accounts import emails, teams
+from argus.accounts import emails, legal, privacy, teams
 from argus.accounts.licence import PLANS, LicenceError, issue, load_private_key, public_key_of, verify
 from argus.accounts.passwords import DUMMY_HASH, hash_password, verify_password, weakness
 from argus.api.deps import audit, client_ip, require_platform_admin
@@ -43,6 +43,13 @@ class SignupRequest(BaseModel):
     email: str = Field(max_length=320)
     password: str = Field(max_length=256)
     name: str = Field(default="", max_length=255)
+    accept_terms: bool = False  # the Terms, Acceptable Use Policy and Privacy Policy (once published)
+
+
+class DeleteRequest(BaseModel):
+    licence: str = Field(max_length=8192)
+    password: str = Field(max_length=256)
+    confirm: str = Field(max_length=32)  # the word DELETE
 
 
 class TokenRequest(BaseModel):
@@ -125,13 +132,21 @@ async def signup(body: SignupRequest, request: Request):
     problem = weakness(body.password, email)
     if problem:
         raise HTTPException(status_code=422, detail=problem)
+    version = legal.published(settings)
+    if version and not body.accept_terms:
+        raise HTTPException(status_code=422, detail="Agree to the Terms of Service, Acceptable Use Policy and "
+                                                    "Privacy Policy to create an account")  # fmt: skip
     hashed = await asyncio.to_thread(hash_password, body.password)
     account = await repo.create(email=email, name=body.name.strip(), password_hash=hashed, plan="trial",
                                 status="trialing",
                                 valid_until=datetime.now(timezone.utc) + timedelta(days=settings.trial_days))  # fmt: skip
     if account is None:
         raise HTTPException(status_code=409, detail="An account with this email already exists: sign in instead")
-    await audit(request, SERVICE, "account.signup", account["id"], details={"plan": "trial"})
+    if version:
+        account = await repo.update(account["id"], terms_version=version,
+                                    terms_accepted_at=datetime.now(timezone.utc)) or account  # fmt: skip
+    await audit(request, SERVICE, "account.signup", account["id"],
+                details={"plan": "trial", **({"terms_accepted": version} if version else {})})  # fmt: skip
     await request.app.state.mailer.notify(account, "welcome", "1")
     return account
 
@@ -165,7 +180,15 @@ async def sign_in(body: TokenRequest, request: Request):
     licence = issue(entitled, device_id=body.device_id, issuer=_issuer(request), private=private,
                     offline_days=settings.licence_offline_days)  # fmt: skip
     await audit(request, SERVICE, "account.sign_in", account["id"], details={"device": body.device_id[:12]})
-    return {"licence": licence, "account": entitled}
+    return {"licence": licence, "account": entitled, "terms": _terms(request, account)}
+
+
+def _terms(request: Request, account: dict[str, Any]) -> dict[str, Any]:
+    """Whether this account has accepted the published version of the legal documents."""
+    settings = request.app.state.settings
+    return {"version": legal.published(settings) or None, "required": legal.needs_acceptance(settings, account),
+            "accepted_version": account.get("terms_version") or None,
+            "documents": legal.links(_issuer(request))}  # fmt: skip
 
 
 async def _licence_account(request: Request, token: str) -> tuple[dict[str, Any], dict[str, Any], Any]:
@@ -176,7 +199,7 @@ async def _licence_account(request: Request, token: str) -> tuple[dict[str, Any]
     except LicenceError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     account = await repo.get(payload["sub"])
-    if account is None:
+    if account is None or account.get("deleted_at"):
         raise HTTPException(status_code=401, detail="This account no longer exists")
     return payload, account, private
 
@@ -192,7 +215,46 @@ async def refresh(body: LicenceRequest, request: Request):
     entitled = await teams.effective(request.app.state.subscribers, account)
     licence = issue(entitled, device_id=payload["device"], issuer=_issuer(request), private=private,
                     offline_days=request.app.state.settings.licence_offline_days)  # fmt: skip
-    return {"licence": licence, "account": entitled}
+    return {"licence": licence, "account": entitled, "terms": _terms(request, account)}
+
+
+@router.post("/accept-terms")
+async def accept_terms(body: LicenceRequest, request: Request):
+    """Accept the published Terms, Acceptable Use Policy and Privacy Policy."""
+    _payload, account, _private = await _licence_account(request, body.licence)
+    version = legal.published(request.app.state.settings)
+    if not version:
+        raise HTTPException(status_code=409, detail="There are no published terms to accept")
+    updated = await request.app.state.subscribers.update(account["id"], terms_version=version,
+                                                         terms_accepted_at=datetime.now(timezone.utc))  # fmt: skip
+    await audit(request, SERVICE, "account.terms_accepted", account["id"], details={"version": version})
+    return {"terms": _terms(request, updated or account)}
+
+
+@router.post("/export")
+async def export_account(body: LicenceRequest, request: Request):
+    """Everything the account service holds about this account (the right of access, and portability)."""
+    _payload, account, _private = await _licence_account(request, body.licence)
+    data = await privacy.export(request.app, account["id"])
+    await audit(request, SERVICE, "account.exported", account["id"])
+    return data
+
+
+@router.post("/delete")
+async def delete_account(body: DeleteRequest, request: Request):
+    """Delete this account: personal details erased, payment records kept anonymously (tax law)."""
+    _payload, account, _private = await _licence_account(request, body.licence)
+    if body.confirm.strip().upper() != "DELETE":
+        raise HTTPException(status_code=422, detail="Type DELETE to confirm")
+    found = await request.app.state.subscribers.by_email(account["email"])
+    if not found or not await asyncio.to_thread(verify_password, body.password, found[1]):
+        raise HTTPException(status_code=401, detail="Wrong password")
+    try:
+        await privacy.delete_account(request.app, account)
+    except privacy.PrivacyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await audit(request, SERVICE, "account.deleted", account["id"], details={"by": "the account holder"})
+    return {"deleted": True}
 
 
 @router.post("/sign-out", status_code=204)

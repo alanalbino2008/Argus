@@ -10,7 +10,7 @@ evidence files are only ever *downloaded* (``Content-Disposition: attachment``) 
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
@@ -166,7 +166,13 @@ def _aware(value: datetime | None) -> datetime | None:
 # ---------------------------------------------------------------------------- cases
 @router.get("/cases")
 async def list_cases(request: Request, ws: WorkspaceContext = VIEWER):
-    return await _repo(request).list_cases(workspace_id=ws.id, who=ws.principal.name)
+    cases = await _repo(request).list_cases(workspace_id=ws.id, who=ws.principal.name)
+    months = request.app.state.settings.case_review_months
+    if months:  # keep only what's still needed: untouched for months, a case is due for review
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=months * 30)).isoformat()
+        for case in cases:
+            case["review_due"] = bool(case.get("updated_at") and case["updated_at"] < cutoff)
+    return cases
 
 
 @router.post("/cases", status_code=201)

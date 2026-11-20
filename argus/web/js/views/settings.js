@@ -1,6 +1,6 @@
 // Settings: appearance, account and (for admins) API keys, audit log and plugins.
 
-import { api, enc, request } from "../api.js";
+import { api, download, enc, request } from "../api.js";
 import { empty, ico } from "../components.js";
 import { $, confirmDialog, copyText, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, on as onState, state } from "../state.js";
@@ -43,6 +43,11 @@ const VAULT_FORMS = {
     const r = await api.post("/api/backups/restore", body);
     if (r.restarting) return waitForRestart(r.detail);
     toast(r.detail, "success", 10000);
+  },
+  "account-delete-form": async () => {
+    await api.post("/api/personal/delete-account", { password: $("#account-delete-pass").value, confirm: $("#account-delete-confirm").value });
+    toast("Your account is deleted. Your cases are still on this computer.", "success", 8000);
+    setTimeout(() => location.reload(), 2500);
   },
   "vault-enable-form": async () => {
     if ($("#vault-new").value !== $("#vault-new2").value) throw new Error("The two passphrases don't match");
@@ -139,6 +144,12 @@ export function initSettings(el) {
         }
         return;
       }
+      if (act === "account-data") {
+        await download("/api/personal/account-data", "argus-account-data.json");
+        return;
+      }
+      if (act === "account-delete-show") { $("#account-delete-form").hidden = false; $("#account-delete-pass").focus(); return; }
+      if (act === "terms-review") { window.argusAskTerms?.(); return; }
       if (act === "backup-now") {
         btn.disabled = true;
         btn.textContent = "Backing up…";
@@ -614,7 +625,25 @@ function subscriptionCard() {
     ${teamSection()}
     ${billingSection(p)}
     <p class="muted small" style="margin-top:10px">If a subscription ends, nothing is lost: your cases stay readable, verifiable and exportable, and only new work waits until it is renewed.</p>
+    ${yourDataSection(p)}
   </div>`;
+}
+
+function yourDataSection(p) {
+  const docs = p.terms?.documents || {};
+  const link = (doc, text) => (/^https?:\/\//.test(docs[doc] || "") ? html`<a href="${docs[doc]}" target="_blank" rel="noopener">${text} ↗</a>` : "");
+  return html`<div class="section-title" style="margin-top:16px">Your data and the legal side</div>
+    <p class="muted small">The Argus account service holds your account details, computers, plan, credits and payments; never your cases. ${p.terms?.accepted_version ? `You accepted the terms of ${p.terms.accepted_version}.` : ""}</p>
+    <div class="small" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px">${link("terms", "Terms of Service")}${link("acceptable-use", "Acceptable Use Policy")}${link("privacy", "Privacy Policy")}${link("refunds", "Refunds")}${link("dpa", "Data Processing Agreement")}</div>
+    ${p.terms?.required ? html`<div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>The terms have been updated (version ${p.terms.version}). <button class="btn sm" data-act="terms-review">Review and accept</button></span></div>` : ""}
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="account-data">${ico("download")}Download my account data</button>
+      <button class="btn sm ghost danger" data-act="account-delete-show">Delete my account…</button></div>
+    <form id="account-delete-form" hidden style="display:grid;gap:8px;max-width:440px;margin-top:10px">
+      <p class="small">This deletes your Argus account: your name, email, password and computers are erased, and any subscription ends now, without a refund for the rest of the period. Payment records are kept anonymously, as tax law requires. <b>Your cases stay on this computer</b>; back them up first if you'll want them.</p>
+      <label class="label" for="account-delete-pass">Your password</label><input class="input" type="password" id="account-delete-pass" autocomplete="current-password" required>
+      <label class="label" for="account-delete-confirm">Type DELETE to confirm</label><input class="input" id="account-delete-confirm" autocomplete="off" required>
+      <p class="error-text"></p><div><button class="btn danger" type="submit">Delete my account</button></div>
+    </form>`;
 }
 
 function money(price) {
