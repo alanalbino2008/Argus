@@ -266,6 +266,12 @@ class Settings(BaseSettings):
         default="", description="Account service: sender of account emails (default: ARGUS_SMTP_FROM)"
     )
     support_email: str = Field(default="", description="Account service: support address shown in emails and replies")
+    desktop_latest_version: str = Field(
+        default="", description="Account service: the newest Argus Personal desktop version (e.g. 1.55.0)"
+    )
+    desktop_download_url: str = Field(
+        default="", description="Account service: the page where investigators download the desktop installer"
+    )
     billing_return_url: str = Field(
         default="",
         description="Account service: page customers return to after paying, when not paying from Argus Personal",

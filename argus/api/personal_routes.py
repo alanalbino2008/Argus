@@ -90,6 +90,21 @@ async def personal_status(request: Request):
     return _personal(request).status()
 
 
+@router.post("/quit")
+async def personal_quit(request: Request):
+    """Close Argus on this computer (the desktop app runs in the background). Cases stay where they are."""
+    _personal(request)
+    _csrf(request)  # another website must not be able to close it
+    from argus.cli import console
+
+    if console.SERVER is None:
+        raise HTTPException(
+            status_code=409, detail="Argus wasn't started from the desktop app: close it where you started it"
+        )
+    console.SERVER.should_exit = True  # finishes this answer, then stops cleanly
+    return {"detail": "Argus is closing. Open it again from its icon whenever you need it."}
+
+
 @router.post("/sign-in")
 async def personal_sign_in(body: SignInRequest, request: Request, response: Response):
     """Sign in with an Argus account: unlocks this computer and starts a session."""

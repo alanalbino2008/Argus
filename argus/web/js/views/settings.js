@@ -119,6 +119,16 @@ export function initSettings(el) {
         }
         return;
       }
+      if (act === "quit-argus") {
+        if (!await confirmDialog({ title: "Quit Argus?", message: "Argus closes on this computer. Your cases stay saved; open Argus again from its icon whenever you need it.", confirm: "Quit Argus" })) return;
+        const r = await api.post("/api/personal/quit");
+        document.body.innerHTML = "";
+        const note = document.createElement("p");
+        note.style.cssText = "font:16px system-ui;margin:20vh auto;max-width:480px;text-align:center";
+        note.textContent = r.detail;
+        document.body.append(note);
+        return;
+      }
       if (act === "licence-check") {
         data.personal = await api.post("/api/personal/refresh");
         toast(data.personal.access === "full" ? "Your subscription is active" : data.personal.reason, data.personal.access === "full" ? "success" : "error", 6000);
@@ -463,6 +473,17 @@ function vaultCard() {
   </div>`;
 }
 
+function appCard() {
+  const p = data.personal;
+  if (!p) return "";
+  return html`<div class="card card-pad" style="margin-top:16px" id="app-card">
+    <div class="card-head wrap"><div><h2>Argus on this computer</h2><p class="muted small">Version ${p.version}. Your cases are kept in Argus's data folder, so updating or reinstalling never touches them.</p></div>
+      ${p.desktop ? html`<span><button class="btn sm" data-act="quit-argus">${ico("x")}Quit Argus</button></span>` : ""}</div>
+    ${p.update ? html`<div class="callout accent">${ico("download")}<span><b>Argus ${p.update.version} is available.</b> Download and run the installer: it updates this copy and keeps your cases.
+      <a class="btn sm primary" style="margin-left:8px" href="${p.update.download_url}" target="_blank" rel="noopener noreferrer">Download the update</a></span></div>` : html`<p class="muted small">You have the latest version.</p>`}
+  </div>`;
+}
+
 function subscriptionCard() {
   const p = data.personal;
   if (!p) return "";
@@ -693,6 +714,7 @@ function render() {
           <dt>Version</dt><dd>${h ? `Argus ${h.version}` : "—"}</dd><dt>Database</dt><dd>${h ? `${h.database.backend} · ${h.database.reachable ? "reachable" : "unreachable"}` : "—"}</dd></dl>
       </div>
     </div>
+    ${appCard()}
     ${subscriptionCard()}
     ${data.personal?.signed_in ? ownKeysCard() : ""}
     ${vaultCard()}

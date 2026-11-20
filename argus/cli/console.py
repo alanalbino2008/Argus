@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -302,6 +303,9 @@ def personal_data_dir() -> Path:
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "argus"
 
 
+SERVER: Any = None  # the running Argus Personal server, so Quit can stop it
+
+
 def run_personal(port: int) -> None:
     """Argus Personal: only this computer can reach it (127.0.0.1), data in the user's own folder."""
     import threading
@@ -322,7 +326,11 @@ def run_personal(port: int) -> None:
     if not os.environ.get("ARGUS_NO_BROWSER"):
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     # 127.0.0.1 only: nobody else on the network (café wifi, a shared office) can reach it.
-    uvicorn.run("argus.api.server:app", host="127.0.0.1", port=port, reload=False, access_log=False)
+    global SERVER
+    SERVER = uvicorn.Server(uvicorn.Config("argus.api.server:app", host="127.0.0.1", port=port, reload=False,
+                                           access_log=False, log_config=None if os.environ.get("ARGUS_DESKTOP") else
+                                           uvicorn.config.LOGGING_CONFIG))  # fmt: skip
+    SERVER.run()
 
 
 def cli_entrypoint():

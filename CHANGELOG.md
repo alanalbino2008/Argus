@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.55.0] — Phase 55: The desktop app
+
+### Added
+- **Installers for Argus Personal**: a Windows installer (no administrator rights needed), a
+  Mac disk image (Apple silicon) and a Linux archive, with Python, Argus and a private
+  screenshot browser bundled. Built, tested and attached to each release by the new
+  *Desktop app* workflow; run it by hand for test builds.
+- **The app**: the icon opens Argus in the browser on 127.0.0.1, on the first free port from
+  8765. A second click opens the running copy. No terminal window; a rotating log file in the
+  data folder. Cases live in the data folder, so updates and uninstalls never touch them.
+- **Quit Argus** in Settings → *Argus on this computer*, which also shows the version
+  (`POST /api/personal/quit`, same-origin only).
+- **Update notice**: set the newest version and download page in the owner console's new
+  *Desktop app* tab (`ARGUS_DESKTOP_LATEST_VERSION`, `ARGUS_DESKTOP_DOWNLOAD_URL`). Installed
+  copies ask once a day (`POST /api/accounts/app-version`, sending only the installed version)
+  and offer a one-click download.
+- Evidence captures also find Chrome or Edge in their usual Windows and macOS locations.
+- Optional code signing and notarisation from GitHub secrets; installers carry your account
+  service address and licence key from repository variables (public values only).
+- Helm chart 0.45.0.
+
 ## [1.54.0] — Phase 54: Page history and reverse image search
 
 ### Added

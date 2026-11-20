@@ -270,6 +270,7 @@ async function enterApp(me) {
   $("#user-name").textContent = `${me.name}`;
   await refreshVault();
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
+  if (personalMode?.update) toast(`Argus ${personalMode.update.version} is available: Settings → Argus on this computer`, "info", 8000);
   refreshMonitoring();
   clearInterval(pollTimer);
   pollTimer = setInterval(refreshMonitoring, 60000);

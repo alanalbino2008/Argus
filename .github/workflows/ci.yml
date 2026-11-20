@@ -26,9 +26,9 @@ jobs:
           cache: pip
       - run: pip install -r requirements-dev.txt
       - name: Ruff (lint, incl. bandit security rules)
-        run: ruff check argus tests clients --output-format=github
+        run: ruff check argus tests clients packaging --output-format=github
       - name: Ruff (format)
-        run: ruff format --check argus tests clients
+        run: ruff format --check argus tests clients packaging
       - name: mypy
         run: mypy argus
 

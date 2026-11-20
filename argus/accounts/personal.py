@@ -5,7 +5,8 @@ account**: it signs in to the account service, receives a licence for this compu
 offline with the service's public key, and renews it in the background.
 
 Only these ever go to the account service: the email and password at sign-in, this computer's
-random device id and name, and the licence when renewing. Nothing about cases, evidence or
+random device id and name, the licence when renewing, and once a day the Argus version
+installed (to offer updates). Nothing about cases, evidence or
 searches, unless the investigator uses Argus Connect: then the lookup itself (a company number,
 an officer's name), or for the AI analyst the case material they chose to send, passes through
 the service on its way to the source. The service keeps none of it; its ledger records only the
@@ -16,13 +17,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import platform
+import re
 import secrets
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 import aiohttp
 
+from argus import __version__
 from argus.accounts import features
 from argus.accounts.licence import LicenceError, access, load_public_key, verify
 from argus.core.settings import Settings
@@ -31,6 +36,18 @@ logger = logging.getLogger("argus.personal")
 DEVICE_KEY = "device"
 CURRENT: PersonalLicence | None = None  # this installation's licence, for modules that use Argus Connect
 LICENCE_KEY = "licence"
+UPDATE_EVERY = 24 * 3600
+
+
+def _parts(version: str) -> tuple[int, ...] | None:
+    match = re.match(r"^(\d{1,4})\.(\d{1,4})\.(\d{1,4})$", version.strip())
+    return tuple(int(x) for x in match.groups()) if match else None
+
+
+def newer_version(candidate: str, current: str) -> bool:
+    """Whether ``candidate`` (e.g. 1.55.0) is a later release than ``current``."""
+    a, b = _parts(candidate), _parts(current)
+    return bool(a and b and a > b)
 
 
 class AccountServiceError(Exception):
@@ -78,6 +95,8 @@ class PersonalLicence:
         self._public = load_public_key(settings.licence_public_key) if settings.licence_public_key else None
         self.issuer = settings.account_server_url.rstrip("/") or None
         self.last_credits: dict[str, Any] | None = None  # balance after the latest Argus Connect lookup
+        self.update: dict[str, Any] | None = None  # a newer desktop version, when the account service offers one
+        self._update_checked = 0.0
 
     async def load(self) -> None:
         global CURRENT
@@ -122,6 +141,7 @@ class PersonalLicence:
             "account_service": self.settings.account_server_url or None,
             "features": features.summary(p) if p else None,
             "configured": bool(self.settings.account_server_url and self._public),
+            "version": __version__, "update": self.update, "desktop": bool(os.environ.get("ARGUS_DESKTOP")),
         }  # fmt: skip
 
     async def _store(self, token: str) -> dict[str, Any]:
@@ -196,9 +216,25 @@ class PersonalLicence:
         except (KeyError, ValueError):
             return True
 
+    async def check_update(self) -> dict[str, Any] | None:
+        """Ask the account service for the newest desktop version. Never raises: being offline is normal."""
+        self._update_checked = time.monotonic()
+        try:
+            info = await self.client.call("app-version", {"current": __version__})
+        except AccountServiceError as exc:
+            logger.info("Could not check for updates: %s", exc.detail)
+            return self.update
+        latest, link = str(info.get("version") or ""), str(info.get("download_url") or "")
+        newer = newer_version(latest, __version__) and link.startswith("https://")
+        self.update = {"version": latest, "download_url": link} if newer else None
+        return self.update
+
     async def run_forever(self) -> None:
         while True:
             try:
+                checked = self._update_checked
+                if os.environ.get("ARGUS_DESKTOP") and (not checked or time.monotonic() - checked > UPDATE_EVERY):
+                    await self.check_update()
                 if self.due():
                     await self.refresh()
             except asyncio.CancelledError:

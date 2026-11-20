@@ -51,6 +51,7 @@ SECTIONS = {
     "email": "Email",
     "accounts": "Accounts and trials",
     "sources": "Paid data sources",
+    "desktop": "Desktop app",
     "security": "Security",
 }
 PRICE = r"^(price_[A-Za-z0-9]+)?$"
@@ -172,6 +173,23 @@ FIELDS: list[Setting] = [
         "Pays for customers' reverse image searches.",
         "secret",
         pattern=r"^\S{8,256}$",
+    ),
+    Setting(
+        "desktop_latest_version",
+        "desktop",
+        "Newest desktop version",
+        "When you publish a new installer, enter its version: installed copies then offer the update.",
+        pattern=r"^(\d{1,4}\.\d{1,4}\.\d{1,4})?$",
+        placeholder="e.g. 1.55.0",
+    ),
+    Setting(
+        "desktop_download_url",
+        "desktop",
+        "Download page",
+        "Where the update button takes investigators (for example your GitHub Releases page).",
+        "url",
+        pattern=r"^(https://\S+)?$",
+        placeholder="https://…",
     ),
     Setting(
         "admin_keys_allowed",

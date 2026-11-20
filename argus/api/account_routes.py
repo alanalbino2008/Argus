@@ -100,6 +100,15 @@ async def account_public_key(request: Request):
     return {"public_key": public_key_of(private), "issuer": _issuer(request), "plans": PLANS}
 
 
+@router.post("/app-version")
+async def app_version(request: Request):
+    """The newest Argus Personal desktop version and where to download it (installed copies ask once a day)."""
+    settings = request.app.state.settings
+    if not settings.account_service_enabled:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"version": settings.desktop_latest_version or None, "download_url": settings.desktop_download_url or None}
+
+
 @router.post("/signup", status_code=201)
 async def signup(body: SignupRequest, request: Request):
     """Create an account with a free trial (when sign-up is open)."""

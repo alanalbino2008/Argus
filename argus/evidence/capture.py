@@ -33,6 +33,7 @@ import os
 import secrets
 import shutil
 import signal
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -66,6 +67,22 @@ BROWSER_CANDIDATES = ("chrome-headless-shell", "chromium-headless-shell", "chrom
                       "google-chrome", "google-chrome-stable", "chrome")  # fmt: skip
 SHELL_GLOB = "/opt/pw-browsers/chromium_headless_shell-*/*/chrome-headless-shell"
 CHROMIUM_GLOB = "/opt/pw-browsers/chromium-*/chrome-linux*/chrome"
+
+
+def _installed_browsers() -> list[str]:
+    """Chrome or Edge where Windows and macOS install them (most computers have one or the other)."""
+    if sys.platform == "win32":
+        roots = [os.environ.get(v, "") for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        tails = (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe")
+        return [os.path.join(root, tail) for root in roots if root for tail in tails]
+    if sys.platform == "darwin":
+        apps = ("Google Chrome.app/Contents/MacOS/Google Chrome", "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "Chromium.app/Contents/MacOS/Chromium")  # fmt: skip
+        return [os.path.join(base, app) for base in ("/Applications", os.path.expanduser("~/Applications"))
+                for app in apps]  # fmt: skip
+    return []
+
+
 QUIET_FLAGS = (  # full Chrome/Chromium: switch off every background service that contacts Google
     "--disable-background-networking",
     "--disable-component-update",
@@ -210,7 +227,8 @@ def find_browser(settings: Settings) -> str | None:
         return settings.capture_browser if os.path.isfile(settings.capture_browser) else None
     shells = [shutil.which(n) for n in BROWSER_CANDIDATES[:2]] + sorted(glob.glob(SHELL_GLOB))[-1:]
     full = [shutil.which(n) for n in BROWSER_CANDIDATES[2:]] + sorted(glob.glob(CHROMIUM_GLOB))[-1:]
-    return next((path for path in shells + full if path), None)
+    installed = [p for p in _installed_browsers() if os.path.isfile(p)]
+    return next((path for path in shells + full + installed if path), None)
 
 
 def is_headless_shell(browser: str) -> bool:

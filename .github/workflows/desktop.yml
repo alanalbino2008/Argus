@@ -1,0 +1,210 @@
+name: Desktop app
+
+# Builds the Argus desktop app (Argus Personal with Python and everything bundled) on real
+# Windows, macOS and Linux machines, tests each build, and attaches the installers to the
+# GitHub release of the tag. Run it by hand (Actions -> Desktop app -> Run workflow) to get
+# test builds without releasing.
+#
+# Repository variables (Settings -> Secrets and variables -> Actions -> Variables), built into
+# the installers so investigators have nothing to configure (both are public values):
+#   ARGUS_ACCOUNT_SERVER_URL   e.g. https://accounts.example.com
+#   ARGUS_LICENCE_PUBLIC_KEY   from your account service: GET /api/accounts/public-key
+#
+# Optional code signing (without it Windows SmartScreen and macOS Gatekeeper warn on first open):
+#   Windows: secrets WINDOWS_CERT_PFX_BASE64, WINDOWS_CERT_PASSWORD
+#   macOS:   secrets APPLE_CERT_P12_BASE64, APPLE_CERT_PASSWORD, APPLE_SIGNING_IDENTITY,
+#            APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD (an app-specific password, for notarising)
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows, os: windows-latest, browser: win64 }
+          - { name: macOS (Apple silicon), os: macos-14, browser: mac-arm64 }
+          - { name: Linux, os: ubuntu-22.04, browser: linux64 }
+    env:
+      ARGUS_ACCOUNT_SERVER_URL: ${{ vars.ARGUS_ACCOUNT_SERVER_URL }}
+      ARGUS_LICENCE_PUBLIC_KEY: ${{ vars.ARGUS_LICENCE_PUBLIC_KEY }}
+      SIGN_WINDOWS: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
+      SIGN_MACOS: ${{ secrets.APPLE_CERT_P12_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Version
+        shell: bash
+        run: |
+          version=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('argus/__init__.py').read()).group(1))")
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "v${version}" != "$GITHUB_REF_NAME" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match the package version $version"; exit 1
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - name: Install Argus and PyInstaller
+        run: pip install . pyinstaller==6.22.3
+
+      - name: Prepare icons, settings and the screenshot browser
+        run: |
+          python packaging/desktop/make_icons.py build/icons
+          python packaging/desktop/write_config.py build/argus-desktop.json
+          python packaging/desktop/fetch_browser.py build/browser ${{ matrix.browser }}
+
+      - name: Build the app
+        run: pyinstaller packaging/desktop/argus.spec --noconfirm --distpath dist --workpath build/pyinstaller
+
+      # ------------------------------------------------------------------ Windows
+      - name: Sign the program (Windows)
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:WINDOWS_CERT_PFX_BASE64))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1
+          & $signtool.FullName sign /f "$env:RUNNER_TEMP\cert.pfx" /p "$env:WINDOWS_CERT_PASSWORD" /fd sha256 /tr http://timestamp.digicert.com /td sha256 dist\Argus\Argus.exe
+          "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
+
+      - name: Test the app (Windows)
+        if: runner.os == 'Windows'
+        run: python packaging/desktop/smoke_test.py dist/Argus/Argus.exe
+
+      - name: Build the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc /DAppVersion=$env:VERSION packaging\desktop\argus.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if ($env:WINDOWS_CERT_PFX_BASE64) {
+            & $env:SIGNTOOL sign /f "$env:RUNNER_TEMP\cert.pfx" /p "$env:WINDOWS_CERT_PASSWORD" /fd sha256 /tr http://timestamp.digicert.com /td sha256 "dist\Argus-Setup-$env:VERSION.exe"
+          }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item "dist\Argus-Setup-$env:VERSION.exe" "out\Argus-Setup-$env:VERSION-windows-x64.exe"
+
+      - name: Test the installer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process -Wait "out\Argus-Setup-$env:VERSION-windows-x64.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"
+          $installed = "$env:LOCALAPPDATA\Programs\Argus\Argus.exe"
+          if (-not (Test-Path $installed)) { throw "Argus.exe was not installed" }
+          python packaging/desktop/smoke_test.py $installed
+          Start-Process -Wait "$env:LOCALAPPDATA\Programs\Argus\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES"
+          if (Test-Path $installed) { throw "the uninstaller left Argus.exe behind" }
+
+      # ------------------------------------------------------------------ macOS
+      - name: Sign and notarise (macOS)
+        if: runner.os == 'macOS' && env.SIGN_MACOS == 'true'
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          keychain="$RUNNER_TEMP/argus.keychain-db"
+          security create-keychain -p ci "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p ci "$keychain"
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security list-keychains -d user -s "$keychain" login.keychain
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$keychain"
+          # sign everything inside first (libraries, the screenshot browser), then the app
+          find dist/Argus.app/Contents -type f \( -perm -u+x -o -name "*.dylib" -o -name "*.so" \) -print0 |
+            xargs -0 -n 20 codesign --force --options runtime --timestamp \
+              --entitlements packaging/desktop/entitlements.plist --sign "$APPLE_SIGNING_IDENTITY" 2>&1 | grep -v "is already signed" || true
+          codesign --force --options runtime --timestamp --entitlements packaging/desktop/entitlements.plist \
+            --sign "$APPLE_SIGNING_IDENTITY" dist/Argus.app
+          codesign --verify --deep --strict dist/Argus.app
+
+      - name: Test the app (macOS)
+        if: runner.os == 'macOS'
+        run: python packaging/desktop/smoke_test.py dist/Argus.app/Contents/MacOS/Argus
+
+      - name: Build the disk image (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          mkdir -p staging out
+          cp -R dist/Argus.app staging/
+          ln -s /Applications staging/Applications
+          dmg="out/Argus-${VERSION}-macos-arm64.dmg"
+          hdiutil create -volname "Argus" -srcfolder staging -ov -format UDZO "$dmg"
+          if [[ -n "$APPLE_CERT_P12_BASE64" && -n "$APPLE_ID" ]]; then
+            codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$dmg"
+            xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+            xcrun stapler staple "$dmg"
+          fi
+
+      # ------------------------------------------------------------------ Linux
+      - name: Test the app (Linux)
+        if: runner.os == 'Linux'
+        run: python packaging/desktop/smoke_test.py dist/Argus/Argus
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p out
+          cp build/icons/argus.png dist/Argus/argus.png
+          tar -C dist -czf "out/Argus-${VERSION}-linux-x64.tar.gz" Argus
+
+      # ------------------------------------------------------------------ hand over
+      - uses: actions/upload-artifact@v7
+        with:
+          name: argus-desktop-${{ matrix.browser }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Attach to the release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        run: cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Upload to the release (created by the Release workflow)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          for attempt in $(seq 1 40); do  # the Release workflow may still be running its tests
+            gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
+            echo "Waiting for the release $GITHUB_REF_NAME ($attempt)"; sleep 60
+          done
+          gh release upload "$GITHUB_REF_NAME" out/* --clobber
