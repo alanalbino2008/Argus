@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.68.0"
+__version__ = "1.69.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -243,6 +243,15 @@ class ArgusClient:
 
     def annotations(self) -> list[dict[str, Any]]:
         return self.get("/api/annotations")
+
+    def watch_fingerprint(self, investigation_id: str, entity_id: str, *, engine: str = "shodan",
+                          interval_hours: int = 24, severity: str = "high") -> dict[str, Any]:  # fmt: skip
+        """Re-run a fingerprint's Shodan or Censys search every day (24) or week (168); alert on new servers."""
+        return self.post("/api/fingerprint-watches", {"investigation_id": investigation_id, "entity_id": entity_id,
+                         "engine": engine, "interval_hours": interval_hours, "severity": severity})  # fmt: skip
+
+    def fingerprint_watches(self) -> list[dict[str, Any]]:
+        return self.get("/api/fingerprint-watches")
 
     def saved_queries(self) -> list[dict[str, Any]]:
         return self.get("/api/saved-queries")

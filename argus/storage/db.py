@@ -841,6 +841,30 @@ class EntityAnnotationRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class FingerprintWatchRow(Base):
+    """A fingerprint whose internet-wide search is re-run on a schedule; new servers raise an alert."""
+
+    __tablename__ = "fingerprint_watches"
+    __table_args__ = (Index("ux_fingerprint_watches", "workspace_id", "engine", "entity_id", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"))
+    engine: Mapped[str] = mapped_column(String(16))  # shodan | censys
+    entity_id: Mapped[str] = mapped_column(String(64))
+    investigation_id: Mapped[str] = mapped_column(String(64))  # where it was watched from (alert links)
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="fingerprint_watches.data"))  # label, query, known
+    interval_hours: Mapped[int] = mapped_column(Integer)
+    severity: Mapped[str] = mapped_column(String(16))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    last_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    alerts_raised: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class CaseItemRow(Base):
     """Something in a case: a note, a person or other entity, a link between two, a scan, an event."""
 

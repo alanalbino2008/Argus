@@ -11,6 +11,7 @@ let root;
 let actions;
 let alerts = null;
 let monitors = null;
+let fpWatches = []; // watched fingerprints (Shodan/Censys searches on a schedule)
 
 export function initMonitoring(el, appActions) {
   root = el;
@@ -35,6 +36,14 @@ export function initMonitoring(el, appActions) {
         if (!ok) return;
         await api.del(`/api/monitors/${enc(id)}`);
         toast("Monitor removed");
+      } else if (act === "fp-run") {
+        await api.post(`/api/fingerprint-watches/${enc(id)}/run`);
+        toast("Running now: the result shows here in a minute", "success");
+      } else if (act === "fp-delete") {
+        const ok = await confirmDialog({ title: "Stop watching this fingerprint?", message: "Alerts it raised are kept.", confirm: "Stop watching", danger: true });
+        if (!ok) return;
+        await api.del(`/api/fingerprint-watches/${enc(id)}`);
+        toast("Fingerprint watch removed");
       } else if (act === "open") {
         actions.open(id);
         return;
@@ -51,7 +60,8 @@ export function initMonitoring(el, appActions) {
 
 export async function refresh() {
   try {
-    [alerts, monitors] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"), loadNotifications(), loadSchedules()]);
+    [alerts, monitors, fpWatches] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"),
+      api.get("/api/fingerprint-watches").catch(() => []), loadNotifications(), loadSchedules()]);
   } catch {
     return;
   }
@@ -80,6 +90,7 @@ function render() {
             <div class="list-main"><div class="list-title" style="white-space:normal">${a.headline}</div>
               <div class="list-sub">${timeAgo(a.created_at)}${a.acknowledged_at ? html` · acknowledged by ${a.acknowledged_by}` : ""}</div></div>
             ${a.summary?.exposure ? html`<a class="btn sm" href="#/exposure">${ico("breach")}View exposure</a>`
+              : a.summary?.fingerprint_watch ? html`<button class="btn sm" data-act="open" data-id="${a.investigation_id}" title="${(a.summary.fingerprint_watch.new_servers || []).map((h) => h.ip + (h.port ? ":" + h.port : "")).join(", ")}">${ico("eye")}Open investigation</button>`
               : html`<button class="btn sm" data-act="changes" data-inv="${a.investigation_id}" data-prev="${a.previous_investigation_id}">${ico("compare")}What changed</button>`}
             ${a.acknowledged_at ? "" : html`<button class="btn sm ghost" data-act="ack" data-id="${a.id}">${ico("check")}Acknowledge</button>`}
           </div>`)}</div>`}
@@ -102,7 +113,30 @@ function render() {
             </td></tr>`)}
         </tbody></table>`}
     </div>
+    ${fingerprintCard()}
     ${notificationsCard()}
     ${schedulesCard()}
   </div>`);
+}
+
+const ENGINE = { shodan: "Shodan", censys: "Censys" };
+
+/** Fingerprints whose Shodan/Censys search re-runs on a schedule (start one from a fingerprint in the graph). */
+function fingerprintCard() {
+  if (!fpWatches.length) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><h2>Watched fingerprints</h2><span class="muted small">New servers sharing them raise an alert</span></div>
+    <table class="table"><thead><tr><th>Fingerprint</th><th>Every</th><th>Servers known</th><th>Last check</th><th></th></tr></thead><tbody>
+    ${fpWatches.map((w) => html`<tr>
+      <td><b>${w.label}</b><div class="muted small mono">${ENGINE[w.engine] || w.engine}: ${w.query}</div></td>
+      <td>${w.interval_hours === 24 ? "day" : "week"}</td>
+      <td>${w.known}${w.last_total != null ? html` <span class="muted small">of ${Number(w.last_total).toLocaleString()}</span>` : ""}</td>
+      <td>${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : "high"}" title="${w.last_message}">${timeAgo(w.last_run_at)}</span>` : "Pending"}
+        ${w.last_status === "error" ? html`<div class="muted small">${w.last_message}</div>` : ""}</td>
+      <td class="actions">
+        <button class="btn sm ghost" data-act="open" data-id="${w.investigation_id}" title="Open the investigation it was watched from">${ico("eye")}</button>
+        <button class="btn sm ghost" data-act="fp-run" data-id="${w.id}" title="Run the search now (spends a search credit)">Run now</button>
+        <button class="btn sm ghost icon" data-act="fp-delete" data-id="${w.id}" title="Stop watching" aria-label="Stop watching">${ico("trash")}</button>
+      </td></tr>`)}
+    </tbody></table></div>`;
 }

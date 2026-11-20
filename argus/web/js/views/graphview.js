@@ -21,6 +21,7 @@ let annotations = new Map(); // entity id -> the team's { tags, note } (every in
 let annotationsFor = null; // the investigation they were loaded for
 let editingNote = false;
 let searchEngines = null; // which internet searches the server has keys for: { shodan, censys } (asked once)
+let fpWatches = null; // the workspace's fingerprint watches, keyed "engine:entity_id" (loaded with the engines)
 let internetSearch = null; // { entityId, mode, busy, result, error } for the selected fingerprint
 let savedQueries = null; // the workspace's saved queries (loaded with the Query tab)
 let hunt = null; // { text, busy, result, error } for a hunt across investigations
@@ -137,6 +138,7 @@ export function initGraphView(appActions) {
     chip.classList.toggle("off", !visible);
   });
   on($("#pane-details"), "click", "[data-search-engine]", (_e, el) => runInternetSearch(el.dataset.searchEngine, el.dataset.searchMode));
+  on($("#pane-details"), "click", "[data-watch-engine]", (_e, el) => watchFingerprint(el.dataset.watchEngine));
   on($("#pane-details"), "click", "[data-investigate-ip]", (_e, el) => actions.newInvestigation({ target: el.dataset.investigateIp, type: "ip_address" }));
   on($("#pane-details"), "keydown", "[data-tag-input]", (e, input) => {
     if (e.key !== "Enter" || !input.value.trim()) return;
@@ -835,7 +837,8 @@ function internetPanel(entity) {
   return html`<div class="section-title" style="margin-top:12px">Search from Argus</div>
     ${engines.map((e) => html`<div class="query-actions"><span class="pill accent">${name(e)}</span>
       <button class="btn sm" data-search-engine="${e}" data-search-mode="count" ${s?.busy ? "disabled" : ""}>${ENGINE_COSTS[e].count}</button>
-      <button class="btn sm" data-search-engine="${e}" data-search-mode="search" ${s?.busy ? "disabled" : ""} title="${ENGINE_COSTS[e].hint}">${ENGINE_COSTS[e].search}</button></div>`)}
+      <button class="btn sm" data-search-engine="${e}" data-search-mode="search" ${s?.busy ? "disabled" : ""} title="${ENGINE_COSTS[e].hint}">${ENGINE_COSTS[e].search}</button>
+      ${watchButton(e, entity)}</div>`)}
     ${s?.busy ? html`<p class="muted small">Asking ${name(s.engine)}…</p>` : ""}
     ${s?.error ? html`<div class="query-error">${s.error}</div>` : ""}
     ${r ? html`<p class="small"><span class="pill ${r.rarity.level === "rare" || r.rarity.level === "unique" ? "high" : "accent"}">${r.rarity.level}</span>
@@ -849,7 +852,33 @@ function internetPanel(entity) {
 
 async function loadEngines() {
   try { searchEngines = await api.get("/api/internet-search"); } catch { searchEngines = {}; }
-  if (Object.values(searchEngines).some(Boolean)) renderDetails();
+  if (Object.values(searchEngines).some(Boolean)) { await loadWatches(); renderDetails(); }
+}
+
+async function loadWatches() {
+  try {
+    fpWatches = new Map((await api.get("/api/fingerprint-watches")).map((w) => [`${w.engine}:${w.entity_id}`, w]));
+  } catch { fpWatches = new Map(); }
+}
+
+/** Watched: when it last ran and how many servers it knows. Not watched: a button to start (daily). */
+function watchButton(engine, entity) {
+  if (!fpWatches) return "";
+  const w = fpWatches.get(`${engine}:${entity.id}`);
+  if (!w) return html`<button class="btn sm ghost" data-watch-engine="${engine}" title="Re-run this search every day and alert when new servers share the fingerprint (one search per day)">${ico("eye")}Watch for new servers</button>`;
+  const when = w.last_run_at ? `checked ${timeAgo(w.last_run_at)}` : "first check pending";
+  return html`<span class="pill ok" title="${w.last_message || "Watched"}">Watched ${w.interval_hours === 24 ? "daily" : "weekly"} · ${w.known} known · ${when}</span>`;
+}
+
+async function watchFingerprint(engine) {
+  const id = state.investigation?.id;
+  if (!id || !selected) return;
+  try {
+    await api.post("/api/fingerprint-watches", { investigation_id: id, entity_id: selected, engine });
+    toast("Watching: today's servers are recorded first, then new ones raise an alert", "success");
+    await loadWatches();
+    renderDetails();
+  } catch (err) { toast(err.message, "error"); }
 }
 
 async function runInternetSearch(engine, mode) {

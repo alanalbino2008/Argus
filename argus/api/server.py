@@ -71,6 +71,7 @@ from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_ur
 from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
 from argus.api.exposure_routes import router as exposure_router
+from argus.api.fingerprint_watch_routes import router as fingerprint_watch_router
 from argus.api.inspect_routes import router as inspect_router
 from argus.api.legal_routes import router as legal_router
 from argus.api.map_routes import router as map_router
@@ -111,6 +112,7 @@ from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import EgressRoute, Settings, get_settings
 from argus.demo import DEMO_TARGET, load_demo
+from argus.intel import fingerprint_watch as fp_watch
 from argus.intel import hunt as hunting
 from argus.intel import internet_search
 from argus.intel.account_watch import AccountWatcher
@@ -119,6 +121,7 @@ from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
 from argus.intel.exposure import demo_findings
 from argus.intel.exposure_monitor import ExposureMonitor
+from argus.intel.fingerprint_watch import FingerprintWatcher
 from argus.intel.identity import resolve_people
 from argus.intel.link_analysis import analyze_links
 from argus.intel.paths import find_attack_paths
@@ -151,6 +154,7 @@ from argus.storage.annotation_repo import AnnotationRepository
 from argus.storage.backup_service import BackupService
 from argus.storage.case_repo import CaseRepository
 from argus.storage.exposure_repo import ExposureRepository
+from argus.storage.fingerprint_watch_repo import FingerprintWatchRepository
 from argus.storage.migrate import upgrade_database
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.notification_repo import NotificationRepository
@@ -291,6 +295,7 @@ async def lifespan(app: FastAPI):
     app.state.playbooks = PlaybookRepository(db)
     app.state.saved_queries = SavedQueryRepository(db)
     app.state.annotations = AnnotationRepository(db)
+    app.state.fingerprint_watches = FingerprintWatchRepository(db)
     app.state.playbook_scan = _playbook_scan
     app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
 
@@ -365,6 +370,14 @@ async def lifespan(app: FastAPI):
         if settings.monitors_enabled
         else None
     )
+    app.state.fingerprint_watcher = FingerprintWatcher(
+        app.state.fingerprint_watches, settings, raise_alert=partial(_fingerprint_alert, app)
+    )
+    fingerprint_task = (
+        asyncio.create_task(app.state.fingerprint_watcher.run_forever(), name="fingerprint-watcher")
+        if settings.fingerprint_watch_enabled and settings.monitors_enabled
+        else None
+    )
     app.state.account_watcher = AccountWatcher(app.state.account_watches, app.state.cases, settings, app.state.audit)
     watch_task = (
         asyncio.create_task(app.state.account_watcher.run_forever(), name="account-watcher")
@@ -418,6 +431,7 @@ async def lifespan(app: FastAPI):
                 exposure_task,
                 remediation_task,
                 watch_task,
+                fingerprint_task,
                 licence_task,
                 mailer_task,
                 config_task,
@@ -628,6 +642,7 @@ app.include_router(personal_router)
 app.include_router(analyst_router)
 app.include_router(query_router)
 app.include_router(annotation_router)
+app.include_router(fingerprint_watch_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
 app.include_router(backup_router)
@@ -1009,6 +1024,29 @@ async def _evaluate_saved_queries(app: FastAPI, engine: ArgusEngine) -> None:
         investigation=inv, graph=engine.graph, repo=app.state.repo, saved_queries=app.state.saved_queries,
         raise_alert=raise_alert, annotations=await app.state.annotations.all(inv.workspace_id),
     )  # fmt: skip
+
+
+async def _fingerprint_alert(
+    app: FastAPI, watch: dict[str, Any], new: list[dict[str, Any]], total: int
+) -> dict[str, Any] | None:
+    """New servers share a watched fingerprint: one alert, linked to the investigation it was watched from."""
+    alert = await app.state.monitors.create_alert(
+        monitor_id=None,
+        investigation_id=watch["investigation_id"],
+        previous_investigation_id=watch["investigation_id"],
+        target=watch["label"],
+        severity=watch["severity"],
+        headline=fp_watch.alert_headline(watch, len(new)),
+        summary=fp_watch.alert_summary(watch, new, total),
+        workspace_id=watch["workspace_id"],
+        public_url=app.state.settings.public_url,
+    )
+    metrics.ALERTS_RAISED.labels(watch["severity"]).inc()
+    await app.state.audit.record(
+        SCHEDULER, "fingerprint_watch.alert", alert["id"],
+        details={"watch": watch["id"], "new_servers": len(new)}, workspace_id=watch["workspace_id"],
+    )  # fmt: skip
+    return alert
 
 
 async def _evaluate_drift(app: FastAPI, engine: ArgusEngine) -> None:

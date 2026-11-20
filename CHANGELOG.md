@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.69.0] — Phase 69: Fingerprint watches
+
+### Added
+- **Watch a fingerprint.** On a favicon, JARM, HASSH or certificate, **Watch for new servers**
+  re-runs that entity's Shodan or Censys search every day (or week). The first run records the
+  servers sharing it today; after that, every server that starts sharing it raises one alert per
+  run, with the new addresses, organisations and countries. A known host on a new port counts as new.
+- Alerts flow through the usual outbox: the Monitoring page, Slack, Teams, email and webhooks
+  (with a `fingerprint_watch` block naming the fingerprint, its query and the new servers).
+- **Monitoring → Watched fingerprints** lists each watch with the servers it knows, when it last
+  ran and any error (for example a refused key or an exhausted plan), with **Run now** and remove.
+- **Careful with credits.** Each run is one search (one Shodan query credit). Watches are capped at
+  50 per workspace, the search is always the entity's own (never free text), and with several
+  replicas a due watch is claimed atomically, so it runs once. A failed run is recorded and tried
+  again on schedule; it never counts as the baseline.
+- Analysts create, run and remove watches; viewers see them; other teams never do. All audited.
+  Watched queries and known servers are encrypted at rest. `ARGUS_FINGERPRINT_WATCH_ENABLED`
+  (default on, needs monitoring) runs the loop.
+- API: `GET/POST /api/fingerprint-watches`, `POST /api/fingerprint-watches/{id}/run`,
+  `DELETE /api/fingerprint-watches/{id}`. Python client: `watch_fingerprint()`,
+  `fingerprint_watches()`. Migration 0030. Helm chart 0.59.0.
+
 ## [1.68.0] — Phase 68: The team's tags and notes on entities
 
 ### Added

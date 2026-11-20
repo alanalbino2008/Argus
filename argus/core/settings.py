@@ -377,6 +377,9 @@ class Settings(BaseSettings):
         description="Nominatim-compatible address look-up, used only when asked; '' = off",
     )
     account_watch_enabled: bool = Field(default=True, description="Re-read watched accounts and record changes")
+    fingerprint_watch_enabled: bool = Field(
+        default=True, description="Re-run watched fingerprints' Shodan/Censys searches and alert on new servers"
+    )
     account_watch_poll_seconds: float = Field(default=60.0, ge=5.0, description="How often due watches are looked for")
     username_catalog_ttl_hours: int = Field(default=168, ge=1, le=2160, description="How long the catalog is cached")
     plugins: list[str] = Field(
