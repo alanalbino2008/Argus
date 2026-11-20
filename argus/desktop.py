@@ -55,7 +55,8 @@ def bundled_config() -> dict[str, Any]:
 def bundled_browser() -> str | None:
     """The private screenshot browser shipped inside the app (Chrome's headless shell)."""
     name = "chrome-headless-shell.exe" if sys.platform == "win32" else "chrome-headless-shell"
-    for folder in (bundle_dir() / "browser", Path(sys.executable).resolve().parent / "browser"):
+    exe = Path(sys.executable).resolve().parent
+    for folder in (bundle_dir() / "browser", exe / "browser", exe.parent / "Resources" / "browser"):  # last: macOS .app
         found = next((p for p in folder.rglob(name) if p.is_file()), None) if folder.is_dir() else None
         if found:
             return str(found)

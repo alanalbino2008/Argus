@@ -25,7 +25,7 @@ for package in ("phonenumbers", "tzdata", "reportlab", "stix2", "certifi", "anth
     datas += collect_data_files(package)
 if (BUILD / "argus-desktop.json").is_file():
     datas.append((str(BUILD / "argus-desktop.json"), "."))
-if (BUILD / "browser").is_dir():
+if (BUILD / "browser").is_dir() and sys.platform != "darwin":  # macOS: copied into the .app afterwards (keeps Google's signatures)
     datas.append((str(BUILD / "browser"), "browser"))
 
 hiddenimports = (

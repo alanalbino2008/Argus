@@ -71,6 +71,12 @@ jobs:
       - name: Build the app
         run: pyinstaller packaging/desktop/argus.spec --noconfirm --distpath dist --workpath build/pyinstaller
 
+      - name: Add the screenshot browser to the app (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          ditto build/browser dist/Argus.app/Contents/Resources/browser
+          codesign --force --sign - dist/Argus.app  # reseal (replaced by the real signature when signing)
+
       # ------------------------------------------------------------------ Windows
       - name: Sign the program (Windows)
         if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
