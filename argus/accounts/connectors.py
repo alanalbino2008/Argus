@@ -79,10 +79,15 @@ CATALOGUE["courtlistener"] = {
     "dockets": Operation("/search/", {"q": None}, {"type": "r", "order_by": "dateFiled desc"}, 2),
     "opinions": Operation("/search/", {"q": None}, {"type": "o", "order_by": "dateFiled desc"}, 2),
 }
-BASES = {"companies_house": COMPANIES_HOUSE, "web_search": WEB_SEARCH,
+# TinEye: where else an image appears on the web (reverse image search), by the image's address.
+_IMAGE_URL = re.compile(r"^https?://[^\s]{4,2000}$")
+CATALOGUE["tineye"] = {
+    "search": Operation("/search/", {"image_url": _IMAGE_URL}, {"limit": "50", "sort": "score", "order": "desc"}, 3),
+}
+BASES = {"companies_house": COMPANIES_HOUSE, "web_search": WEB_SEARCH, "tineye": "https://api.tineye.com/rest",
          "opencorporates": "https://api.opencorporates.com/v0.4", "courtlistener": "https://www.courtlistener.com/api/rest/v4"}  # fmt: skip
 LABELS = {"companies_house": "UK Companies House", "web_search": "Web search", "opencorporates": "OpenCorporates",
-          "courtlistener": "US court records (CourtListener)"}  # fmt: skip
+          "courtlistener": "US court records (CourtListener)", "tineye": "Reverse image search (TinEye)"}  # fmt: skip
 
 
 def _auth_query(provider: str, key: str) -> dict[str, str]:
@@ -97,6 +102,8 @@ def _auth(provider: str, key: str) -> dict[str, str]:
         return {}
     if provider == "courtlistener":
         return {"Authorization": f"Token {key}"}
+    if provider == "tineye":
+        return {"x-api-key": key}
     token = base64.b64encode(f"{key}:".encode()).decode()  # HTTP Basic: the key is the user name
     return {"Authorization": f"Basic {token}"}
 
@@ -116,7 +123,8 @@ def build(provider: str, name: str, params: dict[str, Any]) -> tuple[str, dict[s
         value = str(params.get(key, "")).strip()
         if key == "number" and provider == "companies_house":
             value = value.upper().zfill(8)
-        if not value or len(value) > 160 or (pattern is not None and not pattern.match(value)):
+        longest = 2000 if key == "image_url" else 160
+        if not value or len(value) > longest or (pattern is not None and not pattern.match(value)):
             raise ConnectError(422, f"Invalid {key} for {provider}/{name}")
         values[key] = value
     path_keys = set(re.findall(r"{(\w+)}", op.path))

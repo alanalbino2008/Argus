@@ -166,6 +166,14 @@ FIELDS: list[Setting] = [
         pattern=r"^\S{8,256}$",
     ),
     Setting(
+        "tineye_api_key",
+        "sources",
+        "TinEye API key",
+        "Pays for customers' reverse image searches.",
+        "secret",
+        pattern=r"^\S{8,256}$",
+    ),
+    Setting(
         "admin_keys_allowed",
         "security",
         "API keys and other admins may administer the server",

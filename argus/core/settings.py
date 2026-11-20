@@ -219,6 +219,12 @@ class Settings(BaseSettings):
     courtlistener_api_key: SecretStr | None = Field(
         default=None, description="CourtListener API token: US federal court dockets and opinions (free account)"
     )
+    tineye_api_key: SecretStr | None = Field(
+        default=None, description="TinEye API key: reverse image search (where else a picture appears)"
+    )
+    wayback_url: str = Field(
+        default="https://web.archive.org", description="The Internet Archive (page history); '' = off"
+    )
     gazette_url: str = Field(
         default="https://www.thegazette.co.uk", description="The UK Gazette (insolvency notices); '' = off"
     )

@@ -170,6 +170,9 @@
         },
         "courtlistenerApiKey": {
           "type": "string"
+        },
+        "tineyeApiKey": {
+          "type": "string"
         }
       }
     },

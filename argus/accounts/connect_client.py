@@ -19,7 +19,8 @@ from argus.accounts.connectors import LABELS, ConnectError, call_source
 from argus.core.settings import get_settings
 
 OWN_KEYS = {"companies_house": "companies_house_api_key", "web_search": "web_search_api_key",
-            "opencorporates": "opencorporates_api_key", "courtlistener": "courtlistener_api_key"}  # fmt: skip
+            "opencorporates": "opencorporates_api_key", "courtlistener": "courtlistener_api_key",
+            "tineye": "tineye_api_key"}  # fmt: skip
 
 
 def own_key(provider: str) -> str:

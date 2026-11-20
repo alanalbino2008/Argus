@@ -117,6 +117,7 @@ secrets:
   # lookups (credits); elsewhere lookups go direct. Both can also be set in the owner console.
   opencorporatesApiKey: ""
   courtlistenerApiKey: ""
+  tineyeApiKey: ""               # TinEye: reverse image search (credits on the account service)
 
 # ---------------------------------------------------------------------------- application
 config:

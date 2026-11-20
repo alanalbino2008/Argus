@@ -87,6 +87,7 @@ from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
 from argus.api.report_routes import router as report_router
+from argus.api.research_routes import router as research_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.supplier_routes import router as supplier_router
@@ -563,6 +564,7 @@ app.include_router(account_router)
 app.include_router(billing_router)
 app.include_router(business_router)
 app.include_router(team_router)
+app.include_router(research_router)
 app.include_router(owner_router)
 app.include_router(owner_console_router)
 app.include_router(connect_router)

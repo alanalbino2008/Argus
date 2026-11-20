@@ -1,6 +1,7 @@
 // Graph workspace: canvas, toolbar, legend, and a side panel that connects the selected
 // entity to everything else - its facts, neighbours, attack paths and other investigations.
 
+import { imageSearchLinks } from "./research.js";
 import { api, enc } from "../api.js";
 import { empty, entityIcon, ico, severityPill } from "../components.js";
 import { $, $$, formatDay, html, on, setHTML, timeAgo, toast } from "../dom.js";
@@ -418,8 +419,10 @@ function intelBlocks(entity) {
       ["Website", p.website], ["Joined", p.created_at && formatDay(p.created_at)],
       ["Followers", p.followers], ["Repositories", p.public_repos], ["Public email", p.public_email],
     ].filter(([, v]) => v !== undefined && v !== null && v !== "");
+    const picture = p.avatar_url || md.avatar_url;
     blocks.push(html`<div class="section"><div class="section-title">Public profile${md.verified ? html` <span class="pill ok">Verified link</span>` : ""}</div>
       <dl class="kv">${rows.map(([k, v]) => html`<dt>${k}</dt><dd>${v}</dd>`)}</dl>
+      ${picture ? html`<div style="margin-top:8px">${imageSearchLinks(picture)}</div>` : ""}
       <p class="muted small" style="margin-top:8px">Self-declared by the account owner; treat as a lead, not a fact.</p></div>`);
   }
   if (md.secrets?.length) {

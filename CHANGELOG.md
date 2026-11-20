@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.54.0] — Phase 54: Page history and reverse image search
+
+### Added
+- **Page history** (free, Internet Archive). In a case: every *different* version of a web page
+  the archive holds (identical copies folded together), oldest to newest. Open any version,
+  or **capture it as evidence** with the usual fingerprint and chain of custody, noted as an
+  archived copy and its date.
+- **Reverse image search**. In a case: where else a picture appears on the web.
+  - TinEye results inside Argus (own key, or Argus credits): each site and page the picture is
+    on, when TinEye first saw it, and its size.
+  - One-click searches on Google Lens, Bing, Yandex and TinEye. These also appear under any
+    profile picture in the entity panel, with a note that those sites see the picture's
+    address and your connection.
+- Both go out through the case's network route (an anonymous case never asks directly) and
+  are recorded in the audit log.
+- Settings: `ARGUS_WAYBACK_URL` (empty turns page history off), `ARGUS_TINEYE_API_KEY` (also in
+  the owner console and in Argus Personal's own keys). Helm chart 0.44.0:
+  `secrets.tineyeApiKey`.
+- API: `GET /api/cases/{id}/page-history?url=`, `GET /api/image-search`,
+  `POST /api/cases/{id}/image-search`.
+
 ## [1.53.0] — Phase 53: More company registers, insolvency notices and court records
 
 ### Added

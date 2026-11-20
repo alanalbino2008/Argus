@@ -8,6 +8,7 @@ import { initAnalyst, renderAnalyst } from "./analyst.js";
 import { initPlaybooks, renderPlaybooks } from "./playbooks.js";
 import { initChart, renderChart } from "./casechart.js";
 import { openProfile } from "./profile.js";
+import { openImageSearch, openPageHistory } from "./research.js";
 import { empty, ico } from "../components.js";
 import { $, closeModal, confirmDialog, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { on as onState, state } from "../state.js";
@@ -147,6 +148,8 @@ function renderCase() {
       <div class="page-actions">
         ${canEdit() ? html`<button class="btn sm primary" data-act="capture">${ico("eye")}Capture a page</button>
           <button class="btn sm" data-act="upload">${ico("plus")}Add evidence file</button>
+          <button class="btn sm" data-act="page-history" title="Every version of a web page in the Internet Archive">${ico("history")}Page history</button>
+          <button class="btn sm" data-act="image-search" title="Where else a picture appears on the web">${ico("search")}Reverse image search</button>
           <button class="btn sm" data-act="case-scan">${ico("search")}Scan for this case</button>
           <button class="btn sm" data-act="safety">${ico("shield")}Safety</button>
           <button class="btn sm" data-act="export">${ico("download")}Evidence bundle</button>
@@ -477,6 +480,8 @@ export function initCases(el, actions) {
       if (act === "inspect") return openInspector(current, id, btn.dataset.file);
       if (act === "profile") return openProfile(current, id);
       if (act === "import-people") return openImport();
+      if (act === "page-history") return openPageHistory(current.id, () => refresh());
+      if (act === "image-search") return openImageSearch(current.id);
       if (act === "watch-check") {
         btn.disabled = true;
         const r = await api.post(`/api/cases/${enc(current.id)}/watches/${enc(id)}/check`).finally(() => { btn.disabled = false; });

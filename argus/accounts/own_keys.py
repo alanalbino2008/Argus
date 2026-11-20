@@ -28,6 +28,7 @@ PROVIDERS = {
         "where": "opencorporates.com/api_accounts/new",
     },
     "courtlistener": {"label": "US court records (CourtListener)", "where": "courtlistener.com/sign-in (free)"},
+    "tineye": {"label": "Reverse image search (TinEye)", "where": "services.tineye.com/TinEyeAPI"},
 }
 STATE_KEY = "own_keys"
 CONTEXT = "own-api-keys"

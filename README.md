@@ -508,6 +508,10 @@ the addresses published on a website) and it follows the money.
   with directors), OpenCorporates for about 140 more countries, UK Gazette insolvency notices
   (free) and US federal court cases from CourtListener
   ([`docs/explained/53-registers-and-courts.md`](docs/explained/53-registers-and-courts.md)).
+- **Page history and reverse image search** in every case: every version of a web page in the
+  Internet Archive (capture any as evidence), and where else a picture appears (TinEye in
+  Argus; Google Lens, Bing and Yandex one click away)
+  ([`docs/explained/54-page-history-and-images.md`](docs/explained/54-page-history-and-images.md)).
 - **Owner console** at `/admin`: only you (your email, password and authenticator code) can
   open it. Health checks, payments, email, plans, data-source keys, security and the activity
   log, all from the browser, applied live
