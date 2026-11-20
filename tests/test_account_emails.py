@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import smtplib
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
@@ -36,9 +38,34 @@ def service(make_client, fake_stripe, monkeypatch):
     return c
 
 
-def flush(c):
-    """Send whatever is due now (the background loop would, within seconds)."""
-    c.portal.call(c.app.state.mailer.send_due)
+def flush(c, timeout: float = 10.0):
+    """Send whatever is due now, and wait until every email being sent has been delivered.
+
+    The server's own mail loop also sends: queuing an email wakes it, so an email can be claimed
+    and mid-send there (in a worker thread) when this runs. send_due then skips it as taken, so
+    counting the outbox straight away would race that delivery (seen on PostgreSQL in CI).
+    """
+    from sqlalchemy import func, select
+
+    from argus.storage.db import AccountEmailRow
+
+    async def in_flight() -> int:
+        # Claimed (attempts > 0), not yet resolved, and not waiting for a retry after an error.
+        async with c.app.state.db.session() as s:
+            query = select(func.count()).where(
+                AccountEmailRow.status == "pending", AccountEmailRow.attempts > 0, AccountEmailRow.last_error == ""
+            )
+            return int(await s.scalar(query) or 0)
+
+    async def settle() -> None:
+        deadline = time.monotonic() + timeout
+        while True:
+            await c.app.state.mailer.send_due()
+            if not await in_flight() or time.monotonic() > deadline:
+                return
+            await asyncio.sleep(0.05)
+
+    c.portal.call(settle)
 
 
 def signup(c, email="jane@example.org", name="Jane"):
