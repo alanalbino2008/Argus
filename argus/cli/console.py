@@ -374,6 +374,69 @@ def backup_cli(args: argparse.Namespace) -> int:
     return 0
 
 
+async def query_cli(text: str, source: str, as_json: bool) -> int:
+    """Run an AQL query against a stored investigation or an exported graph; prints a table."""
+    import json
+    from pathlib import Path
+
+    from argus.core.graph import IntelligenceGraph
+    from argus.intel.query import QueryError, run_query
+
+    path = Path(source)
+    if path.suffix.lower() == ".json" and await asyncio.to_thread(path.is_file):
+        graph: IntelligenceGraph | None = IntelligenceGraph.from_dict(
+            json.loads(await asyncio.to_thread(path.read_text, "utf-8"))
+        )
+    else:
+        from argus.core.settings import get_settings
+        from argus.storage.db import Database
+        from argus.storage.repository import InvestigationRepository
+
+        db = Database(get_settings().database_url)
+        try:
+            graph = await InvestigationRepository(db).load_graph(source)
+        finally:
+            await db.dispose()
+    if graph is None:
+        console.print(f"[red]No investigation or graph file named {source}[/red]")
+        return 2
+    try:
+        result = run_query(graph, text)
+    except QueryError as exc:
+        console.print(f"[red]Query error:[/red] {exc}")
+        if exc.position is not None:
+            console.print(f"  {text}\n  {' ' * exc.position}[red]^[/red]")
+        return 1
+    if as_json:
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+    if result["kind"] == "count":
+        console.print(f"[bold]{result['count']}[/bold] matching entities")
+        return 0
+    if result["kind"] == "groups":
+        table = Table(title=f"{result['count']} entities by group")
+        table.add_column("Group")
+        table.add_column("Count", justify="right")
+        for group in result["groups"]:
+            table.add_row(group["key"], str(group["count"]))
+        console.print(table)
+        return 0
+    if result["kind"] == "paths":
+        labels = {r["id"]: r["label"] for r in result["rows"]}
+        for e in graph.get_all_entities():
+            labels.setdefault(e.id, e.label)
+        for route in result["paths"]:
+            console.print(f"[cyan]{route['hops']} hops:[/cyan] " + "  →  ".join(labels[n] for n in route["nodes"]))
+    table = Table(title=f"{result['count']} matches ({result['elapsed_ms']} ms)")
+    columns = [c for c in ("type", "label", "degree", "confidence", "key_score") if any(c in r for r in result["rows"])]
+    for column in columns:
+        table.add_column(column)
+    for row in result["rows"]:
+        table.add_row(*(str(row.get(c, "")) for c in columns))
+    console.print(table)
+    return 0
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -427,6 +490,13 @@ def cli_entrypoint():
         action="store_true",
         help="Verify every username-platform signature against live sites, then exit",
     )
+    parser.add_argument(
+        "--query",
+        metavar="AQL",
+        help='Run an Argus Query Language query (with --on), e.g. "type:domain -> type:ip_address | limit 20"',
+    )
+    parser.add_argument("--on", metavar="ID_OR_FILE", help="With --query: an investigation id or a --export-json file")
+    parser.add_argument("--query-json", action="store_true", help="With --query: print the raw JSON result")
     parser.add_argument("--platforms-report", metavar="FILE", help="With --check-platforms: write a JSON report")
     parser.add_argument("--backup-to", metavar="FOLDER", help="Make an encrypted backup into FOLDER, then exit")
     parser.add_argument(
@@ -464,6 +534,11 @@ def cli_entrypoint():
     if args.load_demo:
         asyncio.run(load_demo_cli())
         return
+
+    if args.query:
+        if not args.on:
+            parser.error("--query needs --on <investigation id or exported JSON file>")
+        raise SystemExit(asyncio.run(query_cli(args.query, args.on, args.query_json)))
 
     if args.create_api_key:
         asyncio.run(create_api_key_cli(args.create_api_key, args.role))

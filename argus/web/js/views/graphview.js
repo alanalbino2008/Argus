@@ -14,6 +14,13 @@ let actions;
 let selected = null;
 let pivotsFor = null;
 let pivots = [];
+// Argus Query Language: the last query, its result or error, the syntax help and link analysis.
+let query = { text: "", result: null, error: null, busy: false };
+let queryHelp = null;
+let links = null; // { for: investigation id, data } from /links
+let communityColours = false;
+// Text that looks like a query rather than a name to find (operators, arrows, "path from", "*").
+const AQL_HINT = /[:~=<>|]|->|<-|--|^\s*path\s+from\s|^\s*\*/i;
 
 // Keys shown in their own panels (or not at all) rather than the generic details list.
 const HIDDEN_META = new Set([
@@ -62,9 +69,32 @@ export function initGraphView(appActions) {
   $("#btn-panel").addEventListener("click", togglePanel);
   $("#workspace").addEventListener("transitionend", graph.resizeCanvas);
   $("#graph-search").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.target.value = ""; clearQuery(); return; }
     if (e.key !== "Enter") return;
-    const id = graph.findNode(e.target.value);
-    if (!id || !graph.selectNode(id)) actions.toast("No match in this graph");
+    const text = e.target.value.trim();
+    if (!text) { clearQuery(); return; }
+    if (!AQL_HINT.test(text)) { // a name: jump to it locally, else search for it as a query
+      const id = graph.findNode(text);
+      if (id) { clearQuery(); if (graph.selectNode(id)) return; }
+    }
+    runQuery(text);
+  });
+  on($("#pane-query"), "click", "[data-example]", (_e, el) => {
+    $("#graph-search").value = el.dataset.example;
+    runQuery(el.dataset.example);
+  });
+  on($("#pane-query"), "click", "[data-select]", (_e, el) => graph.selectNode(el.dataset.select));
+  on($("#pane-query"), "click", "[data-query-path]", (_e, el) => {
+    const route = query.result?.paths?.[Number(el.dataset.queryPath)];
+    if (route) graph.highlightSet(route.nodes, route.edges);
+  });
+  on($("#pane-query"), "click", "[data-query-all]", () => highlightQuery());
+  on($("#pane-query"), "click", "[data-query-clear]", () => { $("#graph-search").value = ""; clearQuery(); });
+  on($("#pane-intel"), "click", "[data-community-colours]", () => toggleCommunityColours());
+  on($("#pane-intel"), "click", "[data-community]", (_e, el) => {
+    const index = Number(el.dataset.community);
+    const ids = Object.entries(links?.data?.community_of || {}).filter(([, c]) => c === index).map(([id]) => id);
+    graph.highlightSet(ids);
   });
 
   on($(".panel-tabs"), "click", ".panel-tab", (_e, tab) => showPane(tab.dataset.pane));
@@ -85,9 +115,14 @@ export function initGraphView(appActions) {
 
   onState("graph", () => { renderLegend(); renderEmpty(); });
   onState("entities-refreshed", () => renderDetails());
-  onState("reset", () => { selected = null; pivotsFor = null; renderAll(); });
+  onState("reset", () => {
+    selected = null; pivotsFor = null; links = null; communityColours = false;
+    query = { text: "", result: null, error: null, busy: false };
+    renderAll();
+  });
   onState("investigation", renderEmpty);
   ["analytics", "attack", "paths"].forEach((e) => onState(e, () => { renderIntel(); renderDetails(); }));
+  onState("analytics", () => loadLinks());
   onState("feed", renderActivity);
   document.addEventListener("argus:theme", graph.applyTheme);
   renderAll();
@@ -98,8 +133,139 @@ function renderAll() {
   renderEmpty();
   renderDetails();
   renderIntel();
+  renderQuery();
   renderActivity();
 }
+
+// ------------------------------------------------------------------ Argus Query Language
+async function runQuery(text) {
+  const id = state.investigation?.id;
+  if (!id) { toast("Open an investigation first"); return; }
+  query = { text, result: null, error: null, busy: true };
+  showPane("query");
+  renderQuery();
+  try {
+    const result = await api.post(`/api/investigation/${enc(id)}/query`, { query: text });
+    if (state.investigation?.id !== id || query.text !== text) return; // superseded
+    query = { text, result, error: null, busy: false };
+    highlightQuery();
+  } catch (err) {
+    if (query.text !== text) return;
+    query = { text, result: null, error: { message: err.message, position: err.detail?.position ?? null }, busy: false };
+    graph.clearHighlight();
+  }
+  renderQuery();
+}
+
+function highlightQuery() {
+  const r = query.result;
+  if (!r) return;
+  if (!graph.highlightSet(r.node_ids, r.edge_ids)) graph.clearHighlight();
+}
+
+function clearQuery() {
+  query = { text: "", result: null, error: null, busy: false };
+  graph.clearHighlight();
+  renderQuery();
+}
+
+async function ensureQueryHelp() {
+  if (queryHelp) return;
+  try { queryHelp = await api.get("/api/query/help"); renderQuery(); } catch { /* examples are optional */ }
+}
+
+function renderQuery() {
+  const pane = $("#pane-query");
+  if (!pane) return;
+  const { text, result, error, busy } = query;
+  if (busy) { setHTML(pane, html`<p class="muted small">Running <code>${text}</code>…</p>`); return; }
+  if (error) {
+    const caret = error.position != null ? `${" ".repeat(Math.max(0, error.position))}^` : "";
+    setHTML(pane, html`<div class="query-error"><b>That query didn't run</b><div>${error.message}</div>
+      ${caret ? html`<pre>${text}
+${caret}</pre>` : ""}</div>${queryExamples()}`);
+    ensureQueryHelp();
+    return;
+  }
+  if (!result) {
+    setHTML(pane, html`<p class="muted small">Type a query in the search box and press Enter. Esc clears it.</p>${queryExamples()}`);
+    ensureQueryHelp();
+    return;
+  }
+  const head = html`<div class="query-meta"><span><b>${result.count}</b> ${result.kind === "paths" ? "reachable" : "matches"} <span class="muted small">· ${result.elapsed_ms} ms</span></span>
+    <span><button class="btn sm" data-query-all title="Highlight all results">Show all</button> <button class="btn sm" data-query-clear>Clear</button></span></div>`;
+  let body = "";
+  if (result.kind === "count") {
+    body = html`<p class="muted small">Matching entities are highlighted on the graph.</p>`;
+  } else if (result.kind === "groups") {
+    const top = Math.max(1, ...result.groups.map((g) => g.count));
+    body = html`${result.groups.map((g) => html`<div class="list-row"><div class="list-main"><div class="list-title">${g.key}</div>
+      <div class="group-bar" style="width:${Math.round((g.count / top) * 100)}%"></div></div><span class="pill">${g.count}</span></div>`)}`;
+  } else {
+    const labels = new Map(result.rows.map((r) => [r.id, r.label]));
+    const label = (nid) => labels.get(nid) || state.entities.get(nid)?.label || nid;
+    body = html`${result.paths.length ? html`<div class="section-title">${result.kind === "paths" ? "Shortest routes" : "Matched patterns"}</div>
+      ${result.paths.map((p, i) => html`<div class="list-row clickable query-path" data-query-path="${i}">
+        <div class="list-main">${p.nodes.map((nid, j) => html`${j ? html` <b>→</b> ` : ""}${label(nid)}`)}</div>
+        <span class="muted small">${p.edges.length} hop${p.edges.length === 1 ? "" : "s"}</span></div>`)}
+      <div class="section-title" style="margin-top:12px">Results</div>` : ""}
+      ${result.rows.length ? result.rows.map((r) => html`<div class="list-row clickable" data-select="${r.id}">${entityIcon(r.type)}
+        <div class="list-main"><div class="list-title">${r.label}</div><div class="muted small">${r.type.replaceAll("_", " ")}${r.key_score != null ? ` · key ${r.key_score}` : ""}</div></div>
+        <span class="muted small">${r.degree} links</span></div>`)
+        : html`<p class="muted small">Nothing matches. Check the field names, or try a broader filter.</p>`}
+      ${result.truncated ? html`<p class="muted small">Showing ${result.rows.length} of ${result.count}. Add <code>| limit n</code> or narrow the filter.</p>` : ""}`;
+  }
+  setHTML(pane, html`${head}${body}`);
+}
+
+function queryExamples() {
+  if (!queryHelp) return "";
+  return html`<div class="section-title" style="margin-top:14px">Try</div>
+    ${queryHelp.examples.map((ex) => html`<button class="query-example" data-example="${ex.query}"><code>${ex.query}</code><span>${ex.explains}</span></button>`)}
+    <details class="more" style="margin-top:10px"><summary class="muted small">Syntax</summary>
+      ${queryHelp.syntax.map((s) => html`<div class="flag" style="display:block"><code>${s.form}</code><div class="muted small">${s.means}</div></div>`)}</details>`;
+}
+
+// ------------------------------------------------------------------ link analysis
+async function loadLinks() {
+  const id = state.investigation?.id;
+  if (!id || isRunning()) return; // scores settle when the scan does
+  try {
+    const data = await api.get(`/api/investigation/${enc(id)}/links`);
+    if (state.investigation?.id !== id) return;
+    links = { for: id, data };
+    if (communityColours) graph.colorByCommunity(data.community_of);
+    renderIntel();
+  } catch { /* link analysis is optional */ }
+}
+
+function toggleCommunityColours() {
+  communityColours = !communityColours;
+  graph.colorByCommunity(communityColours ? links?.data?.community_of : null);
+  renderIntel();
+}
+
+function renderLinks() {
+  const d = links?.data;
+  if (!d) return html`<p class="muted small">${isRunning() ? "Calculated when the scan completes." : "Loading…"}</p>`;
+  const row = (e, right) => html`<div class="list-row clickable" data-select="${e.id}">${entityIcon(e.type)}<div class="list-main"><div class="list-title">${e.label}</div></div><span class="muted small">${right}</span></div>`;
+  return html`
+    <p class="muted small">${d.communities.length} clusters · modularity ${d.modularity} · ${d.components} separate part${d.components === 1 ? "" : "s"}${d.betweenness_sampled ? " · brokerage estimated" : ""}</p>
+    <div class="section-title">Key entities</div>
+    ${d.key_entities.slice(0, 6).map((e) => row(e, `key ${e.key_score}`))}
+    ${d.brokers.length ? html`<div class="section-title" style="margin-top:12px">Brokers ${tipText("Entities on the most shortest routes between others: they tie separate clusters together.")}</div>
+      ${d.brokers.slice(0, 5).map((e) => row(e, `${Math.round(e.betweenness * 100)}%`))}` : ""}
+    ${d.single_points_of_failure.length ? html`<div class="section-title" style="margin-top:12px">Single points of failure ${tipText("Removing one of these splits the graph apart.")}</div>
+      ${d.single_points_of_failure.slice(0, 5).map((e) => row(e, `${e.degree} links`))}` : ""}
+    <div class="section-title" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">Clusters
+      <button class="btn sm" data-community-colours>${communityColours ? "Colour by type" : "Colour by cluster"}</button></div>
+    ${d.communities.slice(0, 8).map((c) => html`<div class="list-row clickable" data-community="${c.id}">
+      <span class="community-swatch" style="background:${graph.communityColor(c.id)}"></span>
+      <div class="list-main"><div class="list-title">${c.anchor.label}</div><div class="muted small">${Object.entries(c.types).slice(0, 3).map(([t, n]) => `${n} ${t.replaceAll("_", " ")}`).join(" · ")}</div></div>
+      <span class="pill">${c.size}</span></div>`)}`;
+}
+
+const tipText = (text) => html`<span class="muted small" title="${text}">ⓘ</span>`;
 
 function togglePanel() {
   $("#workspace").classList.toggle("panel-collapsed");
@@ -517,6 +683,7 @@ function renderIntel() {
         <div class="muted small" style="margin-top:4px">🛡 ${t.defence}</div>
       </div>`) : html`<p class="muted small">No exposure mapped.</p>`
       : html`<p class="muted small">${isRunning() ? "Mapped when the scan completes." : "Loading…"}</p>`}
+    <div class="section"><div class="section-title">Link analysis</div>${renderLinks()}</div>
     <div class="section"><div class="section-title">Most connected (pivots)</div>
       ${a?.top_pivots?.length ? a.top_pivots.map((h) => html`<div class="list-row clickable" data-select="${h.id}">${entityIcon(h.type)}<div class="list-main"><div class="list-title">${h.label}</div></div><span class="muted small">${h.connections} links</span></div>`)
         : html`<p class="muted small">—</p>`}</div>`);

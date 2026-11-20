@@ -44,6 +44,7 @@ function describe(body, status) {
   const d = body && body.detail;
   if (Array.isArray(d)) return d.map((e) => e.msg).join("; ");
   if (typeof d === "string") return d;
+  if (d && typeof d === "object" && typeof d.message === "string") return d.message;
   return status === 429 ? "Too many requests — try again shortly" : `Request failed (${status})`;
 }
 
@@ -74,7 +75,11 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (res.status === 403 && data?.terms) window.argusAskTerms?.(); // updated terms to accept first
-  if (!res.ok) throw new ApiError(res.status, describe(data, res.status));
+  if (!res.ok) {
+    const error = new ApiError(res.status, describe(data, res.status));
+    if (data && typeof data.detail === "object") error.detail = data.detail; // structured errors (e.g. query position)
+    throw error;
+  }
   return data;
 }
 

@@ -212,6 +212,31 @@ class IntelligenceGraph:
             "analytics": self.compute_analytics(),
         }
 
+    def snapshot(self) -> IntelligenceGraph:
+        """A copy that another thread can read while this graph keeps growing.
+
+        Merges edit an existing entity's top-level metadata (``metadata.update``) and confidence, so
+        each entity is copied with its own top-level metadata dict; nested values are only ever
+        replaced, never edited, so they can be shared. Relations never change once added.
+        """
+        copy = IntelligenceGraph(self.investigation_id)
+        copy._graph = self._graph.copy()
+        copy._entities = {eid: e.model_copy(update={"metadata": dict(e.metadata)}) for eid, e in self._entities.items()}
+        copy._relations = dict(self._relations)
+        copy._seed_ids = set(self._seed_ids)
+        return copy
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> IntelligenceGraph:
+        """Rebuild a graph from :meth:`to_dict` output (a JSON export)."""
+        graph = cls(str(data.get("investigation_id") or "imported"))
+        for node in data.get("nodes") or []:
+            entity = Entity.model_validate(node)
+            graph.add_entity(entity, is_seed=entity.depth == 0 and entity.source_module == "seed")
+        for edge in data.get("edges") or []:
+            graph.add_relation(Relation.model_validate(edge))
+        return graph
+
     def to_maltego_csv(self) -> str:
         """Export relationships in a Maltego-compatible tabular CSV structure."""
         output = io.StringIO()

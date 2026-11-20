@@ -111,6 +111,19 @@ List endpoints take `limit` (and `offset` where the list can be long). Exports r
 events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then connect to
 `/ws/stream/{id}?ticket=…`.
 
+## Querying the graph (Argus Query Language)
+
+| Method & path | Purpose |
+|---|---|
+| `POST /api/investigation/{id}/query` | Run an AQL query: `{"query": "type:domain -[RESOLVES_TO]-> ip \| limit 20"}` |
+| `GET /api/investigation/{id}/links` | Link analysis: key entities, brokers, single points of failure, clusters, `community_of` |
+| `GET /api/query/help` | Syntax summary and example queries |
+
+A query returns `kind` (`nodes`, `paths`, `groups` or `count`), `count`, `rows`, `groups`,
+`node_ids` and `edge_ids` (to highlight), `paths` and `elapsed_ms`. A query that cannot be
+parsed returns `400` with `{"detail": {"message": "...", "position": 5}}`, where `position` is the
+character the problem starts at. See [`explained/59-query-language-and-link-analysis.md`](explained/59-query-language-and-link-analysis.md).
+
 ## Breach and dark-web exposure
 
 `GET /api/exposure` returns:

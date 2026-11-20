@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.59.0] — Phase 59: The Argus Query Language and link analysis
+
+### Added
+- **Argus Query Language (AQL)**: ask the graph questions from the graph's search box, the
+  API or the command line.
+  - Filters: `type:ip_address geo.country:RU`, `value~"^vpn"`, `label:*acme*`,
+    `confidence<0.8`, `intel.kev:*` (present), `AND` / `OR` / `NOT` / `-term` / brackets,
+    dotted metadata paths, and type aliases (`ip`, `sub`, `org`, `cve`…).
+  - Relation patterns: `type:domain -[RESOLVES_TO]-> ip <-[RESOLVES_TO]- sub`, `A -- B`, several
+    relation types with `|`. Only complete chains match.
+  - Shortest routes: `path from type:email to type:ip_address max 6`.
+  - Shaping: `| sort pagerank desc | limit 20`, `| group type`, `| count`.
+  - Read-only and bounded: query length, filters, regex size (no nested repetition), rows, paths
+    and hops are all capped. Errors say what's wrong and point at the character.
+- **Link analysis** (pure Python, cached per graph version): PageRank, betweenness (sampled on
+  large graphs), Louvain clusters with modularity, articulation points (single points of failure)
+  and one combined *key entity* score. Queryable as `pagerank`, `betweenness`, `community`,
+  `key_score` and `articulation`.
+- **In the graph view**:
+  - the search box runs queries (plain names still jump to the entity), and Esc clears;
+  - a new **Query** tab lists results, routes and groups, with examples and syntax;
+  - matches light up on the graph, and clicking a route shows only that route;
+  - the Intelligence tab gains **Link analysis**: key entities, brokers, single points of
+    failure and clusters, with **Colour by cluster**.
+- **API**: `POST /api/investigation/{id}/query`, `GET /api/investigation/{id}/links`,
+  `GET /api/query/help`. Stored graphs are analysed off the event loop.
+- **CLI**: `argus --query "<AQL>" --on <investigation id | exported JSON>` (`--query-json` for raw
+  output). `IntelligenceGraph.from_dict` rebuilds a graph from a JSON export.
+- Helm chart 0.49.0.
+
 ## [1.58.0] — Phase 58: Speed and a smoother live graph
 
 ### Changed

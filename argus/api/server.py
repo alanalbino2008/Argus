@@ -113,7 +113,11 @@ from argus.intel.diff import compare, headline
 from argus.intel.exposure import demo_findings
 from argus.intel.exposure_monitor import ExposureMonitor
 from argus.intel.identity import resolve_people
+from argus.intel.link_analysis import analyze_links
 from argus.intel.paths import find_attack_paths
+from argus.intel.query import EXAMPLES as QUERY_EXAMPLES
+from argus.intel.query import QueryError, run_query
+from argus.intel.query import syntax as query_syntax
 from argus.intel.remediation_clock import RemediationClock
 from argus.intel.stix import build_bundle
 from argus.intel.suppliers import min_grade as supplier_min_grade
@@ -1337,6 +1341,53 @@ async def get_attack_mapping(inv_id: str, request: Request, ws: WorkspaceContext
 async def get_attack_paths(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Attack Path Engine: findings chained into ranked, explained attack scenarios."""
     return find_attack_paths(await _resolve_graph(inv_id, get_repo(request), ws.id))
+
+
+class GraphQueryRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000, description="An Argus Query Language (AQL) query")
+
+
+@app.get("/api/query/help")
+async def query_help(ws: WorkspaceContext = VIEWER):
+    """Argus Query Language: syntax summary and example queries."""
+    return {"syntax": query_syntax(), "examples": QUERY_EXAMPLES}
+
+
+@app.post("/api/investigation/{inv_id}/query")
+async def query_graph(
+    inv_id: str, request: Request, req: GraphQueryRequest | None = None, ws: WorkspaceContext = VIEWER
+):
+    """Run an Argus Query Language query: filters, relation patterns, shortest paths, sort/limit/group.
+
+    Read-only and bounded. Returns matching rows, the node and edge ids to highlight, and paths.
+    """
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)  # tenant check before anything else
+    if req is None:
+        raise HTTPException(status_code=422, detail={"message": "a query is required", "position": 0})
+    try:
+        return await _graph_work(inv_id, graph, run_query, graph, req.query)
+    except QueryError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc), "position": exc.position}) from exc
+
+
+@app.get("/api/investigation/{inv_id}/links")
+async def link_analysis(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
+    """Link analysis: key entities, brokers, single points of failure and communities."""
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)
+    result = await _graph_work(inv_id, graph, analyze_links, graph)
+    return {
+        **{k: v for k, v in result.items() if k != "scores"},
+        "community_of": {nid: score["community"] for nid, score in result["scores"].items()},
+    }
+
+
+async def _graph_work(inv_id: str, graph: IntelligenceGraph, fn: Any, *args: Any) -> Any:
+    """CPU-bound graph work, always off the event loop. A running scan's graph is still being
+    written by the engine, so the worker thread gets a snapshot taken here, on the loop."""
+    if inv_id in INVESTIGATIONS:
+        snapshot = graph.snapshot()
+        args = tuple(snapshot if a is graph else a for a in args)
+    return await anyio.to_thread.run_sync(fn, *args)
 
 
 @app.get("/api/investigation/{inv_id}/people")

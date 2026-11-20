@@ -103,6 +103,23 @@ Most OSINT tools return a list of findings. Argus **chains them into the attack 
 
 Try it without scanning anything: `python -m argus.cli.console --load-demo` loads a fictional company (reserved `.example` domains and TEST-NET IPs) that triggers every rule. How it works: [`docs/explained/06-attack-path-engine.md`](docs/explained/06-attack-path-engine.md).
 
+### Argus Query Language & Link Analysis
+
+Ask the graph questions instead of scrolling it. Type a query in the graph's search box (or call
+the API, or `argus --query`):
+
+```text
+type:subdomain value~"^(vpn|sso|admin)" -[RESOLVES_TO]-> ip geo.country:*
+path from type:email to type:ip_address max 6
+type:vulnerability intel.kev:* | sort pagerank desc | limit 10
+* | group type
+```
+
+Matches light up on the graph. Link analysis ranks every entity by **PageRank** (influence),
+**betweenness** (the brokers tying clusters together) and **articulation** (single points of
+failure), and splits the graph into **clusters** you can colour the graph by. See
+[`docs/explained/59-query-language-and-link-analysis.md`](docs/explained/59-query-language-and-link-analysis.md).
+
 ### Deep Recon — finding what is hidden
 
 Beyond live DNS and websites, Argus digs where organisations forget to look:

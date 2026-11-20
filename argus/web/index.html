@@ -69,7 +69,7 @@
             <div class="toolbar">
               <div class="floating">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" style="margin-left:6px;color:var(--text-3)"><use href="#i-search"/></svg>
-                <input id="graph-search" class="input" type="search" placeholder="Find in graph…  ( / )" aria-label="Find in graph">
+                <input id="graph-search" class="input" type="search" placeholder="Find or query: type:ip_address, domain -> ip  ( / )" aria-label="Find in graph or run a query" autocomplete="off" spellcheck="false">
               </div>
               <div class="floating">
                 <select id="layout-select" class="select" aria-label="Layout" title="Layout">
@@ -95,11 +95,13 @@
             <div class="panel-tabs" role="tablist">
               <button class="panel-tab active" data-pane="details" role="tab">Details</button>
               <button class="panel-tab" data-pane="intel" role="tab">Intelligence</button>
+              <button class="panel-tab" data-pane="query" role="tab">Query</button>
               <button class="panel-tab" data-pane="activity" role="tab">Activity</button>
             </div>
             <div class="panel-body">
               <div class="panel-pane" id="pane-details"></div>
               <div class="panel-pane" id="pane-intel" hidden></div>
+              <div class="panel-pane" id="pane-query" hidden></div>
               <div class="panel-pane" id="pane-activity" hidden></div>
             </div>
           </aside>

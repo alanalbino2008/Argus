@@ -282,6 +282,42 @@ export function highlightPath(path) {
   cy.animate({ fit: { eles: nodes, padding: 120 } }, { duration: 500 });
 }
 
+/** Highlight a query result: matching nodes and edges stay lit, everything else dims. */
+export function highlightSet(nodeIds, edgeIds = [], { fit: shouldFit = true } = {}) {
+  if (!cy) return 0;
+  clearHighlight();
+  const nodes = cy.collection(nodeIds.map((id) => cy.getElementById(id)).filter((n) => n.length));
+  const edges = cy.collection(edgeIds.map((id) => cy.getElementById(id)).filter((e) => e.length));
+  if (!nodes.length) return 0;
+  cy.batch(() => {
+    cy.elements().addClass("dimmed");
+    nodes.union(edges).removeClass("dimmed").addClass("on-path");
+  });
+  scheduleLabelUpdate();
+  if (shouldFit) cy.animate({ fit: { eles: nodes, padding: 100 } }, { duration: 450 });
+  return nodes.length;
+}
+
+// Distinct, theme-neutral hues for communities; the largest communities get the first ones.
+const COMMUNITY_COLORS = ["#4f6bed", "#e8743b", "#19a979", "#ed4a7b", "#945ecf", "#13a4b4", "#d6a100", "#6c8893", "#c94f2c", "#2f9e44"];
+
+/** Colour nodes by link-analysis community (null restores the per-type colours). */
+export function colorByCommunity(communityOf) {
+  if (!cy) return;
+  cy.batch(() => {
+    cy.nodes().forEach((n) => {
+      if (!communityOf) {
+        n.data("color", typeInfo(n.data("type")).color);
+        return;
+      }
+      const c = communityOf[n.id()];
+      n.data("color", c === undefined || c >= COMMUNITY_COLORS.length ? css("--text-3") : COMMUNITY_COLORS[c]);
+    });
+  });
+}
+
+export function communityColor(index) { return COMMUNITY_COLORS[index] || "var(--text-3)"; }
+
 export function clearHighlight() {
   cy?.elements().removeClass("dimmed on-path faded");
   scheduleLabelUpdate();
