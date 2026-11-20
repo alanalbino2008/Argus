@@ -47,6 +47,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: pip install -r requirements-dev.txt
+      # Evidence-capture tests use the browser Argus ships (Chrome's headless shell), not the runner's
+      # desktop Chrome, which can stall for over a minute on the runner's D-Bus before it starts.
+      - name: Chrome headless shell (the browser Argus ships for evidence capture)
+        run: |
+          python packaging/desktop/fetch_browser.py "$RUNNER_TEMP/browser" linux64
+          echo "ARGUS_CAPTURE_BROWSER=$RUNNER_TEMP/browser/chrome-headless-shell-linux64/chrome-headless-shell" >> "$GITHUB_ENV"
       - name: pytest (coverage gate in pyproject.toml)
         run: pytest --cov=argus --cov-report=term --cov-report=xml --durations=5
       - name: Upload coverage report
@@ -78,6 +84,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements-dev.txt "asyncpg>=0.29"
+      - name: Chrome headless shell (the browser Argus ships for evidence capture)
+        run: |
+          python packaging/desktop/fetch_browser.py "$RUNNER_TEMP/browser" linux64
+          echo "ARGUS_CAPTURE_BROWSER=$RUNNER_TEMP/browser/chrome-headless-shell-linux64/chrome-headless-shell" >> "$GITHUB_ENV"
       - name: pytest against PostgreSQL (incl. multi-replica coordination tests)
         env:
           ARGUS_TEST_DATABASE_URL: postgresql+asyncpg://argus:argus@localhost:5432/argus_test
