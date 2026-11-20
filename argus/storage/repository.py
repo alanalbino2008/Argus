@@ -8,10 +8,12 @@ so swapping SQLite for PostgreSQL - or adding caching - touches one file.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
+import anyio
 from sqlalchemy import Table, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -20,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import Entity, Investigation, InvestigationStatus, Relation
+from argus.observability import metrics
 from argus.security import vault
 from argus.storage.db import Database, EntityRow, InvestigationRow, RelationRow
 
@@ -66,9 +69,30 @@ def _investigation_row(inv: Investigation) -> dict[str, Any]:
     }
 
 
+# Finished scans never change, so their graphs can be shared by read-only views.
+FINISHED_STATUSES = frozenset(
+    {InvestigationStatus.COMPLETED.value, InvestigationStatus.CANCELLED.value, InvestigationStatus.FAILED.value}
+)
+THREAD_BUILD_THRESHOLD = 1500  # rows: larger graphs are built off the event loop
+
+
+def _build_graph(investigation_id: str, ents: Sequence[Any], rels: Sequence[Any]) -> IntelligenceGraph:
+    graph = IntelligenceGraph(investigation_id)
+    entities = sorted((Entity.model_validate(e) for e in ents), key=lambda e: e.depth)
+    for ent in entities:
+        graph.add_entity(ent, is_seed=ent.depth == 0)
+    for rel in rels:
+        graph.add_relation(Relation.model_validate(rel))
+    return graph
+
+
 class InvestigationRepository:
-    def __init__(self, db: Database):
+    def __init__(self, db: Database, *, graph_cache_size: int = 16):
         self.db = db
+        self.graph_cache_size = graph_cache_size
+        # investigation id -> (row version, graph). The version is checked against the database on
+        # every read, so a graph is never served after its investigation changed or was deleted.
+        self._graph_cache: OrderedDict[str, tuple[tuple[Any, ...], IntelligenceGraph]] = OrderedDict()
 
     # ---------------------------------------------------------------- writes
     async def save_investigation(self, inv: Investigation) -> None:
@@ -100,6 +124,7 @@ class InvestigationRepository:
         )
 
     async def delete_investigation(self, investigation_id: str) -> bool:
+        self._graph_cache.pop(investigation_id, None)
         async with self.db.session() as s, s.begin():
             # Explicit child deletes keep this portable even where FK cascades are off.
             await s.execute(delete(RelationRow).where(RelationRow.investigation_id == investigation_id))
@@ -312,10 +337,26 @@ class InvestigationRepository:
         row = await self._first_for_target(stmt, target)
         return Investigation.model_validate(row.data) if row else None
 
-    async def load_graph(self, investigation_id: str) -> IntelligenceGraph | None:
+    async def load_graph(self, investigation_id: str, *, shared: bool = False) -> IntelligenceGraph | None:
+        """The investigation's graph, or None if it does not exist.
+
+        ``shared=True`` is for read-only views: a finished investigation's graph may then be served
+        from an in-memory cache and **must not be modified**. Without it, the caller gets its own copy.
+        Large graphs are rebuilt in a worker thread so the server stays responsive.
+        """
         async with self.db.session() as s:
-            if await s.get(InvestigationRow, investigation_id) is None:
+            row = await s.get(InvestigationRow, investigation_id)
+            if row is None:
+                self._graph_cache.pop(investigation_id, None)
                 return None
+            version = (row.status, row.node_count, row.edge_count, row.completed_at)
+            cacheable = shared and self.graph_cache_size > 0 and row.status in FINISHED_STATUSES
+            if cacheable:
+                cached = self._graph_cache.get(investigation_id)
+                if cached is not None and cached[0] == version:
+                    self._graph_cache.move_to_end(investigation_id)
+                    metrics.GRAPH_CACHE.labels("hit").inc()
+                    return cached[1]
             ents = (
                 (await s.execute(select(EntityRow.data).where(EntityRow.investigation_id == investigation_id)))
                 .scalars()
@@ -327,12 +368,16 @@ class InvestigationRepository:
                 .all()
             )
 
-        graph = IntelligenceGraph(investigation_id)
-        entities = sorted((Entity.model_validate(e) for e in ents), key=lambda e: e.depth)
-        for ent in entities:
-            graph.add_entity(ent, is_seed=ent.depth == 0)
-        for rel in rels:
-            graph.add_relation(Relation.model_validate(rel))
+        if len(ents) + len(rels) > THREAD_BUILD_THRESHOLD:
+            graph = await anyio.to_thread.run_sync(_build_graph, investigation_id, ents, rels)
+        else:
+            graph = _build_graph(investigation_id, ents, rels)
+        if cacheable:
+            metrics.GRAPH_CACHE.labels("miss").inc()
+            self._graph_cache[investigation_id] = (version, graph)
+            self._graph_cache.move_to_end(investigation_id)
+            while len(self._graph_cache) > self.graph_cache_size:
+                self._graph_cache.popitem(last=False)
         return graph
 
     async def search_entities(

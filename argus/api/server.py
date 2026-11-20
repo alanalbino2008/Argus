@@ -238,7 +238,7 @@ async def lifespan(app: FastAPI):
     db = Database(settings.database_url, echo=settings.db_echo)
     if settings.auto_migrate:
         await upgrade_database(db)
-    repo = InvestigationRepository(db)
+    repo = InvestigationRepository(db, graph_cache_size=settings.graph_cache_size)
     app.state.app_state = AppStateRepository(db)
     if settings.edition != "personal":  # the owner console's settings win over the deployment's
         runtime_config.apply(settings, await app.state.app_state.get(runtime_config.STATE_KEY), owner_box(settings))
@@ -728,7 +728,7 @@ async def _resolve_graph(inv_id: str, repo: InvestigationRepository, workspace_i
             raise _not_found()
         return engine.graph
     await _resolve(inv_id, repo, workspace_id)  # ownership first, then the (larger) graph
-    graph = await repo.load_graph(inv_id)
+    graph = await repo.load_graph(inv_id, shared=True)  # read-only: every caller only reads it
     if graph is None:
         raise _not_found()
     return graph

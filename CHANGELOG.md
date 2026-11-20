@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.64.0] — Phase 64: A graph cache, and graph loading off the event loop
+
+### Changed
+- **Finished investigations' graphs are cached** for read-only views: the graph, attack paths,
+  ATT&CK mapping, people, exports, reports, ratings, queries, link analysis and hunts. On a
+  5,000-entity investigation, a repeat load drops from 200–360 ms to 1–3 ms. Opening an
+  investigation fires several such requests, so the UI feels instant after the first.
+  - Every read checks the investigation's row (status, counts, completion time) first, so a
+    changed, re-run or deleted investigation is never served stale. That holds across replicas too.
+  - Running scans are never cached.
+  - Least recently used graphs are dropped beyond `ARGUS_GRAPH_CACHE_SIZE` (default 16; 0 turns
+    it off).
+  - Only read-only callers use the cache. Everything that may change a graph still gets its own
+    copy, and a test sweeps every investigation endpoint to prove none modifies the shared graph.
+- **Large graphs are rebuilt in a worker thread** (above 1,500 rows). A cold load of 5,000
+  entities used to block the server for its whole duration; the longest stall is now about 26 ms.
+- Link analysis, which is cached per graph object, now also persists across requests.
+- New metric: `argus_graph_cache_total{result="hit|miss"}`.
+- Helm chart 0.54.0.
+
 ## [1.63.0] — Phase 63: Shodan pivots on demand
 
 ### Added

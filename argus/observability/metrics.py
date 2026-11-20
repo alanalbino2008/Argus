@@ -43,6 +43,10 @@ HTTP_DURATION = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
     registry=REGISTRY,
 )
+GRAPH_CACHE = Counter(
+    "argus_graph_cache_total", "Stored graphs served from the read-only cache (hit) or rebuilt from the database (miss)",
+    ["result"], registry=REGISTRY,
+)  # fmt: skip
 HTTP_IN_FLIGHT = Gauge("argus_http_requests_in_flight", "API requests being processed", registry=REGISTRY)
 WS_CONNECTIONS = Gauge(
     "argus_websocket_connections", "Open live-view WebSockets (live = local scan, tail = scan on another replica)",

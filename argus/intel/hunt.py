@@ -59,7 +59,7 @@ async def hunt(
         if time.perf_counter() - started > budget_seconds:
             partial = True
             break
-        graph = await repo.load_graph(inv["id"])
+        graph = await repo.load_graph(inv["id"], shared=True)  # read-only
         if graph is None:
             continue
         searched += 1

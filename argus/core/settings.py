@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     db_echo: bool = Field(default=False, description="Log every SQL statement (debugging only)")
     persist_flush_interval: float = Field(default=1.0, gt=0, description="Seconds between write-behind flushes")
     ws_queue_size: int = Field(default=2000, ge=10, description="Max buffered messages per WebSocket client")
+    graph_cache_size: int = Field(
+        default=16,
+        ge=0,
+        le=1000,
+        description="Finished investigations' graphs kept in memory for read-only views (0: off)",
+    )
     compress_responses: bool = Field(
         default=True, description="Gzip API responses over 1 KB (graphs and exports shrink 5-10x on the wire)"
     )
