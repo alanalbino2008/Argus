@@ -32,6 +32,7 @@ import hmac
 import json
 import logging
 import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -1692,11 +1693,12 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
         conn.offer(snapshot)
         CONNECTIONS.setdefault(inv_id, set()).add(conn)
     else:
-        inv, graph = await repo.get_investigation(inv_id), await repo.load_graph(inv_id)
+        # Read-only: a finished scan's graph comes from the cache, and so does its serialised snapshot.
+        inv, graph = await repo.get_investigation(inv_id), await repo.load_graph(inv_id, shared=True)
         if inv is None or graph is None:
             await websocket.close(code=4404)
             return
-        conn.offer(_snapshot_message(inv, graph))
+        conn.offer(await _stored_snapshot(inv, graph))
         if inv.status.value in ACTIVE_STATUSES:
             tail_graph = graph  # running on another replica: follow it through the database
 
@@ -1789,6 +1791,26 @@ def _event_json(kind: str, inv_id: str, data: dict[str, Any]) -> str:
     return json.dumps(
         {"type": kind, "investigation_id": inv_id, "data": data, "timestamp": datetime.now(timezone.utc).isoformat()}
     )
+
+
+_SNAPSHOT_CACHE: OrderedDict[str, tuple[tuple[Any, ...], str]] = OrderedDict()
+SNAPSHOT_CACHE_SIZE = 8
+
+
+async def _stored_snapshot(inv: Investigation, graph: IntelligenceGraph) -> str:
+    """The snapshot of a stored investigation, serialised in a worker thread (tens of MB for big
+    graphs) and kept for finished investigations, whose snapshot only changes with a new version."""
+    version = (inv.status.value, inv.node_count, inv.edge_count, inv.completed_at, id(graph))
+    cached = _SNAPSHOT_CACHE.get(inv.id)
+    if cached is not None and cached[0] == version:
+        _SNAPSHOT_CACHE.move_to_end(inv.id)
+        return cached[1]
+    text = await anyio.to_thread.run_sync(_snapshot_message, inv, graph)
+    if inv.status.value not in ACTIVE_STATUSES:
+        _SNAPSHOT_CACHE[inv.id] = (version, text)
+        while len(_SNAPSHOT_CACHE) > SNAPSHOT_CACHE_SIZE:
+            _SNAPSHOT_CACHE.popitem(last=False)
+    return text
 
 
 def _snapshot_message(inv: Investigation, graph: IntelligenceGraph) -> str:

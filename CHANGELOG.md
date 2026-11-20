@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.65.0] — Phase 65: Very large graphs stay fast
+
+### Changed
+- **Large investigations are drawn with bundles.** Above 1,500 entities, a node with 40 or more
+  neighbours of one type shows them as one bundle ("25,000 subdomains"). The pass repeats on the
+  bundled graph (the sub-domains' IPs bundle, then their ports), and same-type islands across the
+  graph are bundled too. Edges between bundles are merged into one edge with a count.
+  - **Click a bundle** to show 300 more of its members, most connected first, placed around it.
+    **Regroup** folds them back. A bar says how much is shown ("37 of 50,000 shown · 6 bundles").
+  - Nothing is hidden from the analyst. Search finds entities inside bundles and reveals them.
+    Query results, attack paths and the selection are never bundled (beyond 300 results, their
+    bundles light up instead). The legend, details, neighbours and counts cover every entity.
+  - Live scans keep working: new discoveries re-bundle at most every 1.5 s.
+- **Measured** in Chromium on synthetic investigations shaped like real scans (`tools/bench/`):
+
+  | Entities | Before | Now: cold open | Now: warm open | Longest freeze | Zoom/pan |
+  |---|---|---|---|---|---|
+  | 5,000 | browser frozen > 3 min | 1.1 s | 0.6 s | 0.3 s | 30 fps |
+  | 20,000 | frozen | 2.0 s | 0.5 s | 0.25 s | 59 fps |
+  | 50,000 | frozen | 6.4 s | 0.95 s | 0.45 s | 60 fps |
+
+- **The server keeps up**:
+  - A stored investigation's live view is served from the graph cache.
+  - The serialised snapshot (28 MB at 50,000 entities) is built in a worker thread and cached for
+    finished investigations: a warm 50k snapshot takes 0.35 s instead of 4.7 s.
+- **Link analysis scales**:
+  - Betweenness is sampled to a fixed work budget (12 samples at 50,000 entities), so the whole
+    analysis takes 10 s there instead of about 93 s.
+  - The browser only asks for it when the Intelligence tab is opened, and once per investigation.
+  - The result reports the sample count (`betweenness_samples`).
+- **Smoother interaction on big views**: labels update when zooming pauses rather than on every
+  frame, and the force layout uses fewer iterations as views grow.
+- **JavaScript tests**: the bundling logic is tested with Node's built-in runner
+  (`tests/js/bundles.test.mjs`, run from pytest when Node is installed), including a 50,000-entity
+  case.
+- Helm chart 0.55.0.
+
 ## [1.64.0] — Phase 64: A graph cache, and graph loading off the event loop
 
 ### Changed

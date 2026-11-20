@@ -23,6 +23,7 @@ let savedQueries = null; // the workspace's saved queries (loaded with the Query
 let hunt = null; // { text, busy, result, error } for a hunt across investigations
 let saving = false; // the save form is open
 let links = null; // { for: investigation id, data } from /links
+let linksLoading = null; // the investigation whose link analysis is being fetched
 let communityColours = false;
 // Text that looks like a query rather than a name to find (operators, arrows, "path from", "*").
 const AQL_HINT = /[:~=<>|]|->|<-|--|^\s*path\s+from\s|^\s*\*/i;
@@ -67,7 +68,14 @@ export function initGraphView(appActions) {
   graph.initGraph($("#cy"), {
     onSelect: (data) => { selected = data.id; showPane("details"); renderDetails(); },
     onDeselect: () => { selected = null; renderDetails(); },
+    onRender: () => { renderLegend(); renderBundleBar(); },
+    onBundle: ({ type, shown, total, remaining }) => {
+      const what = typeInfo(type).label.toLowerCase();
+      toast(remaining ? `Showing ${shown.toLocaleString()} of ${total.toLocaleString()} (${what}): click the bundle again for more` : `All ${total.toLocaleString()} shown (${what})`);
+      renderBundleBar();
+    },
   });
+  $("#btn-regroup").addEventListener("click", () => { graph.collapseAll(); renderBundleBar(); });
 
   $("#layout-select").addEventListener("change", (e) => graph.relayout(e.target.value));
   $("#btn-fit").addEventListener("click", graph.fit);
@@ -140,7 +148,7 @@ export function initGraphView(appActions) {
   on($("#pane-details"), "click", "[data-path]", (_e, el) => actions.showPath(state.paths.paths[Number(el.dataset.path)]));
   on($("#graph-empty"), "click", "[data-action]", (_e, el) => actions[el.dataset.action]?.());
 
-  onState("graph", () => { renderLegend(); renderEmpty(); });
+  onState("graph", () => { renderLegend(); renderEmpty(); renderBundleBar(); });
   onState("entities-refreshed", () => renderDetails());
   onState("reset", () => {
     selected = null; pivotsFor = null; links = null; communityColours = false; hunt = null; saving = false; savedQueries = null;
@@ -350,16 +358,22 @@ function renderHunt() {
 }
 
 // ------------------------------------------------------------------ link analysis
+// Link analysis is heavy on very large graphs (seconds of server time), so it is only fetched when
+// the Intelligence tab is actually shown, once per investigation.
 async function loadLinks() {
   const id = state.investigation?.id;
   if (!id || isRunning()) return; // scores settle when the scan does
+  if ($("#pane-intel").hidden || links?.for === id || linksLoading === id) return;
+  linksLoading = id;
   try {
     const data = await api.get(`/api/investigation/${enc(id)}/links`);
     if (state.investigation?.id !== id) return;
     links = { for: id, data };
     if (communityColours) graph.colorByCommunity(data.community_of);
     renderIntel();
-  } catch { /* link analysis is optional */ }
+  } catch { /* link analysis is optional */ } finally {
+    if (linksLoading === id) linksLoading = null;
+  }
 }
 
 function toggleCommunityColours() {
@@ -399,6 +413,7 @@ function showPane(name) {
   $$(".panel-tab").forEach((t) => t.classList.toggle("active", t.dataset.pane === name));
   $$(".panel-pane").forEach((p) => { p.hidden = p.id !== `pane-${name}`; });
   $("#workspace").classList.remove("panel-collapsed");
+  if (name === "intel") loadLinks();
 }
 
 function renderLegend() {
@@ -408,6 +423,14 @@ function renderLegend() {
     <button class="legend-chip${graph.isTypeVisible(t) ? "" : " off"}" data-type="${t}" title="Show / hide ${typeInfo(t).label}">
       <span class="dot" style="background:${typeInfo(t).color}"></span>${typeInfo(t).label} <b>${counts[t]}</b>
     </button>`)}`);
+}
+
+/** Large graphs are drawn with bundles: say so, and offer to fold expanded ones back. */
+function renderBundleBar() {
+  const { nodes, drawn, bundles } = graph.counts();
+  const bar = $("#bundle-bar");
+  bar.hidden = !bundles;
+  if (bundles) $("#bundle-note").textContent = `${drawn.toLocaleString()} of ${nodes.toLocaleString()} shown · ${bundles} bundle${bundles === 1 ? "" : "s"} (click to expand)`;
 }
 
 function renderEmpty() {

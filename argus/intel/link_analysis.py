@@ -29,7 +29,11 @@ from argus.core.graph import IntelligenceGraph
 logger = logging.getLogger("argus.link_analysis")
 
 BETWEENNESS_EXACT_LIMIT = 600  # above this many nodes, betweenness is estimated from a sample
-BETWEENNESS_SAMPLES = 256
+BETWEENNESS_SAMPLES = 256  # at most; fewer on big graphs, see BETWEENNESS_BUDGET
+# Sampled betweenness costs about samples x (nodes + edges): the budget keeps it to a few seconds
+# on the largest graphs (12 samples at 50,000 entities) instead of minutes.
+BETWEENNESS_BUDGET = 1_500_000
+BETWEENNESS_MIN_SAMPLES = 8
 PAGERANK_DAMPING = 0.85
 PAGERANK_TOLERANCE = 1e-8
 PAGERANK_MAX_ITERATIONS = 200
@@ -87,15 +91,17 @@ def analyze_links(graph: IntelligenceGraph) -> dict[str, Any]:
 
     ranks = pagerank(g)
     sampled = n > BETWEENNESS_EXACT_LIMIT
-    between = (
-        (
-            nx.betweenness_centrality(simple, k=min(BETWEENNESS_SAMPLES, n), seed=7, normalized=True)
-            if sampled
-            else nx.betweenness_centrality(simple, normalized=True)
-        )
-        if n > 2
-        else dict.fromkeys(simple.nodes, 0.0)
+    samples = (
+        max(BETWEENNESS_MIN_SAMPLES, min(BETWEENNESS_SAMPLES, BETWEENNESS_BUDGET // (n + simple.number_of_edges())))
+        if sampled
+        else n
     )
+    if n <= 2:
+        between = dict.fromkeys(simple.nodes, 0.0)
+    elif sampled:
+        between = nx.betweenness_centrality(simple, k=min(samples, n), seed=7, normalized=True)
+    else:
+        between = nx.betweenness_centrality(simple, normalized=True)
 
     communities: list[set[str]] = (
         [set(c) for c in nx.community.louvain_communities(simple, seed=7)] if simple.number_of_edges() else []
@@ -165,6 +171,7 @@ def analyze_links(graph: IntelligenceGraph) -> dict[str, Any]:
         "components": nx.number_connected_components(simple) if n else 0,
         "modularity": round(nx.community.modularity(simple, communities), 4) if communities else 0.0,
         "betweenness_sampled": sampled,
+        "betweenness_samples": samples if sampled else None,
         "key_entities": [describe(nid) for nid in ranked[:15]],
         "brokers": [
             describe(nid) for nid in sorted(between, key=between.__getitem__, reverse=True)[:10] if between[nid] > 0
