@@ -77,7 +77,12 @@ def parse_banner(line: bytes) -> dict[str, str]:
     text = line.decode("utf-8", errors="replace").strip()
     parts = text.split(" ", 1)
     proto, _, software = parts[0].partition("-")[2].partition("-")
-    return {"banner": text[:255], "protocol": proto, "software": software, "comments": parts[1] if len(parts) > 1 else ""}
+    return {
+        "banner": text[:255],
+        "protocol": proto,
+        "software": software,
+        "comments": parts[1] if len(parts) > 1 else "",
+    }
 
 
 async def _read_banner(reader: asyncio.StreamReader) -> bytes:
