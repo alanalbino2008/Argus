@@ -215,6 +215,12 @@ export function bulkLoad(entities, relations) {
   scheduleLabelUpdate();
 }
 
+/** Apply many additions as one redraw (live scans deliver discoveries in bursts). */
+export function batch(fn) {
+  if (!cy) { fn(); return; }
+  cy.batch(fn);
+}
+
 export function clearGraph() {
   if (cy) cy.elements().remove();
 }

@@ -42,6 +42,7 @@ from typing import Any, Literal
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -101,7 +102,7 @@ from argus.api.watch_routes import router as watch_router
 from argus.api.workspace_routes import router as workspace_router
 from argus.core import runtime_config
 from argus.core.engine import ArgusEngine
-from argus.core.events import Event, event_bus
+from argus.core.events import Event, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import EgressRoute, Settings, get_settings
@@ -200,8 +201,15 @@ class ClientConnection:
 CONNECTIONS: dict[str, set[ClientConnection]] = {}
 
 
+# Per-module start/finish chatter is several times the volume of actual findings and no client
+# renders it: kept on the event bus (metrics, plugins) but never sent down a WebSocket.
+WS_SILENT_EVENTS = frozenset({EventType.MODULE_STARTED, EventType.MODULE_FINISHED})
+
+
 async def ws_dispatcher(event: Event) -> None:
     """Fan an engine event out to every client watching that investigation (non-blocking)."""
+    if event.type in WS_SILENT_EVENTS:
+        return
     conns = CONNECTIONS.get(event.investigation_id)
     if not conns:
         return
@@ -555,6 +563,10 @@ app = FastAPI(
 )
 app.openapi = partial(build_openapi, app)  # type: ignore[method-assign]
 
+if get_settings().compress_responses:
+    # Innermost, so security headers and metrics see the final response. Auth is by header, never a
+    # cookie, so a cross-site page cannot make credentialed requests to mount a BREACH-style attack.
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.middleware("http")(licence_gate)  # personal edition: the subscription decides what is allowed
 app.middleware("http")(vault_gate)  # a locked case vault: nothing but unlocking until it is open
 app.add_middleware(SecurityHeadersMiddleware)

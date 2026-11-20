@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.58.0] — Phase 58: Speed and a smoother live graph
+
+### Changed
+- **Compressed API responses**: responses over 1 KB are gzipped. Graphs, exports and reports are
+  5–10× smaller on the wire (the demo graph: 36.8 KB → 6.9 KB). Security headers and metrics still
+  apply to the final response. `ARGUS_COMPRESS_RESPONSES=false` turns it off, for example behind a
+  proxy that already compresses.
+- **A smoother live graph**: the browser now applies live discoveries once per animation frame in
+  a single graph batch, with one redraw, one panel refresh and one feed line ("Found 37 entities:
+  21 subdomain, 9 ip address…") however busy the scan is. Only the newest progress report in a
+  frame is used. Background tabs catch up four times a second.
+- **A quieter stream**: per-module start and finish events stay on the event bus (metrics and
+  plugins) but are no longer sent to browsers. No view used them, and they were most of the
+  messages on a busy scan.
+- Helm chart 0.48.0.
+
 ## [1.57.0] — Phase 57: Legal documents and privacy
 
 ### Added

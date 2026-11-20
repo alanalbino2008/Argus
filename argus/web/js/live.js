@@ -46,6 +46,36 @@ export async function loadIntel() {
   }
 }
 
+const DISCOVERIES = new Set(["entity_discovered", "relation_discovered"]);
+const FEED_DETAIL_LIMIT = 4; // more discoveries than this in one frame are summarised in one feed line
+
+/** Add a run of discoveries in one graph batch, with one redraw, one re-render and one feed line. */
+function applyDiscoveries(messages) {
+  const found = [];
+  let changed = false;
+  graph.batch(() => {
+    for (const { type, data } of messages) {
+      if (type === "entity_discovered") {
+        state.entities.set(data.entity.id, data.entity);
+        if (graph.addEntity(data.entity)) { found.push(data.entity); changed = true; }
+      } else {
+        state.relations.set(data.relation.id, data.relation);
+        if (graph.addRelation(data.relation)) changed = true;
+      }
+    }
+  });
+  if (found.length > FEED_DETAIL_LIMIT) {
+    const byType = {};
+    found.forEach((e) => { byType[e.type] = (byType[e.type] || 0) + 1; });
+    const parts = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${n} ${t.replaceAll("_", " ")}`);
+    pushFeed(`Found ${found.length} entities: ${parts.join(", ")}`);
+  } else {
+    found.forEach((e) => pushFeed(`Found ${e.type.replaceAll("_", " ")}: ${e.label}`));
+  }
+  if (found.length) graph.scheduleRelayout();
+  if (changed) emit("graph");
+}
+
 function handle(msg) {
   const { type, data } = msg;
   switch (type) {
@@ -62,18 +92,9 @@ function handle(msg) {
       if (!["running", "initializing"].includes(data.investigation.status)) loadIntel();
       break;
     }
-    case "entity_discovered": {
-      state.entities.set(data.entity.id, data.entity);
-      if (graph.addEntity(data.entity)) {
-        pushFeed(`Found ${data.entity.type.replace("_", " ")}: ${data.entity.label}`);
-        graph.scheduleRelayout();
-        emit("graph");
-      }
-      break;
-    }
+    case "entity_discovered":
     case "relation_discovered":
-      state.relations.set(data.relation.id, data.relation);
-      if (graph.addRelation(data.relation)) emit("graph");
+      applyDiscoveries([msg]);
       break;
     case "scan_progress":
       emit("progress", data);
@@ -107,8 +128,62 @@ function handle(msg) {
   }
 }
 
+// Messages are buffered and applied once per animation frame: a busy scan sends hundreds of
+// discoveries a second, and rendering each one separately is what makes a graph stutter.
+let pending = [];
+let flushTimer = null;
+let flushFrame = null;
+
+// Messages that must be handled exactly where they fall: everything before them is drawn first.
+const BARRIERS = new Set(["snapshot", "scan_completed", "scan_failed", "scan_cancelled"]);
+
+function flush() {
+  if (flushTimer) clearTimeout(flushTimer);
+  if (flushFrame) cancelAnimationFrame(flushFrame);
+  flushTimer = flushFrame = null;
+  const messages = pending;
+  pending = [];
+  let segment = [];
+  for (const msg of messages) {
+    if (!BARRIERS.has(msg.type)) { segment.push(msg); continue; }
+    applySegment(segment);
+    segment = [];
+    handle(msg);
+  }
+  applySegment(segment);
+}
+
+/** Between barriers: all discoveries in one batch, then log lines, then only the newest progress. */
+function applySegment(messages) {
+  if (!messages.length) return;
+  const discoveries = messages.filter((m) => DISCOVERIES.has(m.type));
+  if (discoveries.length) applyDiscoveries(discoveries);
+  let progress = null;
+  for (const msg of messages) {
+    if (DISCOVERIES.has(msg.type)) continue;
+    if (msg.type === "scan_progress") progress = msg;
+    else handle(msg);
+  }
+  if (progress) handle(progress);
+}
+
+function enqueue(msg) {
+  pending.push(msg);
+  if (flushTimer || flushFrame) return;
+  flushFrame = requestAnimationFrame(flush);
+  flushTimer = setTimeout(flush, 250); // background tabs get no animation frames
+}
+
+function resetQueue() {
+  if (flushTimer) clearTimeout(flushTimer);
+  if (flushFrame) cancelAnimationFrame(flushFrame);
+  flushTimer = flushFrame = null;
+  pending = [];
+}
+
 async function connect(id) {
   socket?.close();
+  resetQueue();
   let ticket;
   try {
     ticket = (await api.post("/api/ws-ticket")).ticket;
@@ -121,7 +196,7 @@ async function connect(id) {
   socket = ws;
   ws.onmessage = (event) => {
     if (socket !== ws) return;
-    try { handle(JSON.parse(event.data)); } catch (err) { console.error("Bad stream message", err); }
+    try { enqueue(JSON.parse(event.data)); } catch (err) { console.error("Bad stream message", err); }
   };
   ws.onclose = (event) => {
     if (socket === ws && event.code === 4404) toast("That investigation no longer exists", "error");
@@ -142,6 +217,7 @@ export async function openInvestigation(id) {
 export function closeInvestigation() {
   socket?.close();
   socket = null;
+  resetQueue();
   resetInvestigation();
   graph.clearGraph();
   const url = new URL(location.href);
