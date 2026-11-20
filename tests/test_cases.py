@@ -371,3 +371,35 @@ def test_the_python_client_covers_cases(client):
     assert person["data"]["value"] == "A. Director" and argus.cases()[0]["id"] == case["id"]
     bundle = zipfile.ZipFile(io.BytesIO(argus.export_case(case["id"])))
     assert "case.json" in bundle.namelist()
+
+
+class _FakeChrome:
+    """Stands in for a browser process: its stderr is fed lines, slowly or not at all."""
+
+    def __init__(self):
+        self.stderr = asyncio.StreamReader()
+
+
+async def test_a_slow_browser_start_is_waited_for():
+    chrome = _FakeChrome()
+
+    async def speak():
+        chrome.stderr.feed_data(b"Fontconfig: building caches\n")
+        await asyncio.sleep(0.3)  # longer than one line's worth of patience in the old code would matter
+        chrome.stderr.feed_data(b"DevTools listening on ws://127.0.0.1:9222/devtools/browser/x\n")
+
+    task = asyncio.create_task(speak())
+    assert await cap._devtools_url(chrome, timeout=5) == "ws://127.0.0.1:9222/devtools/browser/x"
+    await task
+
+
+async def test_a_browser_that_never_starts_says_why():
+    chrome = _FakeChrome()
+    chrome.stderr.feed_data(b"[ERROR] something went wrong\n")
+    with pytest.raises(cap.CaptureError, match=r"did not start within 0.2 seconds \(last output: \[ERROR\] something"):
+        await cap._devtools_url(chrome, timeout=0.2)
+    gone = _FakeChrome()
+    gone.stderr.feed_data(b"FATAL: no usable sandbox\n")
+    gone.stderr.feed_eof()
+    with pytest.raises(cap.CaptureError, match="sandbox"):
+        await cap._devtools_url(gone, timeout=5)

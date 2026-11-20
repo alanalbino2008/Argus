@@ -51,6 +51,7 @@ from argus.security.network import BlockedDestinationError, GuardedResolver, ass
 MAX_PAGE = 15 * 1024 * 1024
 MAX_REDIRECTS = 5
 BROWSER_TIMEOUT = 45.0
+BROWSER_START_TIMEOUT = 60.0  # Chrome's first launch on a fresh machine can be slow (font caches...)
 # A plain desktop Chrome: nothing in a capture tells the site who, or what tool, is looking.
 USER_AGENT = NEUTRAL_USER_AGENT
 ACCEPT_LANGUAGE = "en-US,en;q=0.9"
@@ -294,12 +295,24 @@ def _stop(proc: asyncio.subprocess.Process) -> None:
         os.killpg(proc.pid, signal.SIGKILL)
 
 
-async def _devtools_url(proc: asyncio.subprocess.Process) -> str:
+async def _devtools_url(proc: asyncio.subprocess.Process, timeout: float = BROWSER_START_TIMEOUT) -> str:
+    """The DevTools address Chrome prints once it is ready.
+
+    One overall deadline: a first launch on a fresh machine can take tens of seconds (building
+    font caches, for one) before Chrome says anything. If it never gets there, the error quotes
+    Chrome's last words rather than a bare timeout.
+    """
     if proc.stderr is None:
         raise CaptureError("The browser did not start")
     seen: list[str] = []
+    deadline = asyncio.get_running_loop().time() + timeout
     while True:
-        line = await asyncio.wait_for(proc.stderr.readline(), 30)  # full Chrome can be slow to start
+        remaining = deadline - asyncio.get_running_loop().time()
+        try:
+            line = await asyncio.wait_for(proc.stderr.readline(), max(remaining, 0.01))
+        except asyncio.TimeoutError as exc:
+            last = " / ".join(t.strip() for t in seen[-3:] if t.strip())[-200:] or "no output"
+            raise CaptureError(f"The browser did not start within {timeout:g} seconds (last output: {last})") from exc
         if not line:
             reason = next(
                 (t for t in reversed(seen) if "sandbox" in t.lower() or "FATAL" in t), seen[-1] if seen else ""
