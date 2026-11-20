@@ -29,6 +29,7 @@ from argus.core.models import (
     RelationType,
     ScanConfig,
 )
+from argus.intel.favicon import fingerprint
 from argus.modules.analytics.graph_analyzer import GraphIntelligenceAnalyzer
 from argus.storage.repository import InvestigationRepository
 
@@ -602,6 +603,21 @@ _RELATIONS.extend(
         ("lk_payroll", "lk_login", R.ASSOCIATED_WITH, "Same server (impostor cluster)"),
     ]
 )
+
+# Favicon pivoting (Phase 60): one icon served by three of Acme's hosts. The bytes are fictional.
+_DEMO_ICON_PRINT = fingerprint(b"\x00\x00\x01\x00" + bytes((i * 37) % 256 for i in range(1150)))
+if _DEMO_ICON_PRINT is None:  # pragma: no cover - the bytes above are a valid icon
+    raise RuntimeError("demo favicon is not an image")
+_DEMO_ICON = _DEMO_ICON_PRINT
+_ENTITIES["favicon"] = (
+    E.GENERIC,
+    f"favicon:{_DEMO_ICON.mmh3}",
+    f"Favicon {_DEMO_ICON.mmh3}",
+    2,
+    "favicon_pivot",
+    {**_DEMO_ICON.as_metadata(), "pivot_hub": True},
+)
+_RELATIONS.extend((host, "favicon", R.USES_TECH, "serves favicon") for host in ("www", "shop", "legacy"))
 
 # A month earlier the surface looked different - used to demonstrate drift detection.
 _ABSENT_PREVIOUSLY = {"shop", "heroku", "p6379", "breach1", "leak", "build", "bucket", "lk_login", "lk_payroll"}

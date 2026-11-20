@@ -23,6 +23,7 @@ from argus.modules.identity.profile_enricher import ProfileEnricherModule
 from argus.modules.identity.username_hunter import UsernameHunterModule
 from argus.modules.identity.web_mentions import WebMentionsModule
 from argus.modules.infrastructure.dns_recon import DnsReconModule
+from argus.modules.infrastructure.favicon import FaviconPivotModule
 from argus.modules.infrastructure.http_fingerprint import HttpFingerprintModule
 from argus.modules.infrastructure.ip_intelligence import IpIntelligenceModule
 from argus.modules.infrastructure.network_ranges import NetworkRangesModule
@@ -73,6 +74,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     WhoisLookupModule,
     TlsAnalyzerModule,
     HttpFingerprintModule,
+    FaviconPivotModule,
     SoftwareIntelModule,
     WebReconModule,
     SiteCrawlerModule,

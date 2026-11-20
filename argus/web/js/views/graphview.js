@@ -45,6 +45,7 @@ const HIDDEN_META = new Set([
   "court_cases", "court_cases_total", "court_case_match", "matched_person", "same_name_elsewhere", "french_directorships",
   "opencorporates_officer_matches", "opencorporates_url", "legal_form_code", "activity_code", "company_size",
   "establishments", "country", "employees", "in_group", "insolvency", "industry",
+  "mmh3", "md5", "sha256", "size", "content_type", "search_queries", "pivot_hub",
 ]);
 
 const CATEGORY_LABEL = {
@@ -102,6 +103,9 @@ export function initGraphView(appActions) {
     const visible = !graph.isTypeVisible(chip.dataset.type);
     graph.setTypeVisible(chip.dataset.type, visible);
     chip.classList.toggle("off", !visible);
+  });
+  on($("#pane-details"), "click", "[data-copy]", async (_e, el) => {
+    try { await navigator.clipboard.writeText(el.dataset.copy); toast("Copied", "success"); } catch { toast("Copy failed: select the text instead", "error"); }
   });
   on($("#pane-details"), "click", "[data-to-case]", () => {
     const entity = selected && state.entities.get(selected);
@@ -567,6 +571,23 @@ function officerBlock(md) {
   return out;
 }
 
+const FAVICON_ENGINES = { shodan: "Shodan", fofa: "FOFA", zoomeye: "ZoomEye", censys: "Censys" };
+
+/** A favicon hub: who here serves it, and searches to find who else on the internet does. */
+function faviconBlock(entity) {
+  const md = entity.metadata;
+  const hosts = graph.neighbors(entity.id).length;
+  return html`<div class="section"><div class="section-title">Favicon fingerprint</div>
+    <p class="small">${hosts > 1 ? html`<b>Served by ${hosts} hosts in this graph.</b> ` : ""}The same icon often means the same operator or product, but default icons are shared by unrelated sites: treat it as a lead.</p>
+    <dl class="kv"><dt>Shodan hash</dt><dd><code>${md.mmh3}</code></dd><dt>MD5</dt><dd><code>${md.md5}</code></dd>
+      <dt>Type</dt><dd>${md.content_type} · ${md.size} bytes</dd></dl>
+    <div class="section-title" style="margin-top:10px">Find it elsewhere</div>
+    ${Object.entries(md.search_queries || {}).map(([engine, q]) => html`<div class="list-row"><span class="pill accent">${FAVICON_ENGINES[engine] || engine}</span>
+      <div class="list-main"><code class="small" style="word-break:break-all">${q}</code></div>
+      <button class="btn sm" data-copy="${q}" title="Copy">Copy</button></div>`)}
+    <p class="muted small" style="margin-top:6px">Paste into the search engine yourself: it sees the query and your connection, not the target.</p></div>`;
+}
+
 function intelBlocks(entity) {
   const md = entity.metadata || {};
   const blocks = [];
@@ -577,6 +598,7 @@ function intelBlocks(entity) {
   if (entity.type === "domain" || entity.type === "subdomain") blocks.push(...crawlBlock(md));
   blocks.push(...phoneBlock(entity));
   blocks.push(...networkBlock(entity));
+  if (md.category === "favicon") blocks.push(faviconBlock(entity));
   if (md.found_on) blocks.push(html`<div class="section"><div class="section-title">Where it was found</div><p class="small">${/^https?:\/\//.test(md.found_on) ? ext(md.found_on, md.found_on) : md.found_on}</p></div>`);
   if (md.profile && Object.keys(md.profile).length) {
     const p = md.profile;

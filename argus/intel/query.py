@@ -711,6 +711,10 @@ EXAMPLES = [
     {"query": "* | sort key_score | limit 10", "explains": "The ten most important entities"},
     {"query": "* | group type", "explains": "How many of each kind of entity"},
     {"query": "articulation:true", "explains": "Single points of failure"},
+    {
+        "query": "category:favicon degree>=2 <-[USES_TECH]- *",
+        "explains": "Hosts sharing a favicon (same operator or product?)",
+    },
 ]
 
 

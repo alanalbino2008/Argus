@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.60.0] — Phase 60: Favicon pivoting
+
+### Added
+- **Favicon fingerprints** (`favicon_pivot`, active): for each domain and sub-domain, Argus fetches
+  `/favicon.ico`, or the icon the homepage declares (`<link rel="icon">`). It checks the bytes really
+  are an image (not an HTML "soft 404") and records a favicon node keyed by its hash.
+  - **Shared icons become hubs**: every host serving the same icon links to the same node, which
+    exposes an operator's estate, every instance of one product, or one phishing kit.
+  - **Find it elsewhere**: ready-to-paste searches for Shodan (`http.favicon.hash:`), FOFA
+    (`icon_hash=`), ZoomEye (`iconhash:`) and Censys (MD5). Argus never runs them: the analyst
+    pastes them in, so the search engine sees the query, not the target.
+  - The Shodan-compatible MurmurHash3 is pure Python, checked against the reference vectors.
+  - Icon links to private addresses are refused by the egress guard without failing the module.
+    Third parties' assets (`out_of_scope`) are never contacted.
+  - A shared icon is a lead, not proof (default icons are common), so the relation's confidence
+    is 0.6.
+- **Graph panel** for favicon nodes: hosts serving it, hashes, and the four searches with Copy.
+- **AQL example**: `category:favicon degree>=2 <-[USES_TECH]- *` lists hosts that share an icon.
+- The demo includes an icon shared by three of Acme's hosts.
+- Helm chart 0.50.0.
+
 ## [1.59.0] — Phase 59: The Argus Query Language and link analysis
 
 ### Added

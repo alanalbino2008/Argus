@@ -132,6 +132,7 @@ Beyond live DNS and websites, Argus digs where organisations forget to look:
 | **GitHub** | The organisation (verified against the domain) and its public members' handles; public code mentioning the domain, scanned for leaked keys and passwords (stored only as a 4-character preview) |
 | **PGP keyservers** | Real names and the other email addresses bound to the same key |
 | **The website itself** *(active)* | `security.txt`, `robots.txt`, exposed `.git`/`.env`/`server-status` confirmed by content, published emails and phone numbers |
+| **Favicons** *(active)* | Hosts serving the same icon (same operator, product or phishing kit), and Shodan / FOFA / ZoomEye / Censys searches to find the rest of the internet serving it |
 | **Cloud storage** *(active)* | Amazon S3 / Google Cloud buckets named after the organisation, and whether anyone can list them |
 
 Findings seen by several independent sources gain confidence automatically (and show *who* saw them). Argus learns the organisation's **email format** (`first.last@`) and predicts — clearly marked as *inferred* — the work address of staff found without one. Four new attack paths turn this into risk: **leaked secrets in code**, **exposed sensitive files**, **public cloud storage** and **staff enumeration for password spraying**. Tick **Passive only** (or `--passive-only`) and nothing touches the target's own systems. See [`docs/explained/10-deep-recon.md`](docs/explained/10-deep-recon.md).
