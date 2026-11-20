@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.68.0] — Phase 68: The team's tags and notes on entities
+
+### Added
+- **Tag and annotate any entity** from the graph's details panel: tags such as `client-owned`,
+  `c2` or `suspect`, and a note. Analysts edit; everyone in the team reads. Every change is audited.
+- **Once, everywhere.** Entity ids come from type and value, so tagging `vpn.acme.example` tags it
+  in every investigation of the workspace, past and future scans included. Tagged entities wear a
+  gold ring on the graph.
+- **Queryable.** AQL gains `tag` and `note`. For example `tag:c2`, `tag:*`,
+  `type:subdomain -tag:client-owned` and `note~"invoice"`, and they work in patterns
+  (`tag:vpn -[RESOLVES_TO]-> ip`). Query results list each entity's tags.
+- **In hunts and alerts.** Hunts across investigations and saved-query alerts use the team's tags,
+  so "alert me when anything tagged `c2` turns up in a new scan" is one saved query.
+- **Private to the team.** Annotations belong to the workspace, other teams never see them, and the
+  value, tags and note are encrypted at rest. Tags are trimmed, de-duplicated and limited to 20 of
+  40 characters, and notes to 4,000 characters.
+- If an entity has no annotation, `tag` and `note` still match a module's metadata key of the
+  same name, so existing queries keep their meaning.
+- API: `GET /api/annotations`, `GET /api/annotations/tags`, `PUT /api/annotations/{entity_id}`.
+  Python client: `annotate()`, `annotations()`. Migration 0029. Helm chart 0.58.0.
+
 ## [1.67.0] — Phase 67: Censys searches from Argus, on the Censys Platform
 
 ### Added

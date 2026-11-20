@@ -35,7 +35,7 @@ import fnmatch
 import re
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,7 +74,20 @@ TYPE_ALIASES = {
     "dns": "dns_record",
 }
 ANALYTIC_FIELDS = {"pagerank", "betweenness", "community", "key_score", "articulation"}
-CORE_FIELDS = {"type", "value", "label", "id", "confidence", "depth", "source", "module", "degree", "seed"}
+CORE_FIELDS = {
+    "type",
+    "value",
+    "label",
+    "id",
+    "confidence",
+    "depth",
+    "source",
+    "module",
+    "degree",
+    "seed",
+    "tag",
+    "note",
+}
 KEYWORDS = {"AND", "OR", "NOT"}
 COMMANDS = {"limit", "sort", "count", "group"}
 
@@ -372,8 +385,9 @@ _MISSING = object()
 class _Context:
     """Field lookup and comparison for one graph (link-analysis scores computed on first use)."""
 
-    def __init__(self, graph: IntelligenceGraph):
+    def __init__(self, graph: IntelligenceGraph, annotations: Mapping[str, dict[str, Any]] | None = None):
         self.graph = graph
+        self.annotations = annotations or {}  # entity id -> {"tags": [...], "note": "..."} (the team's)
         self.uses_analytics = False
         self._scores: dict[str, dict[str, Any]] | None = None
 
@@ -397,6 +411,11 @@ class _Context:
             return entity.id in self.graph._seed_ids
         if key in ANALYTIC_FIELDS:
             return self.scores().get(entity.id, {}).get(key, _MISSING)
+        if key in ("tag", "note"):  # the team's annotation; else a metadata key of that name, if any
+            annotation = self.annotations.get(entity.id) or {}
+            value = annotation.get("note") if key == "note" else annotation.get("tags")
+            if value:
+                return value
         node: Any = entity.metadata
         for part in name.split("."):
             if isinstance(node, dict) and part in node:
@@ -493,11 +512,18 @@ def _any_value(value: Any, test: Callable[[Any], bool]) -> bool:
 
 
 # ----------------------------------------------------------------------------- evaluation
-def run_query(graph: IntelligenceGraph, text: str, *, collect_ids: bool = False) -> dict[str, Any]:
+def run_query(
+    graph: IntelligenceGraph,
+    text: str,
+    *,
+    collect_ids: bool = False,
+    annotations: Mapping[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Parse and run ``text`` against ``graph``; raises :class:`QueryError` on bad input.
 
     ``collect_ids`` adds ``match_ids``: every matching entity, before ``limit`` or ``count`` shape the
-    rows (what query alerts compare between scans).
+    rows (what query alerts compare between scans). ``annotations`` are the team's tags and notes by
+    entity id, queried as ``tag`` and ``note``.
     """
     started = time.perf_counter()
     text = (text or "").strip()
@@ -505,7 +531,7 @@ def run_query(graph: IntelligenceGraph, text: str, *, collect_ids: bool = False)
         raise QueryError("empty query", 0)
     if len(text) > MAX_QUERY_LENGTH:
         raise QueryError(f"queries are limited to {MAX_QUERY_LENGTH} characters", MAX_QUERY_LENGTH)
-    context = _Context(graph)
+    context = _Context(graph, annotations)
     parsed = _Parser(text, context).parse()
 
     result = _run_paths(graph, parsed) if parsed.kind == "path" else _run_chain(graph, parsed)
@@ -634,6 +660,9 @@ def _row(entity: Entity, context: _Context, extra: list[str]) -> dict[str, Any]:
         "depth": entity.depth,
         "degree": g.degree(entity.id) if entity.id in g else 0,
     }
+    tags = (context.annotations.get(entity.id) or {}).get("tags")
+    if tags:
+        row["tags"] = list(tags)
     if context.uses_analytics:
         score = context.scores().get(entity.id, {})
         for key in ("key_score", "pagerank", "betweenness", "community"):
@@ -718,6 +747,7 @@ EXAMPLES = [
     {"query": "* | sort key_score | limit 10", "explains": "The ten most important entities"},
     {"query": "* | group type", "explains": "How many of each kind of entity"},
     {"query": "articulation:true", "explains": "Single points of failure"},
+    {"query": "tag:*", "explains": "Everything your team has tagged"},
     {
         "query": "category:favicon degree>=2 <-[USES_TECH]- *",
         "explains": "Hosts sharing a favicon (same operator or product?)",
@@ -743,7 +773,7 @@ def syntax() -> list[dict[str, str]]:
         {"form": "| sort field [asc|desc]  | limit n  | count  | group field", "means": "shape the results"},
         {
             "form": "fields",
-            "means": "type value label id confidence depth degree seed source, any metadata key (dotted: "
-            "intel.kev), and pagerank betweenness community key_score articulation",
+            "means": "type value label id confidence depth degree seed source, tag and note (your team's), "
+            "any metadata key (dotted: intel.kev), and pagerank betweenness community key_score articulation",
         },
     ]

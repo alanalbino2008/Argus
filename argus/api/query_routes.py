@@ -110,7 +110,7 @@ async def hunt(body: HuntRequest, request: Request, ws: WorkspaceContext = VIEWE
     try:
         result = await hunting.hunt(
             request.app.state.repo, ws.id, body.query, investigations=body.investigations,
-            include_running=body.include_running,
+            include_running=body.include_running, annotations=await request.app.state.annotations.all(ws.id),
         )  # fmt: skip
     except QueryError as exc:
         raise HTTPException(status_code=400, detail={"message": str(exc), "position": exc.position}) from exc

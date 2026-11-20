@@ -121,6 +121,7 @@ events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then 
 | `POST /api/hunt` | Run a query across recent investigations: `{"query": "...", "investigations": 25}` |
 | `GET/POST /api/saved-queries` · `PATCH/DELETE /api/saved-queries/{id}` | Saved queries; `alert: true` checks every finished scan |
 | `POST /api/saved-queries/{id}/hunt` | Hunt with a saved query |
+| `GET /api/annotations` · `GET /api/annotations/tags` · `PUT /api/annotations/{entity_id}` | The team's tags and note on an entity, applied in every investigation; queried as `tag` and `note` |
 | `GET /api/internet-search` · `POST /api/investigation/{id}/internet-search` | Shodan or Censys pivots for a fingerprint entity: `{"entity_id": "...", "engine": "shodan", "mode": "count"}`; `engine` is `shodan` or `censys`, `mode` is `count` or `search` |
 
 A query returns `kind` (`nodes`, `paths`, `groups` or `count`), `count`, `rows`, `groups`,

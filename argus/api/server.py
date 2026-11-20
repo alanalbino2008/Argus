@@ -59,6 +59,7 @@ from argus.accounts.personal import PersonalLicence
 from argus.api import remediation_hooks
 from argus.api.account_routes import router as account_router
 from argus.api.analyst_routes import router as analyst_router
+from argus.api.annotation_routes import router as annotation_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
@@ -146,6 +147,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from argus.storage import backup as backup_files
 from argus.storage.account_mail_repo import AccountMailRepository
+from argus.storage.annotation_repo import AnnotationRepository
 from argus.storage.backup_service import BackupService
 from argus.storage.case_repo import CaseRepository
 from argus.storage.exposure_repo import ExposureRepository
@@ -288,6 +290,7 @@ async def lifespan(app: FastAPI):
     app.state.teams = TeamRepository(db)
     app.state.playbooks = PlaybookRepository(db)
     app.state.saved_queries = SavedQueryRepository(db)
+    app.state.annotations = AnnotationRepository(db)
     app.state.playbook_scan = _playbook_scan
     app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
 
@@ -624,6 +627,7 @@ app.include_router(connect_router)
 app.include_router(personal_router)
 app.include_router(analyst_router)
 app.include_router(query_router)
+app.include_router(annotation_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
 app.include_router(backup_router)
@@ -1003,7 +1007,7 @@ async def _evaluate_saved_queries(app: FastAPI, engine: ArgusEngine) -> None:
 
     await hunting.check_after_scan(
         investigation=inv, graph=engine.graph, repo=app.state.repo, saved_queries=app.state.saved_queries,
-        raise_alert=raise_alert,
+        raise_alert=raise_alert, annotations=await app.state.annotations.all(inv.workspace_id),
     )  # fmt: skip
 
 
@@ -1483,7 +1487,8 @@ async def query_graph(
     if req is None:
         raise HTTPException(status_code=422, detail={"message": "a query is required", "position": 0})
     try:
-        return await _graph_work(inv_id, graph, run_query, graph, req.query)
+        annotations = await request.app.state.annotations.all(ws.id)
+        return await _graph_work(inv_id, graph, partial(run_query, annotations=annotations), graph, req.query)
     except QueryError as exc:
         raise HTTPException(status_code=400, detail={"message": str(exc), "position": exc.position}) from exc
 

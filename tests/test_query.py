@@ -254,7 +254,7 @@ def test_queries_on_a_running_scan_use_a_snapshot(client, monkeypatch):
     seen = []
     monkeypatch.setitem(server.INVESTIGATIONS, "inv_live", FakeEngine(live))
     real = server.run_query
-    monkeypatch.setattr(server, "run_query", lambda g, q: seen.append(g) or real(g, q))
+    monkeypatch.setattr(server, "run_query", lambda g, q, **kw: seen.append(g) or real(g, q, **kw))
     resp = client.post("/api/investigation/inv_live/query", json={"query": "* | count"})
     assert resp.status_code == 200 and resp.json()["count"] == 6
     assert seen and seen[0] is not live

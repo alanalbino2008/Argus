@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
+from functools import partial as bind
 from typing import Any
 
 import anyio
@@ -43,6 +44,7 @@ async def hunt(
     investigations: int = DEFAULT_HUNT_INVESTIGATIONS,
     include_running: bool = False,
     budget_seconds: float = HUNT_TIME_BUDGET_SECONDS,
+    annotations: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run ``text`` over the workspace's most recent investigations (completed ones by default)."""
     validate(text)
@@ -63,7 +65,7 @@ async def hunt(
         if graph is None:
             continue
         searched += 1
-        result = await anyio.to_thread.run_sync(run_query, graph, text)
+        result = await anyio.to_thread.run_sync(bind(run_query, annotations=annotations), graph, text)
         if not result["count"]:
             continue
         total += result["count"]
@@ -91,9 +93,11 @@ async def hunt(
     }
 
 
-def _match_ids(graph: IntelligenceGraph, text: str) -> dict[str, str]:
+def _match_ids(
+    graph: IntelligenceGraph, text: str, annotations: dict[str, dict[str, Any]] | None = None
+) -> dict[str, str]:
     """Matching entity id -> label: every match, whatever ``limit`` or ``count`` the query ends with."""
-    result = run_query(graph, text, collect_ids=True)
+    result = run_query(graph, text, collect_ids=True, annotations=annotations)
     labels = {}
     for nid in result["match_ids"]:
         entity = graph.get_entity(nid)
@@ -108,6 +112,7 @@ async def check_after_scan(
     repo: Any,
     saved_queries: Any,
     raise_alert: Any,
+    annotations: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Run the workspace's alerting queries on a finished scan; returns the alerts raised.
 
@@ -123,9 +128,11 @@ async def check_after_scan(
     raised: list[dict[str, Any]] = []
     for saved in queries:
         try:
-            now = await anyio.to_thread.run_sync(_match_ids, graph, saved["query"])
+            now = await anyio.to_thread.run_sync(_match_ids, graph, saved["query"], annotations)
             before = (
-                await anyio.to_thread.run_sync(_match_ids, previous_graph, saved["query"]) if previous_graph else {}
+                await anyio.to_thread.run_sync(_match_ids, previous_graph, saved["query"], annotations)
+                if previous_graph
+                else {}
             )
         except QueryError as exc:  # saved before a syntax change, say: skip it, don't break the others
             logger.warning("Saved query %s no longer runs: %s", saved["id"], exc)

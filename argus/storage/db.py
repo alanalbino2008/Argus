@@ -825,6 +825,22 @@ class SavedQueryRow(Base):
     alerts_raised: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class EntityAnnotationRow(Base):
+    """The team's tags and note on an entity. Entity ids are derived from type and value, so one
+    annotation applies to that entity in every investigation of the workspace, past and future."""
+
+    __tablename__ = "entity_annotations"
+    __table_args__ = (Index("ux_entity_annotations", "workspace_id", "entity_id", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), ForeignKey("workspaces.id", ondelete="CASCADE"))
+    entity_id: Mapped[str] = mapped_column(String(64))
+    entity_type: Mapped[str] = mapped_column(String(32))
+    data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="entity_annotations.data"))  # value, tags, note
+    updated_by: Mapped[str] = mapped_column(String(128))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class CaseItemRow(Base):
     """Something in a case: a note, a person or other entity, a link between two, a scan, an event."""
 

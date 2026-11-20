@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.67.0"
+__version__ = "1.68.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -234,6 +234,15 @@ class ArgusClient:
         return self.post(
             "/api/hunt", {"query": aql, "investigations": investigations, "include_running": include_running}
         )
+
+    def annotate(self, entity_id: str, entity_type: str, value: str, *, tags: list[str] | None = None,
+                 note: str = "") -> dict[str, Any]:  # fmt: skip
+        """Set the team's tags and note on an entity (in every investigation); empty removes them."""
+        return self.request("PUT", f"/api/annotations/{entity_id}",
+                            json={"entity_type": entity_type, "value": value, "tags": tags or [], "note": note})  # fmt: skip
+
+    def annotations(self) -> list[dict[str, Any]]:
+        return self.get("/api/annotations")
 
     def saved_queries(self) -> list[dict[str, Any]]:
         return self.get("/api/saved-queries")

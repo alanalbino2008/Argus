@@ -17,6 +17,9 @@ let pivots = [];
 // Argus Query Language: the last query, its result or error, the syntax help and link analysis.
 let query = { text: "", result: null, error: null, busy: false };
 let queryHelp = null;
+let annotations = new Map(); // entity id -> the team's { tags, note } (every investigation of the workspace)
+let annotationsFor = null; // the investigation they were loaded for
+let editingNote = false;
 let searchEngines = null; // which internet searches the server has keys for: { shodan, censys } (asked once)
 let internetSearch = null; // { entityId, mode, busy, result, error } for the selected fingerprint
 let savedQueries = null; // the workspace's saved queries (loaded with the Query tab)
@@ -135,6 +138,22 @@ export function initGraphView(appActions) {
   });
   on($("#pane-details"), "click", "[data-search-engine]", (_e, el) => runInternetSearch(el.dataset.searchEngine, el.dataset.searchMode));
   on($("#pane-details"), "click", "[data-investigate-ip]", (_e, el) => actions.newInvestigation({ target: el.dataset.investigateIp, type: "ip_address" }));
+  on($("#pane-details"), "keydown", "[data-tag-input]", (e, input) => {
+    if (e.key !== "Enter" || !input.value.trim()) return;
+    e.preventDefault();
+    const current = annotations.get(selected) || { tags: [], note: "" };
+    saveAnnotation({ ...current, tags: [...current.tags, input.value.trim()] });
+  });
+  on($("#pane-details"), "click", "[data-untag]", (_e, el) => {
+    const current = annotations.get(selected) || { tags: [], note: "" };
+    saveAnnotation({ ...current, tags: current.tags.filter((t) => t !== el.dataset.untag) });
+  });
+  on($("#pane-details"), "click", "[data-edit-note]", () => { editingNote = true; renderDetails(); $("[data-note-input]")?.focus(); });
+  on($("#pane-details"), "click", "[data-save-note]", () => {
+    const current = annotations.get(selected) || { tags: [], note: "" };
+    editingNote = false;
+    saveAnnotation({ ...current, note: $("[data-note-input]")?.value || "" });
+  });
   on($("#pane-details"), "click", "[data-copy]", async (_e, el) => {
     try { await navigator.clipboard.writeText(el.dataset.copy); toast("Copied", "success"); } catch { toast("Copy failed: select the text instead", "error"); }
   });
@@ -148,9 +167,10 @@ export function initGraphView(appActions) {
   on($("#pane-details"), "click", "[data-path]", (_e, el) => actions.showPath(state.paths.paths[Number(el.dataset.path)]));
   on($("#graph-empty"), "click", "[data-action]", (_e, el) => actions[el.dataset.action]?.());
 
-  onState("graph", () => { renderLegend(); renderEmpty(); renderBundleBar(); });
+  onState("graph", () => { renderLegend(); renderEmpty(); renderBundleBar(); loadAnnotations(); });
   onState("entities-refreshed", () => renderDetails());
   onState("reset", () => {
+    annotationsFor = null; annotations = new Map(); editingNote = false;
     selected = null; pivotsFor = null; links = null; communityColours = false; hunt = null; saving = false; savedQueries = null;
     query = { text: "", result: null, error: null, busy: false };
     renderAll();
@@ -170,6 +190,50 @@ function renderAll() {
   renderIntel();
   renderQuery();
   renderActivity();
+}
+
+// ------------------------------------------------------------------ the team's tags and notes
+const canAnnotate = () => ["analyst", "admin"].includes(state.workspace?.role);
+
+async function loadAnnotations() {
+  const id = state.investigation?.id;
+  if (!id || annotationsFor === id) return;
+  annotationsFor = id;
+  try {
+    const list = await api.get("/api/annotations");
+    if (state.investigation?.id !== id) return;
+    annotations = new Map(list.map((a) => [a.entity_id, a]));
+    graph.markTagged([...annotations.keys()]);
+    renderDetails();
+  } catch { /* annotations are optional */ }
+}
+
+async function saveAnnotation({ tags, note }) {
+  const entity = selected && state.entities.get(selected);
+  if (!entity) return;
+  try {
+    const saved = await api.put(`/api/annotations/${enc(entity.id)}`, { entity_type: entity.type, value: entity.value, tags, note });
+    if (saved.removed) annotations.delete(entity.id);
+    else annotations.set(entity.id, saved);
+    graph.markTagged([...annotations.keys()]);
+    toast(saved.removed ? "Tags and note removed" : "Saved for your team, in every investigation", "success");
+  } catch (err) { toast(err.message, "error"); }
+  renderDetails();
+}
+
+/** The team's tags and note on this entity: shared, and applied wherever the entity appears. */
+function annotationBlock(entity) {
+  const a = annotations.get(entity.id) || { tags: [], note: "" };
+  const edit = canAnnotate();
+  if (!edit && !a.tags.length && !a.note) return "";
+  return html`<div class="section"><div class="section-title">Your team's tags and note</div>
+    <div class="tag-row">${a.tags.map((t) => html`<span class="pill accent tag-pill">#${t}${edit ? html` <button class="tag-x" data-untag="${t}" aria-label="Remove tag ${t}">✕</button>` : ""}</span>`)}
+      ${edit ? html`<input class="input tag-input" data-tag-input maxlength="40" placeholder="Add a tag, Enter" aria-label="Add a tag">` : ""}</div>
+    ${editingNote && edit ? html`<textarea class="input note-input" data-note-input rows="3" maxlength="4000" placeholder="What the team should know about this">${a.note}</textarea>
+      <button class="btn sm primary" data-save-note style="margin-top:6px">Save note</button>`
+      : a.note ? html`<p class="small" style="white-space:pre-line;margin:6px 0 0">${a.note}</p>${edit ? html`<button class="btn sm ghost" data-edit-note>Edit note</button>` : ""}`
+      : edit ? html`<button class="btn sm ghost" data-edit-note>Add a note</button>` : ""}
+    ${a.updated_by ? html`<div class="muted small" style="margin-top:4px">Last changed by ${a.updated_by} · ${timeAgo(a.updated_at)} · query with <code>tag:${a.tags[0] || "*"}</code></div>` : ""}</div>`;
 }
 
 // ------------------------------------------------------------------ Argus Query Language
@@ -254,7 +318,7 @@ ${caret}</pre>` : ""}</div>${queryExamples()}`);
         <span class="muted small">${p.edges.length} hop${p.edges.length === 1 ? "" : "s"}</span></div>`)}
       <div class="section-title" style="margin-top:12px">Results</div>` : ""}
       ${result.rows.length ? result.rows.map((r) => html`<div class="list-row clickable" data-select="${r.id}">${entityIcon(r.type)}
-        <div class="list-main"><div class="list-title">${r.label}</div><div class="muted small">${r.type.replaceAll("_", " ")}${r.key_score != null ? ` · key ${r.key_score}` : ""}</div></div>
+        <div class="list-main"><div class="list-title">${r.label}</div><div class="muted small">${r.type.replaceAll("_", " ")}${r.key_score != null ? ` · key ${r.key_score}` : ""}${r.tags ? ` · ${r.tags.map((t) => `#${t}`).join(" ")}` : ""}</div></div>
         <span class="muted small">${r.degree} link${r.degree === 1 ? "" : "s"}</span></div>`)
         : html`<p class="muted small">Nothing matches. Check the field names, or try a broader filter.</p>`}
       ${result.truncated ? html`<p class="muted small">Showing ${result.rows.length} of ${result.count}. Add <code>| limit n</code> or narrow the filter.</p>` : ""}`;
@@ -503,6 +567,7 @@ function renderDetails() {
     </dl>
     ${involved.length ? html`<div class="section"><div class="section-title">Part of ${involved.length} attack path${involved.length > 1 ? "s" : ""}</div>
       ${involved.map(({ p, i }) => html`<div class="list-row clickable" data-path="${i}">${severityPill(p.severity)}<div class="list-main"><div class="list-title">${p.title}</div></div></div>`)}</div>` : ""}
+    ${annotationBlock(entity)}
     ${intelBlocks(entity)}
     ${meta.length ? html`<div class="section"><div class="section-title">Details</div><dl class="kv">${meta.map(([k, v]) => html`<dt>${humanKey(k)}</dt><dd>${formatValue(v)}</dd>`)}</dl></div>` : ""}
     ${neighbours.length ? html`<div class="section"><div class="section-title">Connected to</div>

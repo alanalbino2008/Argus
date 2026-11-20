@@ -534,6 +534,12 @@ details.more ul, details.more ol { margin: 6px 0 0; padding-left: 18px; line-hei
 .saved-query { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border); }
 .saved-query code { display: block; color: var(--text-3); word-break: break-word; margin-top: 2px; }
 .saved-actions { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 50%; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tag-pill { display: inline-flex; align-items: center; gap: 4px; text-transform: none; }
+.tag-x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0 2px; font-size: 11px; opacity: .7; }
+.tag-x:hover { opacity: 1; }
+.tag-input { width: 150px; height: 26px; font-size: 12px; }
+.note-input { width: 100%; margin-top: 8px; font: inherit; font-size: 13px; resize: vertical; }
 .community-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 .floating .select { width: auto; padding-right: 8px; }
 .toolbar .grow { flex: 1; }

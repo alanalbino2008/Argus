@@ -96,6 +96,7 @@ function styles() {
       selector: "edge.on-path",
       style: { opacity: 1, "line-color": critical, "target-arrow-color": critical, width: 3, label: "data(label)", "font-size": 10, color: css("--text-2"), "text-rotation": "autorotate", "z-index": 20 },
     },
+    { selector: "node.tagged", style: { "border-width": 4, "border-color": "#d6a100", "border-opacity": 1 } },
     { selector: "node.is-new", style: { "border-width": 5, "border-color": css("--ok"), "border-opacity": 1 } },
     { selector: ".type-hidden", style: { display: "none" } },
   ];
@@ -209,7 +210,7 @@ function nodeDef(entity) {
       value: entity.value, depth: entity.depth, confidence: entity.confidence, source_module: entity.source_module,
       metadata: entity.metadata || {}, seed, color: info.color, icon: nodeGlyph(entity.type), size: seed ? 70 : 34,
     },
-    classes: hiddenTypes.has(entity.type) ? "type-hidden" : "",
+    classes: [hiddenTypes.has(entity.type) ? "type-hidden" : "", tagged.has(entity.id) ? "tagged" : ""].join(" ").trim(),
   };
 }
 
@@ -514,6 +515,16 @@ export function markNew(ids) {
   cy.nodes().removeClass("is-new");
   ids.forEach((id) => cy.getElementById(id).addClass("is-new"));
   scheduleLabelUpdate();
+}
+
+// The team's tagged entities (kept across re-renders and bundling).
+const tagged = new Set();
+
+/** Mark the entities the team has tagged or noted (a gold ring). */
+export function markTagged(ids) {
+  tagged.clear();
+  ids.forEach((id) => tagged.add(id));
+  cy?.nodes().forEach((n) => { n.toggleClass("tagged", tagged.has(n.id())); });
 }
 
 export function setTypeVisible(type, visible) {
