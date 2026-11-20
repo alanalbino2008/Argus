@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.63.0] — Phase 63: Shodan pivots on demand
+
+### Added
+- **Search Shodan from a fingerprint**: with `ARGUS_SHODAN_API_KEY` set, the panel of every favicon,
+  JARM, HASSH and certificate offers two buttons.
+  - **How common? (free)** uses Shodan's count endpoint, which spends no query credits. It
+    returns how many servers share the fingerprint, the top organisations and countries, and a
+    plain verdict: *unique*, *rare* (≤ 50, a strong lead), *uncommon* (≤ 5,000) or *common* (a
+    default configuration that says little).
+  - **List hosts (1 credit)**: up to 100 of those servers, with IP, port, host names,
+    organisation, country, product and when Shodan saw them. Each has an **Investigate** button,
+    which starts a new investigation that still has to be authorised.
+- Analyst-initiated only, never automatic. The search is the entity's own (not free text), the
+  key never leaves the server, appears in no error or log line and is never sent to the
+  browser. Every lookup is audited (mode, entity type, total) and rate-limited (10 a minute per
+  key). Results are not written into the scan's record.
+- **API**: `GET /api/internet-search`, `POST /api/investigation/{id}/internet-search`. **Python
+  client**: `internet_search()`.
+- Helm chart 0.53.0.
+
 ## [1.62.0] — Phase 62: Server fingerprints (JARM, HASSH) and certificate pivots
 
 ### Added

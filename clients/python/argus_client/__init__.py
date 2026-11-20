@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.62.0"
+__version__ = "1.63.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -222,6 +222,12 @@ class ArgusClient:
     def links(self, investigation_id: str) -> dict[str, Any]:
         """Link analysis: key entities, brokers, single points of failure and clusters."""
         return self.get(f"/api/investigation/{investigation_id}/links")
+
+    def internet_search(self, investigation_id: str, entity_id: str, *, mode: str = "count") -> dict[str, Any]:
+        """Who else shares a fingerprint, per Shodan: ``count`` (free, how common) or ``search`` (hosts, 1 credit)."""
+        return self.post(
+            f"/api/investigation/{investigation_id}/internet-search", {"entity_id": entity_id, "mode": mode}
+        )
 
     def hunt(self, aql: str, *, investigations: int = 25, include_running: bool = False) -> dict[str, Any]:
         """Run one query across the workspace's most recent investigations."""

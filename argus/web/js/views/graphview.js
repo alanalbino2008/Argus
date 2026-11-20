@@ -17,6 +17,8 @@ let pivots = [];
 // Argus Query Language: the last query, its result or error, the syntax help and link analysis.
 let query = { text: "", result: null, error: null, busy: false };
 let queryHelp = null;
+let shodanReady = null; // whether the server has a Shodan key (asked once)
+let internetSearch = null; // { entityId, mode, busy, result, error } for the selected fingerprint
 let savedQueries = null; // the workspace's saved queries (loaded with the Query tab)
 let hunt = null; // { text, busy, result, error } for a hunt across investigations
 let saving = false; // the save form is open
@@ -123,6 +125,8 @@ export function initGraphView(appActions) {
     graph.setTypeVisible(chip.dataset.type, visible);
     chip.classList.toggle("off", !visible);
   });
+  on($("#pane-details"), "click", "[data-shodan]", (_e, el) => runInternetSearch(el.dataset.shodan));
+  on($("#pane-details"), "click", "[data-investigate-ip]", (_e, el) => actions.newInvestigation({ target: el.dataset.investigateIp, type: "ip_address" }));
   on($("#pane-details"), "click", "[data-copy]", async (_e, el) => {
     try { await navigator.clipboard.writeText(el.dataset.copy); toast("Copied", "success"); } catch { toast("Copy failed: select the text instead", "error"); }
   });
@@ -721,7 +725,47 @@ function fingerprintBlock(entity) {
     ${searches.map(([engine, q]) => html`<div class="list-row"><span class="pill accent">${SEARCH_ENGINES[engine] || engine}</span>
       <div class="list-main"><code class="small" style="word-break:break-all">${q}</code></div>
       <button class="btn sm" data-copy="${q}" title="Copy">Copy</button></div>`)}
-    <p class="muted small" style="margin-top:6px">Paste into the search engine yourself: it sees the query and your connection, not the target.</p>` : ""}</div>`;
+    <p class="muted small" style="margin-top:6px">Paste into the search engine yourself: it sees the query and your connection, not the target.</p>` : ""}
+    ${md.search_queries?.shodan ? shodanPanel(entity) : ""}</div>`;
+}
+
+function shodanPanel(entity) {
+  if (shodanReady === null) { loadShodanStatus(); return ""; }
+  if (!shodanReady) return "";
+  const s = internetSearch?.entityId === entity.id ? internetSearch : null;
+  const r = s?.result;
+  return html`<div class="section-title" style="margin-top:12px">Search Shodan from Argus</div>
+    <div class="query-actions"><button class="btn sm" data-shodan="count" ${s?.busy ? "disabled" : ""}>How common? (free)</button>
+      <button class="btn sm" data-shodan="search" ${s?.busy ? "disabled" : ""} title="Spends one Shodan query credit">List hosts (1 credit)</button></div>
+    ${s?.busy ? html`<p class="muted small">Asking Shodan…</p>` : ""}
+    ${s?.error ? html`<div class="query-error">${s.error}</div>` : ""}
+    ${r ? html`<p class="small"><span class="pill ${r.rarity.level === "rare" || r.rarity.level === "unique" ? "high" : "accent"}">${r.rarity.level}</span>
+        <b>${Number(r.total).toLocaleString()}</b> server${r.total === 1 ? "" : "s"} on Shodan. ${r.rarity.meaning}</p>
+      ${r.top_orgs.length ? html`<p class="muted small">Mostly: ${r.top_orgs.map((o) => `${o.value} (${o.count})`).join(", ")}${r.top_countries.length ? ` · ${r.top_countries.map((c) => `${c.value} (${c.count})`).join(", ")}` : ""}</p>` : ""}
+      ${r.hosts.map((h) => html`<div class="list-row"><div class="list-main"><div class="list-title">${h.ip}:${h.port}</div>
+        <div class="muted small">${[h.hostnames.join(", "), h.org, h.country, h.product, h.seen && `seen ${h.seen}`].filter(Boolean).join(" · ")}</div></div>
+        <button class="btn sm" data-investigate-ip="${h.ip}" title="Start a separate, authorised investigation">Investigate</button></div>`)}
+      ${r.mode === "search" && r.total > r.hosts.length ? html`<p class="muted small">Showing ${r.hosts.length} of ${Number(r.total).toLocaleString()}.</p>` : ""}` : ""}`;
+}
+
+async function loadShodanStatus() {
+  try { shodanReady = (await api.get("/api/internet-search")).shodan; } catch { shodanReady = false; }
+  if (shodanReady) renderDetails();
+}
+
+async function runInternetSearch(mode) {
+  const id = state.investigation?.id;
+  if (!id || !selected) return;
+  const entityId = selected;
+  internetSearch = { entityId, mode, busy: true, result: null, error: null };
+  renderDetails();
+  try {
+    const result = await api.post(`/api/investigation/${enc(id)}/internet-search`, { entity_id: entityId, mode });
+    if (internetSearch?.entityId === entityId) internetSearch = { entityId, mode, busy: false, result, error: null };
+  } catch (err) {
+    if (internetSearch?.entityId === entityId) internetSearch = { entityId, mode, busy: false, result: null, error: err.message };
+  }
+  renderDetails();
 }
 
 function intelBlocks(entity) {

@@ -39,6 +39,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
+import aiohttp
 import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,7 +110,9 @@ from argus.core.models import EntityType, Investigation, InvestigationStatus, Sc
 from argus.core.settings import EgressRoute, Settings, get_settings
 from argus.demo import DEMO_TARGET, load_demo
 from argus.intel import hunt as hunting
+from argus.intel import internet_search
 from argus.intel.account_watch import AccountWatcher
+from argus.intel.account_watch import client as outbound_client
 from argus.intel.attack import map_investigation, to_navigator_layer
 from argus.intel.diff import compare, headline
 from argus.intel.exposure import demo_findings
@@ -1379,6 +1382,65 @@ async def get_attack_mapping(inv_id: str, request: Request, ws: WorkspaceContext
 async def get_attack_paths(inv_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Attack Path Engine: findings chained into ranked, explained attack scenarios."""
     return find_attack_paths(await _resolve_graph(inv_id, get_repo(request), ws.id))
+
+
+class InternetSearchRequest(BaseModel):
+    entity_id: str = Field(min_length=1, max_length=64, description="A fingerprint or certificate entity in the graph")
+    mode: Literal["count", "search"] = Field(
+        default="count", description="count: free, with top organisations and countries; search: lists hosts (credit)"
+    )
+
+
+_internet_search_limiter = SlidingWindowLimiter(limit=10, window=60)
+
+
+def _shodan_key(settings: Settings) -> str:
+    key = settings.shodan_api_key
+    return key.get_secret_value().strip() if key else ""
+
+
+@app.get("/api/internet-search")
+async def internet_search_status(request: Request, ws: WorkspaceContext = VIEWER):
+    """Which internet-wide searches this server can run for fingerprint pivots."""
+    return {"shodan": bool(_shodan_key(request.app.state.settings))}
+
+
+@app.post("/api/investigation/{inv_id}/internet-search")
+async def internet_search_pivot(
+    inv_id: str, request: Request, req: InternetSearchRequest | None = None, ws: WorkspaceContext = ANALYST
+):
+    """Who else on the internet shares this entity's fingerprint, according to Shodan (on demand).
+
+    ``count`` is free and says how common the fingerprint is; ``search`` lists up to 100 servers
+    and spends one Shodan query credit. The search is the entity's own, never free text.
+    """
+    graph = await _resolve_graph(inv_id, get_repo(request), ws.id)  # tenant check before anything else
+    if req is None:
+        raise HTTPException(status_code=422, detail="Say which entity to search for")
+    entity = graph.get_entity(req.entity_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Entity not found in this investigation")
+    query = str((entity.metadata.get("search_queries") or {}).get("shodan") or "")
+    if not query:
+        raise HTTPException(status_code=422, detail="This entity has no Shodan search")
+    settings = request.app.state.settings
+    key = _shodan_key(settings)
+    if not key:
+        raise HTTPException(status_code=409, detail="Internet search needs a Shodan API key (ARGUS_SHODAN_API_KEY)")
+    if not _internet_search_limiter.hit(f"{ws.id}:{ws.principal.key_id}"):
+        raise HTTPException(status_code=429, detail="Too many internet searches: try again in a minute")
+    try:
+        async with outbound_client(settings, None) as http:
+            result = await internet_search.shodan(http, key, query, mode=req.mode)
+    except internet_search.SearchError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
+        raise HTTPException(status_code=502, detail="Shodan could not be reached; try again later") from exc
+    await audit(
+        request, ws.principal, "investigation.internet_search", inv_id,
+        details={"engine": "shodan", "mode": req.mode, "entity_type": entity.type.value, "total": result["total"]},
+    )  # fmt: skip
+    return {**result, "entity_id": entity.id}
 
 
 class GraphQueryRequest(BaseModel):
