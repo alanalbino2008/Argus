@@ -36,7 +36,7 @@ jobs:
       matrix:
         include:
           - { name: Windows, os: windows-latest, browser: win64 }
-          - { name: macOS (Apple silicon), os: macos-14, browser: mac-arm64 }
+          - { name: macOS (Apple silicon), os: macos-latest, browser: mac-arm64 }
           - { name: Linux, os: ubuntu-22.04, browser: linux64 }
     env:
       ARGUS_ACCOUNT_SERVER_URL: ${{ vars.ARGUS_ACCOUNT_SERVER_URL }}
