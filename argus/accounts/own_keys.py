@@ -23,6 +23,11 @@ PROVIDERS = {
     "companies_house": {"label": "UK Companies House", "where": "developer.company-information.service.gov.uk"},
     "web_search": {"label": "Web search (Brave Search API)", "where": "api-dashboard.search.brave.com"},
     "anthropic": {"label": "Claude, for the AI analyst (Anthropic API)", "where": "console.anthropic.com"},
+    "opencorporates": {
+        "label": "OpenCorporates (company registers of ~140 countries)",
+        "where": "opencorporates.com/api_accounts/new",
+    },
+    "courtlistener": {"label": "US court records (CourtListener)", "where": "courtlistener.com/sign-in (free)"},
 }
 STATE_KEY = "own_keys"
 CONTEXT = "own-api-keys"

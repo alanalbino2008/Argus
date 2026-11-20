@@ -64,13 +64,39 @@ CATALOGUE["web_search"] = {
     # The web's mentions of an exact phone number or email address (Brave Search API).
     "web": Operation("/web/search", {"q": None}, {"count": "20", "safesearch": "off", "text_decorations": "false"}, 1),
 }
-BASES = {"companies_house": COMPANIES_HOUSE, "web_search": WEB_SEARCH}
-LABELS = {"companies_house": "UK Companies House", "web_search": "Web search"}
+# OpenCorporates: company registers of about 140 jurisdictions, and their officers.
+_JURISDICTION = re.compile(r"^[a-z]{2}(_[a-z]{2})?$")
+_REGISTER_NUMBER = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9 .-]{0,39}$")  # no slashes, no ".."
+CATALOGUE["opencorporates"] = {
+    "search_companies": Operation("/companies/search", {"q": None}, {"per_page": "10", "order": "score"}, 2),
+    "company": Operation(
+        "/companies/{jurisdiction}/{number}", {"jurisdiction": _JURISDICTION, "number": _REGISTER_NUMBER}, {}, 2
+    ),
+    "search_officers": Operation("/officers/search", {"q": None}, {"per_page": "20", "order": "score"}, 2),
+}
+# CourtListener (Free Law Project): US federal court dockets (PACER/RECAP) and opinions.
+CATALOGUE["courtlistener"] = {
+    "dockets": Operation("/search/", {"q": None}, {"type": "r", "order_by": "dateFiled desc"}, 2),
+    "opinions": Operation("/search/", {"q": None}, {"type": "o", "order_by": "dateFiled desc"}, 2),
+}
+BASES = {"companies_house": COMPANIES_HOUSE, "web_search": WEB_SEARCH,
+         "opencorporates": "https://api.opencorporates.com/v0.4", "courtlistener": "https://www.courtlistener.com/api/rest/v4"}  # fmt: skip
+LABELS = {"companies_house": "UK Companies House", "web_search": "Web search", "opencorporates": "OpenCorporates",
+          "courtlistener": "US court records (CourtListener)"}  # fmt: skip
+
+
+def _auth_query(provider: str, key: str) -> dict[str, str]:
+    """Sources that take the key as a query parameter rather than a header."""
+    return {"api_token": key} if provider == "opencorporates" else {}
 
 
 def _auth(provider: str, key: str) -> dict[str, str]:
     if provider == "web_search":
         return {"X-Subscription-Token": key}
+    if provider == "opencorporates":
+        return {}
+    if provider == "courtlistener":
+        return {"Authorization": f"Token {key}"}
     token = base64.b64encode(f"{key}:".encode()).decode()  # HTTP Basic: the key is the user name
     return {"Authorization": f"Basic {token}"}
 
@@ -88,7 +114,7 @@ def build(provider: str, name: str, params: dict[str, Any]) -> tuple[str, dict[s
     values: dict[str, str] = {}
     for key, pattern in op.params.items():
         value = str(params.get(key, "")).strip()
-        if key == "number":
+        if key == "number" and provider == "companies_house":
             value = value.upper().zfill(8)
         if not value or len(value) > 160 or (pattern is not None and not pattern.match(value)):
             raise ConnectError(422, f"Invalid {key} for {provider}/{name}")
@@ -103,7 +129,7 @@ async def call_source(http: Any, provider: str, name: str, params: dict[str, Any
     """Run a lookup against the source itself with ``key`` (the operator's, or the customer's own)."""
     url, query = build(provider, name, params)
     headers = {"Accept": "application/json", **_auth(provider, key)}
-    async with http.get(url, params=query, headers=headers) as resp:
+    async with http.get(url, params={**query, **_auth_query(provider, key)}, headers=headers) as resp:
         if resp.status == 404:
             return {"not_found": True}
         if resp.status in (401, 403):

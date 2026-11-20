@@ -504,6 +504,10 @@ the addresses published on a website) and it follows the money.
 - **Refunds and disputes**: refunding a credit pack takes back its credits; a chargeback puts the
   account on hold until the dispute is settled
   ([`docs/explained/49-refunds-and-disputes.md`](docs/explained/49-refunds-and-disputes.md)).
+- **More registers and court records**: France, Norway and Finland's company registers (free,
+  with directors), OpenCorporates for about 140 more countries, UK Gazette insolvency notices
+  (free) and US federal court cases from CourtListener
+  ([`docs/explained/53-registers-and-courts.md`](docs/explained/53-registers-and-courts.md)).
 - **Owner console** at `/admin`: only you (your email, password and authenticator code) can
   open it. Health checks, payments, email, plans, data-source keys, security and the activity
   log, all from the browser, applied live

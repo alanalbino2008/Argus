@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.53.0] — Phase 53: More company registers, insolvency notices and court records
+
+### Added
+- **France** (free): company details from SIRENE and the national register, and directors and
+  partners with their roles in English (the French kept alongside). A person's directorships
+  across every French company: by name only it's a possible match; with the same month of
+  birth, a strong one.
+- **Norway** (free, Brønnøysund): details, bankruptcy and winding-up flags, and the managing
+  director, chair, board and auditor.
+- **Finland** (free, PRH): details, former names, line of business, address, and bankruptcy or
+  liquidation.
+- **OpenCorporates** (own key, or Argus credits): company registers of about 140 countries
+  and US states, with current officers. For a person: companies where someone of that name is
+  an officer, as possible matches. Runs on the scan's own target only, so costs stay
+  predictable. When the same name is registered in several places, the investigator is told.
+- **The Gazette** (free): UK insolvency notices (winding-up, administration, receivership,
+  bankruptcy) by exact name, newest first. Notices about people are possible matches.
+  Deceased estates are never searched.
+- **US court cases** (CourtListener; own key from a free account, or Argus credits): federal
+  dockets where the company or person is a party.
+- The findings show in the entity panel, person profiles and their PDFs. Notice and filing
+  dates go on the profile's timeline.
+- Directors' dates of birth are kept as month and year only. People a register marks as
+  deceased are left out.
+- Names written properly: hyphenated and apostrophe names, and company endings such as AS,
+  ASA, Oy, Oyj, GmbH and SARL.
+- Settings: `ARGUS_OPENCORPORATES_API_KEY`, `ARGUS_COURTLISTENER_API_KEY` (also in the owner
+  console and in Argus Personal's own keys), `ARGUS_FRANCE_REGISTRY_URL`,
+  `ARGUS_NORWAY_REGISTRY_URL`, `ARGUS_FINLAND_REGISTRY_URL` and `ARGUS_GAZETTE_URL` (empty
+  turns a source off). Helm chart 0.43.0.
+
 ## [1.52.0] — Phase 52: The owner console
 
 ### Added

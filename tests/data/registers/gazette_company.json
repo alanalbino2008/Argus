@@ -1,0 +1,145 @@
+{
+ "id": "https://www.thegazette.co.uk/insolvency/notice/data.feed?text=&quot;Carillion plc&quot;&results-page-size=20&sort-by=latest-date&results-page=1",
+ "link": [
+  {
+   "@href": "https://www.thegazette.co.uk/insolvency/notice/data.feed?text=%22Carillion plc%22&results-page-size=20&sort-by=latest-date&results-page=1",
+   "@rel": "alternate",
+   "@type": "application/atom+xml",
+   "@title": "ATOM"
+  },
+  {
+   "@href": "https://www.thegazette.co.uk/insolvency/notice/data.json?text=%22Carillion plc%22&results-page=1",
+   "@rel": "first",
+   "@type": "application/json"
+  },
+  {
+   "@href": "https://www.thegazette.co.uk/insolvency/notice/data.json?text=%22Carillion plc%22&results-page=1",
+   "@rel": "last",
+   "@type": "application/json"
+  },
+  {
+   "@href": "https://www.thegazette.co.uk/insolvency/notice/data.htm?text=%22Carillion plc%22&results-page-size=20&sort-by=latest-date&results-page=1",
+   "@rel": "alternate",
+   "@title": "HTML",
+   "@type": "application/xhtml+xml"
+  },
+  {
+   "@href": "https://www.thegazette.co.uk/insolvency/notice/data.json?text=%22Carillion plc%22&results-page-size=20&sort-by=latest-date&results-page=1",
+   "@rel": "self",
+   "@type": "application/json"
+  }
+ ],
+ "title": "Search Result",
+ "updated": "2026-11-20T00:25:20.874841Z",
+ "openSearch:Query": {
+  "@role": "request",
+  "@searchTerms": "\"Carillion plc\""
+ },
+ "f:page-number": "1",
+ "f:page-size": "20",
+ "f:page-start": "1",
+ "f:page-stop": "1",
+ "f:total": "2",
+ "f:facets": null,
+ "entry": [
+  {
+   "id": "https://www.thegazette.co.uk/id/notice/2948343",
+   "f:status": "published",
+   "f:notice-code": "2452",
+   "f:name": "Example",
+   "f:familyName": "Submitter",
+   "title": "CARILLION PLC",
+   "link": [
+    {
+     "@href": "https://www.thegazette.co.uk/id/notice/2948343",
+     "@rel": "self"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.ttl",
+     "@rel": "alternate",
+     "@title": "TURTLE",
+     "@type": "text/turtle"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.jsonld",
+     "@rel": "alternate",
+     "@title": "JSON-LD",
+     "@type": "application/json"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.rdf",
+     "@rel": "alternate",
+     "@title": "RDF/XML",
+     "@type": "application/rdf+xml"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.ttl?view=linked-data",
+     "@rel": "alternate",
+     "@title": "TURTLE",
+     "@type": "text/turtle"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.json?view=linked-data",
+     "@rel": "alternate",
+     "@title": "JSON-SIMPLE",
+     "@type": "application/json"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.rdfjson?view=linked-data",
+     "@rel": "alternate",
+     "@title": "JSON-RDF",
+     "@type": "application/rdf+json"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.rdf?view=linked-data",
+     "@rel": "alternate",
+     "@title": "RDF/XML",
+     "@type": "application/rdf+xml"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.xml?view=linked-data",
+     "@rel": "alternate",
+     "@title": "XML",
+     "@type": "application/xml"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/2948343/data.html?view=linked-data",
+     "@rel": "alternate",
+     "@title": "HTML",
+     "@type": "application/html"
+    }
+   ],
+   "author": {
+    "name": "tso"
+   },
+   "updated": "2018-01-22T14:26:28Z",
+   "published": "2018-01-19T10:20:30",
+   "category": {
+    "@term": "Winding-Up Orders"
+   },
+   "content": "<div><p>\u2026</p></div>"
+  },
+  {
+   "id": "https://www.thegazette.co.uk/id/notice/9999999",
+   "f:notice-code": "2503",
+   "title": "SMITH, John",
+   "published": "2019-05-02T09:00:00",
+   "category": {
+    "@term": "Bankruptcy Orders"
+   },
+   "content": "<div><p>Former director of Carillion plc \u2026</p></div>",
+   "link": [
+    {
+     "@href": "https://www.thegazette.co.uk/id/notice/9999999",
+     "@rel": "self"
+    },
+    {
+     "@href": "https://www.thegazette.co.uk/notice/9999999"
+    }
+   ]
+  }
+ ]
+}

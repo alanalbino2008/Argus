@@ -112,6 +112,11 @@ secrets:
   # Brave Search API key for web mentions of phone numbers and emails: on the account service it
   # pays for Argus Connect searches (credits); on any other deployment searches go direct.
   webSearchApiKey: ""
+  # OpenCorporates API token (company registers of ~140 countries) and CourtListener API token
+  # (US federal court cases; free account): on the account service they pay for customers'
+  # lookups (credits); elsewhere lookups go direct. Both can also be set in the owner console.
+  opencorporatesApiKey: ""
+  courtlistenerApiKey: ""
 
 # ---------------------------------------------------------------------------- application
 config:

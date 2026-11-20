@@ -164,6 +164,12 @@
         },
         "stripeWebhookSecret": {
           "type": "string"
+        },
+        "opencorporatesApiKey": {
+          "type": "string"
+        },
+        "courtlistenerApiKey": {
+          "type": "string"
         }
       }
     },

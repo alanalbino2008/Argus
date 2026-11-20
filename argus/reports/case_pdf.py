@@ -164,6 +164,12 @@ def profile_pdf(profile: dict[str, Any], case: dict[str, Any], chart_png: bytes 
                 block.append(Paragraph(esc(line), s["body"]))
             block += [Paragraph(esc(f"Named in the Offshore Leaks: {x.get('name')} {x.get('url') or ''}"), s["body"])
                       for x in scan.get("offshore_leaks") or []]  # fmt: skip
+            block += [Paragraph(esc(f"Insolvency notice ({x.get('date') or 'undated'}): {x.get('type')}"
+                                    + (f" [{x['match']}]" if (x.get("match") or "").startswith("same name") else "")
+                                    + f" {x.get('url') or ''}"), s["body"]) for x in scan.get("insolvency_notices") or []]  # fmt: skip
+            block += [Paragraph(esc(f"US court case: {x.get('name')} ({x.get('court') or ''}, filed {x.get('filed') or '?'})"
+                                    + (f" [{x['match']}]" if x.get("match") else "") + f" {x.get('url') or ''}"), s["body"])
+                      for x in scan.get("court_cases") or []]  # fmt: skip
             if scan.get("appointments"):
                 block.append(_table([["Role", "Company", "From", "To"],
                                      *[[esc(a.get("role")), esc(a.get("company")), esc(a.get("from") or ""),

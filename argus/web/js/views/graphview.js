@@ -33,6 +33,10 @@ const HIDDEN_META = new Set([
   "crawl", "tracking_ids", "links_to_sites", "found_on", "on_site_domain", "hosted_elsewhere",
   "phone", "phone_valid", "web_mentions", "mention_kind", "snippet", "page_age",
   "network", "network_ranges", "networks_checked", "shared_provider", "holder", "matched_by",
+  "insolvency_notices", "insolvency_notices_total", "insolvency_notices_checked", "insolvency_notice_match",
+  "court_cases", "court_cases_total", "court_case_match", "matched_person", "same_name_elsewhere", "french_directorships",
+  "opencorporates_officer_matches", "opencorporates_url", "legal_form_code", "activity_code", "company_size",
+  "establishments", "country", "employees", "in_group", "insolvency", "industry",
 ]);
 
 const CATEGORY_LABEL = {
@@ -254,6 +258,23 @@ function screeningBlock(md) {
         <div class="list-sub">${m.list}${m.programs?.length ? ` · ${m.programs.join(", ")}` : ""}${Object.entries(m.details || {}).map(([k, v]) => ` · ${k}: ${v}`).join("")}</div>
         ${m.conflicts?.length ? html`<div class="small" style="margin-top:4px;color:var(--ok)">${ico("check")} Probably a different person: ${m.conflicts.join("; ")}</div>` : ""}</div></div>`)}</div>`);
   }
+  if (md.matched_person) {
+    out.push(html`<div class="section"><div class="section-title">Why this was linked</div>
+      <p class="small">${md.matched_person.name}${md.matched_person.born ? ` (born ${md.matched_person.born})` : ""} is an officer here: <b>${md.matched_person.how}</b>.</p></div>`);
+  }
+  if (md.insolvency_notices?.length) {
+    out.push(html`<div class="section"><div class="section-title">Insolvency notices (The Gazette)</div>
+      <div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>${md.insolvency_notices_total > md.insolvency_notices.length ? `${md.insolvency_notices_total} notices; the latest ${md.insolvency_notices.length} below. ` : ""}Matched by ${md.insolvency_notice_match}.</span></div>
+      ${md.insolvency_notices.map((n) => html`<div class="list-row"><span class="pill warn">${n.date ? formatDay(n.date) : ""}</span>
+        <div class="list-main"><div class="list-title">${n.type}</div><div class="list-sub">${n.about ? `${n.about} · ` : ""}${ext(n.url, "Read the notice")}</div></div></div>`)}</div>`);
+  }
+  if (md.court_cases?.length) {
+    out.push(html`<div class="section"><div class="section-title">US court cases (CourtListener)</div>
+      ${md.court_case_match ? html`<div class="callout warn" style="margin-bottom:8px">${ico("info")}<span>Found by ${md.court_case_match}.</span></div>` : ""}
+      ${md.court_cases.map((c) => html`<div class="list-row"><span class="pill">${c.filed ? formatDay(c.filed) : ""}</span>
+        <div class="list-main"><div class="list-title">${c.name}</div><div class="list-sub">${[c.court, c.docket && `docket ${c.docket}`, c.nature].filter(Boolean).join(" · ")}${c.url ? html` · ${ext(c.url, "Open")}` : ""}</div></div></div>`)}
+      ${md.court_cases_total > md.court_cases.length ? html`<p class="muted small">${md.court_cases_total} cases in all; the latest are shown.</p>` : ""}</div>`);
+  }
   if (md.offshore_leaks?.length) {
     out.push(html`<div class="section"><div class="section-title">Offshore Leaks</div>
       ${md.offshore_leaks.map((h) => html`<div class="list-row"><span class="pill accent">${Math.round(h.score * 100)}%</span><div class="list-main"><div class="list-title">${h.name}</div><div class="list-sub">${ext(h.url, "Open the record")}</div></div></div>`)}
@@ -338,9 +359,12 @@ function companyBlock(md) {
   const out = [];
   if (md.company_number) {
     out.push(html`<div class="section"><div class="section-title">${md.registry || "Company register"}</div>
+      ${md.insolvency?.length ? html`<div class="callout warn" style="margin-bottom:8px">${ico("alert")}<span>The register shows: <b>${md.insolvency.join(", ")}</b></span></div>` : ""}
       ${kvRows([["Registered name", md.legal_name], ["Number", md.company_number], ["Status", md.company_status], ["Incorporated", md.incorporated && formatDay(md.incorporated)],
-        ["Dissolved", md.dissolved && formatDay(md.dissolved)], ["Type", md.company_type], ["Business (SIC)", md.sic_codes], ["Registered office", md.registered_address]])}
-      ${md.register_url ? html`<p class="small" style="margin-top:6px">${ext(md.register_url, "Open on the register")}</p>` : ""}</div>`);
+        ["Dissolved", md.dissolved && formatDay(md.dissolved)], ["Type", md.company_type], ["Business (SIC)", md.sic_codes], ["Activity", md.industry || md.activity_code],
+        ["Employees", md.employees], ["Former names", md.former_names], ["Website", md.website], ["Registered office", md.registered_address]])}
+      ${md.register_url ? html`<p class="small" style="margin-top:6px">${ext(md.register_url, "Open on the register")}${md.opencorporates_url && md.opencorporates_url !== md.register_url ? html` · ${ext(md.opencorporates_url, "OpenCorporates")}` : ""}</p>` : ""}
+      ${md.same_name_elsewhere?.length ? html`<p class="muted small" style="margin-top:6px">${ico("info")} Companies with the same name are also registered in: ${md.same_name_elsewhere.map((c) => c.registry || c.jurisdiction).join(", ")}. Check this is the one you mean.</p>` : ""}</div>`);
   } else if (md.registry_candidates?.length) {
     out.push(html`<div class="section"><div class="section-title">Possible register matches</div>
       <p class="muted small">No exact match in the company register; the closest names are below. Investigate one by its exact name.</p>

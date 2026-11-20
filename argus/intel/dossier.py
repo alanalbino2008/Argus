@@ -55,7 +55,7 @@ def _graph_facts(graphs: list[tuple[str, str, Any]], names: set[str], kind: str)
         if not matches:
             continue
         facts: dict[str, Any] = {}
-        sanctions, leaks, appointments, profiles = [], [], [], []
+        sanctions, leaks, appointments, profiles, notices, cases = [], [], [], [], [], []
         for e in matches:
             md = e.metadata
             for key in ("born", "nationality", "occupation", "country_of_residence", "company_number", "company_status",
@@ -65,6 +65,10 @@ def _graph_facts(graphs: list[tuple[str, str, Any]], names: set[str], kind: str)
             sanctions += [{"list": s.get("list"), "name": s.get("name"), "score": s.get("score"),
                            "conflicts": s.get("conflicts") or []} for s in md.get("sanction_matches") or []]  # fmt: skip
             leaks += [{"name": h.get("name"), "url": h.get("url")} for h in md.get("offshore_leaks") or []]
+            notices += [{"type": n.get("type"), "date": n.get("date"), "url": n.get("url"),
+                         "match": md.get("insolvency_notice_match")} for n in md.get("insolvency_notices") or []]  # fmt: skip
+            cases += [{"name": c.get("name"), "court": c.get("court"), "filed": c.get("filed"), "url": c.get("url"),
+                       "match": md.get("court_case_match")} for c in md.get("court_cases") or []]  # fmt: skip
             if md.get("profile"):
                 profiles.append({"account": e.label or e.value, **{k: v for k, v in md["profile"].items()
                                                                     if k in ("display_name", "bio", "location")}})  # fmt: skip
@@ -75,7 +79,8 @@ def _graph_facts(graphs: list[tuple[str, str, Any]], names: set[str], kind: str)
                         appointments.append({"company": company.label or company.value, "role": r.label,
                                              "from": (r.metadata or {}).get("from"), "to": (r.metadata or {}).get("to")})  # fmt: skip
         out.append({"investigation_id": inv_id, "scan": target, "facts": facts, "sanctions": sanctions[:5],
-                    "offshore_leaks": leaks[:5], "appointments": appointments[:40], "profiles": profiles[:10]})  # fmt: skip
+                    "offshore_leaks": leaks[:5], "appointments": appointments[:40], "profiles": profiles[:10],
+                    "insolvency_notices": notices[:10], "court_cases": cases[:10]})  # fmt: skip
     return out
 
 
@@ -155,6 +160,10 @@ def build_profile(items: list[dict[str, Any]], item_id: str, documents: list[dic
             if a.get("to"):
                 timeline.append({"date": str(a["to"])[:10], "text": f"Left: {a['role']} of {a['company']}",
                                  "source": "register"})  # fmt: skip
+        timeline.extend({"date": str(n["date"])[:10], "text": f"Insolvency notice: {n.get('type')}",
+                         "source": "The Gazette"} for n in s.get("insolvency_notices") or [] if n.get("date"))  # fmt: skip
+        timeline.extend({"date": str(c["filed"])[:10], "text": f"Court case filed: {c.get('name')}",
+                         "source": "CourtListener"} for c in s.get("court_cases") or [] if c.get("filed"))  # fmt: skip
     registered = {(t["date"][:10], t["text"].split(" of ", 1)[-1]) for t in timeline if t["source"] == "register"}
     timeline = [t for t in timeline if not (t["source"] == "relationship"
                                             and any(t["date"][:10] == d and t["text"].endswith(company) for d, company in registered))]  # fmt: skip

@@ -2,6 +2,8 @@
 
 from argus.modules.base import BaseModule
 from argus.modules.corporate.companies_house import CompaniesHouseModule
+from argus.modules.corporate.europe import FinlandRegistryModule, FranceRegistryModule, NorwayRegistryModule
+from argus.modules.corporate.opencorporates import OpenCorporatesModule
 from argus.modules.corporate.registers import GleifModule, OffshoreLeaksModule, SanctionsScreenModule, SecEdgarModule
 from argus.modules.crypto.bitcoin import BitcoinWalletModule
 from argus.modules.crypto.evm import EvmWalletModule
@@ -29,6 +31,8 @@ from argus.modules.infrastructure.software_intel import SoftwareIntelModule
 from argus.modules.infrastructure.subdomain_finder import SubdomainFinderModule
 from argus.modules.infrastructure.tls_analyzer import TlsAnalyzerModule
 from argus.modules.infrastructure.whois_lookup import WhoisLookupModule
+from argus.modules.legal.courts import CourtRecordsModule
+from argus.modules.legal.gazette import GazetteInsolvencyModule
 from argus.modules.plugins import PluginReport, discover_plugins
 from argus.modules.threat_intel.hibp import HibpModule
 from argus.modules.threat_intel.infrastructure_pivot import InfrastructurePivotModule
@@ -39,6 +43,12 @@ from argus.modules.threat_intel.virustotal import VirusTotalModule
 ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     CompaniesHouseModule,
     GleifModule,
+    FranceRegistryModule,
+    NorwayRegistryModule,
+    FinlandRegistryModule,
+    OpenCorporatesModule,
+    GazetteInsolvencyModule,
+    CourtRecordsModule,
     SecEdgarModule,
     OffshoreLeaksModule,
     SanctionsScreenModule,

@@ -140,6 +140,12 @@ class Settings(BaseSettings):
         default=0.5, ge=0.0, le=30.0, description="Pause between the website crawler's pages, to spare the site"
     )
     gleif_url: str = Field(default="https://api.gleif.org/api/v1", description="Global LEI register (GLEIF); '' = off")
+    france_registry_url: str = Field(default="https://recherche-entreprises.api.gouv.fr",
+                                     description="France's company search (SIRENE / RNE); '' = off")  # fmt: skip
+    norway_registry_url: str = Field(default="https://data.brreg.no/enhetsregisteret/api",
+                                     description="Norway's company register (Brønnøysund); '' = off")  # fmt: skip
+    finland_registry_url: str = Field(default="https://avoindata.prh.fi/opendata-ytj-api/v3",
+                                      description="Finland's company register (PRH); '' = off")  # fmt: skip
     vault_idle_minutes: int = Field(
         default=15, ge=0, le=1440, description="Case vault: lock after this many minutes without activity; 0 = never"
     )
@@ -206,6 +212,15 @@ class Settings(BaseSettings):
     )
     licence_public_key: str = Field(
         default="", description="Personal edition: the account service's public key, to check licences offline"
+    )
+    opencorporates_api_key: SecretStr | None = Field(
+        default=None, description="OpenCorporates API token: company registers of about 140 countries"
+    )
+    courtlistener_api_key: SecretStr | None = Field(
+        default=None, description="CourtListener API token: US federal court dockets and opinions (free account)"
+    )
+    gazette_url: str = Field(
+        default="https://www.thegazette.co.uk", description="The UK Gazette (insolvency notices); '' = off"
     )
     stripe_secret_key: SecretStr | None = Field(
         default=None, description="Account service: Stripe secret key (sk_live_... or sk_test_...) for payments"

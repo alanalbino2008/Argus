@@ -82,7 +82,13 @@ def test_your_own_api_keys(personal):
     c, accounts = personal
     on_plan(c, accounts, "byok")
     listing = c.get("/api/personal/keys").json()["keys"]
-    assert {k["provider"] for k in listing} == {"companies_house", "web_search", "anthropic"}
+    assert {k["provider"] for k in listing} == {
+        "companies_house",
+        "web_search",
+        "anthropic",
+        "opencorporates",
+        "courtlistener",
+    }
     assert not any(k["set"] for k in listing)
     assert c.put("/api/personal/keys/companies_house", json={"key": "has spaces in it"}).status_code == 422
     assert c.put("/api/personal/keys/nonsense", json={"key": "abcdefgh1234"}).status_code == 422

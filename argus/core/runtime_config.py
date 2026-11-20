@@ -150,6 +150,22 @@ FIELDS: list[Setting] = [
         pattern=r"^sk-ant-\S+$",
     ),
     Setting(
+        "opencorporates_api_key",
+        "sources",
+        "OpenCorporates API token",
+        "Pays for customers' lookups in company registers of about 140 countries.",
+        "secret",
+        pattern=r"^\S{8,256}$",
+    ),
+    Setting(
+        "courtlistener_api_key",
+        "sources",
+        "CourtListener API token",
+        "Pays for customers' US court record searches (a free CourtListener account gives one).",
+        "secret",
+        pattern=r"^\S{8,256}$",
+    ),
+    Setting(
         "admin_keys_allowed",
         "security",
         "API keys and other admins may administer the server",
