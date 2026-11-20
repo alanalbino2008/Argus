@@ -259,6 +259,19 @@ async function switchWorkspace(id) {
   toast(`Switched to ${state.workspace?.name || "workspace"}`, "success", 2200);
 }
 
+// Argus Personal: say so when backups are failing, and (at most once a week) when they're off.
+async function remindAboutBackups() {
+  const b = await api.get("/api/backups").catch(() => null);
+  if (!b?.available) return;
+  if (b.health === "error") { toast(`Backups are failing: ${b.last_error}. Settings → Backups`, "error", 10000); return; }
+  if (b.enabled) return;
+  let last = 0;
+  try { last = Number(localStorage.getItem("argus.backupReminder") || 0); } catch { /* private window */ }
+  if (Date.now() - last < 7 * 86400e3) return;
+  try { localStorage.setItem("argus.backupReminder", String(Date.now())); } catch { /* private window */ }
+  toast("Backups are off: if this computer is lost or breaks, your cases go with it. Settings → Backups", "info", 10000);
+}
+
 async function enterApp(me) {
   state.me = me;
   const linkedWs = new URLSearchParams(location.search).get("ws"); // links in notifications name their workspace
@@ -270,6 +283,7 @@ async function enterApp(me) {
   $("#user-name").textContent = `${me.name}`;
   await refreshVault();
   $("#btn-user").title = `Signed in as ${me.name} (${me.role}) — click to sign out`;
+  if (personalMode) remindAboutBackups();
   if (personalMode?.update) toast(`Argus ${personalMode.update.version} is available: Settings → Argus on this computer`, "info", 8000);
   refreshMonitoring();
   clearInterval(pollTimer);

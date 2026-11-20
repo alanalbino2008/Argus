@@ -8,6 +8,7 @@ never are: only which setting changed).
 from __future__ import annotations
 
 import asyncio
+import shutil
 import time
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -21,10 +22,12 @@ from sqlalchemy import text
 from argus import __version__
 from argus.accounts import business
 from argus.accounts import stripe_billing as stripe
+from argus.accounts.owner import alert as owner_alert
 from argus.accounts.owner import box as owner_box
 from argus.api.deps import audit
 from argus.api.owner_routes import OWNER, require_owner
 from argus.core import runtime_config
+from argus.storage import backup as backup_files
 
 router = APIRouter(prefix="/api/owner/console", tags=["owner"])
 BACKGROUND = {"account-emails": "Customer emails", "owner-config-sync": "Settings sync",
@@ -48,8 +51,9 @@ def _check(name: str, status: str, detail: str, fix: str = "") -> dict[str, str]
     return {"name": name, "status": status, "detail": detail, "fix": fix}
 
 
-async def _health(request: Request) -> list[dict[str, str]]:
-    app, s = request.app, request.app.state.settings
+async def health(app: Any) -> list[dict[str, str]]:
+    """Every check the overview shows (and the owner's alerts watch)."""
+    s = app.state.settings
     checks = []
     started = time.monotonic()
     try:
@@ -101,6 +105,18 @@ async def _health(request: Request) -> list[dict[str, str]]:
     else:
         checks.append(_check("Email", "off", "Not set up: no welcome, payment or password emails",
                              "Add your mail server under Email"))  # fmt: skip
+    backups = getattr(app.state, "backups", None)
+    if backups is not None:
+        level, detail = await backups.health()
+        if backups.available or level != "off":
+            checks.append(_check("Backups", level, detail, "" if level == "ok" else
+                                 "Set ARGUS_BACKUP_DIR and ARGUS_BACKUP_PASSWORD (or back up with argus --backup-to)"))  # fmt: skip
+        else:
+            checks.append(_check("Backups", "ok", "PostgreSQL: your database provider's backups (check they're on, "
+                                                  "with point-in-time recovery)"))  # fmt: skip
+        db_file = backup_files.sqlite_path(s.database_url)
+        if db_file is not None:
+            checks.append(_disk(db_file.parent))
     running = {t.get_name() for t in asyncio.all_tasks() if not t.done()}
     for task, label in BACKGROUND.items():
         if task == "account-emails" and not s.account_service_enabled:
@@ -114,6 +130,17 @@ async def _health(request: Request) -> list[dict[str, str]]:
     return checks
 
 
+def _disk(folder: Any) -> dict[str, str]:
+    try:
+        usage = shutil.disk_usage(folder)
+    except OSError:
+        return _check("Disk space", "warn", "Couldn't measure the free space")
+    free_gb, share = usage.free / 1e9, usage.free / usage.total if usage.total else 1
+    status = "error" if free_gb < 1 or share < 0.03 else "warn" if free_gb < 5 or share < 0.1 else "ok"
+    return _check("Disk space", status, f"{free_gb:.1f} GB free ({share:.0%})",
+                  "" if status == "ok" else "Free up space or give the server a bigger disk: Argus stops when it's full")  # fmt: skip
+
+
 @router.get("/overview")
 async def console_overview(request: Request):
     """Health checks, the business at a glance, and recent activity."""
@@ -125,9 +152,33 @@ async def console_overview(request: Request):
         ledger = await request.app.state.credits.since(datetime.now(timezone.utc) - timedelta(days=30))
         summary = business.summary(accounts, ledger, plan_prices={}, pack_prices={}, days=30, trial_days=s.trial_days,
                                    payments=await request.app.state.subscribers.payments(limit=10_000))  # fmt: skip
-    return {"version": __version__, "health": await _health(request),
+    return {"version": __version__, "health": await health(request.app),
             "business": {"customers": summary["customers"], "attention": len(summary["attention"])} if summary else None,
             "activity": await request.app.state.audit.list(limit=15)}  # fmt: skip
+
+
+@router.get("/alerts")
+async def console_alerts(request: Request):
+    """Where alerts go, and the latest ones sent."""
+    await require_owner(request)
+    alerts = request.app.state.owner_alerts
+    s = request.app.state.settings
+    return {"enabled": s.owner_alerts_enabled, "to": await alerts.recipient(), "email_ready": bool(s.smtp_host),
+            "history": await alerts.history()}  # fmt: skip
+
+
+@router.post("/alerts/test")
+async def console_alerts_test(request: Request):
+    """Send today's summary now, as a test that alerts reach you."""
+    owner = await require_owner(request)
+    alerts = request.app.state.owner_alerts
+    to = await alerts.recipient()
+    if not request.app.state.settings.smtp_host:
+        raise HTTPException(status_code=409, detail="Set up Email first: alerts are sent through your mail server")
+    await owner_alert(request.app, to, "Test alert", ["This is a test: alerts reach you.", *await alerts.summary_lines()],
+                      security=False, wait=True)  # fmt: skip
+    await audit(request, OWNER, "owner.alert_test", owner.get("email"))
+    return {"detail": f"Sent to {to}"}
 
 
 @router.post("/test-email")

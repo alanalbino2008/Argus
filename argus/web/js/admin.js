@@ -130,7 +130,7 @@ function renderConfirm() {
 
 // ------------------------------------------------------------------ the console
 const TABS = [["overview", "Overview"], ["payments", "Payments"], ["email", "Email"], ["accounts", "Accounts & plans"],
-  ["sources", "Data sources"], ["desktop", "Desktop app"], ["security", "Security"], ["activity", "Activity"]];
+  ["sources", "Data sources"], ["alerts", "Alerts"], ["desktop", "Desktop app"], ["security", "Security"], ["activity", "Activity"]];
 const STATUS = { ok: ["ok", "Working"], warn: ["warn", "Check"], error: ["critical", "Problem"], off: ["", "Off"] };
 
 function shell(content) {
@@ -202,6 +202,21 @@ async function viewSection(section, title, intro, extra = "") {
   shell(html`<div class="card card-pad"><h2>${title}</h2><p class="muted small">${intro}</p>${settingsForm(section, extra)}</div>`);
 }
 
+async function viewAlerts() {
+  const a = await call("GET", "/api/owner/console/alerts");
+  const recent = a.history.length ? html`<table class="table"><tbody>${a.history.map((h) => html`<tr><td class="small" style="white-space:nowrap">${formatDate(h.at)}<div class="muted">${timeAgo(h.at)}</div></td>
+      <td><b>${h.subject}</b><details class="small"><summary>What it said</summary><pre style="white-space:pre-wrap;font:inherit">${h.lines.join("\n")}</pre></details></td></tr>`)}</tbody></table>`
+    : html`<p class="muted small">No alerts yet. That's good news.</p>`;
+  await viewSection("alerts", "Alerts", "Argus checks itself every few minutes and emails you when something needs attention (and again when it's fixed): payments, email, the database, backups, disk space and background work. Warnings stay here in the console.",
+    html`<button class="btn" type="button" data-act="test-alert" ${a.email_ready ? "" : "disabled"}>Send a test alert</button>
+      <p class="muted small" style="margin-top:6px">${a.email_ready ? `Alerts go to ${a.to || "your owner email"}.` : "Set up Email first: alerts are sent through your mail server."}</p>`);
+  const box = document.createElement("div");
+  box.className = "card card-pad";
+  box.style.marginTop = "16px";
+  setHTML(box, html`<h2>Recent alerts</h2>${recent}`);
+  $(".owner-shell .card")?.after(box);
+}
+
 async function viewPayments() {
   const hook = `${location.origin}/api/billing/webhook`;
   await viewSection("payments", "Payments (Stripe)", trusted(`Customers pay on Stripe's own pages. In Stripe, add a webhook endpoint <code>${escape(hook)}</code> for the events <code>checkout.session.completed</code>, <code>checkout.session.async_payment_succeeded</code>, <code>customer.subscription.created</code>, <code>.updated</code>, <code>.deleted</code>, <code>charge.refunded</code>, <code>charge.dispute.created</code> and <code>charge.dispute.closed</code>.`),
@@ -255,6 +270,7 @@ const VIEWS = {
   email: () => viewSection("email", "Email", "The mail server Argus sends customer emails and your security alerts through. Ask your email provider for these details.", html`<button class="btn" type="button" data-act="test-email">Send test email</button>`),
   accounts: viewAccounts,
   sources: () => viewSection("sources", "Paid data sources", "Your keys for the paid sources customers use through Argus Connect, paid for with their credits. Customers on Bring-your-own-keys use their own."),
+  alerts: viewAlerts,
   desktop: () => viewSection("desktop", "Desktop app", "When you publish a new Argus Personal installer, enter its version and download page here. Installed copies check once a day and offer the update in Settings."),
   security: viewSecurity,
   activity: viewActivity,
@@ -378,6 +394,7 @@ on(root, "click", "[data-act]", async (_e, b) => {
   if (act === "refresh") return show("overview");
   if (act === "copy-codes") { await navigator.clipboard?.writeText(reveal.codes.join("\n")); return toast("Copied", "success"); }
   if (act === "codes-saved") { reveal = null; return start(); }
+  if (act === "test-alert") return guarded(async () => toast((await call("POST", "/api/owner/console/alerts/test")).detail, "success", 6000));
   if (act === "test-email") return guarded(async () => toast(`Test email sent to ${(await call("POST", "/api/owner/console/test-email", {})).to}`, "success", 6000));
   if (act === "test-stripe") return guarded(async () => {
     const r = await call("POST", "/api/owner/console/test-stripe");

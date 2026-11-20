@@ -266,6 +266,27 @@ class Settings(BaseSettings):
         default="", description="Account service: sender of account emails (default: ARGUS_SMTP_FROM)"
     )
     support_email: str = Field(default="", description="Account service: support address shown in emails and replies")
+    owner_alerts_enabled: bool = Field(
+        default=True, description="Owner console: email the owner when something needs attention"
+    )
+    owner_alert_email: str = Field(
+        default="", description="Owner alerts: where to send them (default: the owner's email)"
+    )
+    owner_alert_payments: bool = Field(default=True, description="Owner alerts: disputes and failed payments")
+    owner_alert_new_customers: bool = Field(default=True, description="Owner alerts: each new paying customer")
+    owner_daily_summary: bool = Field(default=False, description="Owner alerts: a short daily summary email")
+    owner_summary_hour: int = Field(default=8, ge=0, le=23, description="Owner alerts: hour (UTC) of the daily summary")
+    owner_alert_check_seconds: float = Field(
+        default=300, ge=10, le=3600, description="Owner alerts: how often to check"
+    )
+    backup_dir: str = Field(
+        default="", description="Automatic encrypted backups (SQLite databases): the folder they go to"
+    )
+    backup_password: SecretStr | None = Field(
+        default=None, description="Password the automatic backups are encrypted with (needed to restore them)"
+    )
+    backup_every_hours: int = Field(default=24, ge=1, le=168, description="Automatic backups: how often")
+    backup_keep: int = Field(default=14, ge=1, le=365, description="Automatic backups: how many to keep")
     desktop_latest_version: str = Field(
         default="", description="Account service: the newest Argus Personal desktop version (e.g. 1.55.0)"
     )

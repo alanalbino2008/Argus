@@ -7,6 +7,7 @@ import builtins
 import hashlib
 import json
 import secrets
+from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
@@ -210,6 +211,23 @@ class AuditLog:
         async with self.db.session() as s:
             rows = (await s.execute(stmt)).scalars().all()
         return [{"id": r.id, **self._entry(r), "hash": r.hash} for r in rows]
+
+    async def events(self, *, after_id: int = 0, since: datetime | None = None,
+                     actions: Iterable[str] = (), limit: int = 500) -> builtins.list[dict[str, Any]]:  # fmt: skip
+        """Entries in order, after an id and/or since a time, of the given actions (for alerts and summaries)."""
+        stmt = select(AuditEventRow).where(AuditEventRow.id > after_id).order_by(AuditEventRow.id).limit(limit)
+        wanted = list(actions)
+        if wanted:
+            stmt = stmt.where(AuditEventRow.action.in_(wanted))
+        if since is not None:
+            stmt = stmt.where(AuditEventRow.ts >= since.isoformat())
+        async with self.db.session() as s:
+            rows = (await s.execute(stmt)).scalars().all()
+        return [{"id": r.id, **self._entry(r)} for r in rows]
+
+    async def last_id(self) -> int:
+        async with self.db.session() as s:
+            return int((await s.execute(select(func.max(AuditEventRow.id)))).scalar_one_or_none() or 0)
 
     async def verify(self) -> dict[str, Any]:
         """Recompute the whole chain; report the first entry that does not match."""

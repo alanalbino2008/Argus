@@ -38,7 +38,11 @@ from argus.security.auth import Principal, Role
 router = APIRouter(prefix="/api/personal", tags=["personal"])
 OPEN_PATHS = ("/api/personal/", "/api/live", "/api/health", "/api/auth/config", "/api/auth/logout")
 # Writes that only read or verify, so they stay available when the subscription has lapsed.
-READ_ONLY_WRITES = (re.compile(r"^/api/evidence/[^/]+/verify$"), re.compile(r"^/api/auth/logout$"))
+READ_ONLY_WRITES = (
+    re.compile(r"^/api/evidence/[^/]+/verify$"),
+    re.compile(r"^/api/auth/logout$"),
+    re.compile(r"^/api/backups(/run|/check|/restore|/restore/cancel)?$"),  # backups keep working, always
+)
 
 
 class SignInRequest(BaseModel):

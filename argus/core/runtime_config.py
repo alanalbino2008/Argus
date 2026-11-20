@@ -51,6 +51,7 @@ SECTIONS = {
     "email": "Email",
     "accounts": "Accounts and trials",
     "sources": "Paid data sources",
+    "alerts": "Alerts",
     "desktop": "Desktop app",
     "security": "Security",
 }
@@ -174,6 +175,24 @@ FIELDS: list[Setting] = [
         "secret",
         pattern=r"^\S{8,256}$",
     ),
+    Setting(
+        "owner_alerts_enabled",
+        "alerts",
+        "Email me when something needs attention",
+        "Problems (and when they're fixed): payments, email, database, backups, disk space, background work.",
+        "bool",
+    ),
+    Setting("owner_alert_email", "alerts", "Send alerts to", "Leave empty to use your owner email.", "email"),
+    Setting("owner_alert_payments", "alerts", "Disputes and failed payments", "", "bool"),
+    Setting("owner_alert_new_customers", "alerts", "Each new paying customer", "", "bool"),
+    Setting(
+        "owner_daily_summary",
+        "alerts",
+        "Daily summary",
+        "Sign-ups, customers, payments and health, once a day.",
+        "bool",
+    ),
+    Setting("owner_summary_hour", "alerts", "Summary hour (UTC)", "0 to 23.", "int", low=0, high=23),
     Setting(
         "desktop_latest_version",
         "desktop",

@@ -55,8 +55,9 @@ def recovery_hash(code: str) -> str:
     return hashlib.sha256(("argus-recovery:" + code.strip().lower().replace(" ", "")).encode()).hexdigest()
 
 
-async def alert(app: Any, owner_email: str, subject: str, lines: list[str]) -> None:
-    """Email the owner straight away (sign-ins, lock-outs, changes). Best effort: never blocks a sign-in."""
+async def alert(app: Any, owner_email: str, subject: str, lines: list[str], *, security: bool = True,
+                wait: bool = False) -> None:  # fmt: skip
+    """Email the owner straight away (sign-ins, lock-outs, changes, alerts). Best effort: never blocks anything."""
     settings = app.state.settings
     if not settings.smtp_host or not owner_email:
         return
@@ -68,8 +69,9 @@ async def alert(app: Any, owner_email: str, subject: str, lines: list[str]) -> N
         domain=urlsplit(settings.public_url or "http://argus.local").hostname or "argus.local"
     )
     msg["Auto-Submitted"] = "auto-generated"
-    msg.set_content("\n\n".join([*lines, "If this wasn't you, sign in to the owner console straight away, change "
-                                 "your password and sign out every other session."]))  # fmt: skip
+    footer = ("If this wasn't you, sign in to the owner console straight away, change your password and sign out "
+              "every other session." if security else "Owner console: change which alerts you get under Alerts.")  # fmt: skip
+    msg.set_content("\n\n".join([*lines, footer]))
 
     async def send() -> None:
         try:
@@ -79,4 +81,7 @@ async def alert(app: Any, owner_email: str, subject: str, lines: list[str]) -> N
         except Exception:
             logger.exception("Owner alert failed")
 
-    asyncio.get_running_loop().create_task(send())
+    if wait:
+        await send()
+    else:
+        asyncio.get_running_loop().create_task(send())

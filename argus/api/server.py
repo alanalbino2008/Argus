@@ -49,6 +49,7 @@ from sqlalchemy import text
 
 from argus import __version__
 from argus.accounts import own_keys
+from argus.accounts.alerts import OwnerAlerts
 from argus.accounts.mailer import AccountMailer
 from argus.accounts.owner import box as owner_box
 from argus.accounts.personal import PersonalLicence
@@ -56,6 +57,7 @@ from argus.api import remediation_hooks
 from argus.api.account_routes import router as account_router
 from argus.api.analyst_routes import router as analyst_router
 from argus.api.auth_routes import router as auth_router
+from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
 from argus.api.business_routes import router as business_router
 from argus.api.case_routes import router as case_router
@@ -130,7 +132,9 @@ from argus.security.network import validate_scan_target
 from argus.security.oidc import OidcProvider
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
+from argus.storage import backup as backup_files
 from argus.storage.account_mail_repo import AccountMailRepository
+from argus.storage.backup_service import BackupService
 from argus.storage.case_repo import CaseRepository
 from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.migrate import upgrade_database
@@ -211,6 +215,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     logs.configure(settings.log_format, settings.log_level, settings.instance_id)
     metrics.init(settings.instance_id, settings.max_concurrent_scans)
+    restored = backup_files.apply_pending_restore(settings)  # a restore prepared before the restart, if any
     db = Database(settings.database_url, echo=settings.db_echo)
     if settings.auto_migrate:
         await upgrade_database(db)
@@ -287,6 +292,14 @@ async def lifespan(app: FastAPI):
     )
     app.state.schedules = ScheduleRepository(db)
     app.state.secret_box = secret_box_from_settings(settings)
+    app.state.backups = BackupService(settings, app.state.app_state, app.state.secret_box)
+    if restored:
+        await app.state.audit.record(SYSTEM, "backup.restored", None, details={"previous_data_kept_in": restored})
+    backup_task = (
+        asyncio.create_task(app.state.backups.run_forever(), name="backups")
+        if app.state.backups.available and (settings.edition == "personal" or settings.backup_dir)
+        else None
+    )
     if settings.edition == "personal":
         await own_keys.load(app.state.app_state, app.state.secret_box)
     app.state.notifications = NotificationRepository(db, app.state.secret_box)
@@ -341,6 +354,12 @@ async def lifespan(app: FastAPI):
         if settings.account_service_enabled
         else None
     )
+    app.state.owner_alerts = OwnerAlerts(app)
+    alerts_task = (
+        asyncio.create_task(app.state.owner_alerts.run_forever(), name="owner-alerts")
+        if settings.edition != "personal"
+        else None
+    )
     config_task = (
         asyncio.create_task(_config_sync(app), name="owner-config-sync") if settings.edition != "personal" else None
     )
@@ -374,6 +393,8 @@ async def lifespan(app: FastAPI):
                 mailer_task,
                 config_task,
                 vault_task,
+                backup_task,
+                alerts_task,
             )
             if t
         ]
@@ -572,6 +593,7 @@ app.include_router(personal_router)
 app.include_router(analyst_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
+app.include_router(backup_router)
 app.include_router(network_router)
 app.include_router(people_router)
 

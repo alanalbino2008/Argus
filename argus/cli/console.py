@@ -304,6 +304,7 @@ def personal_data_dir() -> Path:
 
 
 SERVER: Any = None  # the running Argus Personal server, so Quit can stop it
+RESTART = False  # set to start again straight after stopping (after preparing a restore)
 
 
 def run_personal(port: int) -> None:
@@ -326,11 +327,51 @@ def run_personal(port: int) -> None:
     if not os.environ.get("ARGUS_NO_BROWSER"):
         threading.Timer(1.5, lambda: webbrowser.open(url)).start()
     # 127.0.0.1 only: nobody else on the network (café wifi, a shared office) can reach it.
-    global SERVER
-    SERVER = uvicorn.Server(uvicorn.Config("argus.api.server:app", host="127.0.0.1", port=port, reload=False,
-                                           access_log=False, log_config=None if os.environ.get("ARGUS_DESKTOP") else
-                                           uvicorn.config.LOGGING_CONFIG))  # fmt: skip
-    SERVER.run()
+    global SERVER, RESTART
+    while True:  # once, or again straight away when asked to restart (to finish restoring a backup)
+        RESTART = False
+        SERVER = uvicorn.Server(uvicorn.Config("argus.api.server:app", host="127.0.0.1", port=port, reload=False,
+                                               access_log=False, log_config=None if os.environ.get("ARGUS_DESKTOP")
+                                               else uvicorn.config.LOGGING_CONFIG))  # fmt: skip
+        SERVER.run()
+        if not RESTART:
+            return
+        console.print("[cyan]Restarting Argus…[/cyan]")
+
+
+def _backup_password(confirm: bool) -> str:
+    import getpass
+
+    password = os.environ.get("ARGUS_BACKUP_PASSWORD") or getpass.getpass("Backup password: ")
+    if confirm and not os.environ.get("ARGUS_BACKUP_PASSWORD") and getpass.getpass("Again: ") != password:
+        raise SystemExit("The passwords don't match")
+    return password
+
+
+def backup_cli(args: argparse.Namespace) -> int:
+    """argus --backup-to / --backup-check / --backup-restore (password: ARGUS_BACKUP_PASSWORD, or asked)."""
+    from argus.core.settings import get_settings
+    from argus.storage import backup
+
+    settings = get_settings()
+    try:
+        if args.backup_to:
+            result = backup.create(settings, Path(args.backup_to), backup.new_key(_backup_password(confirm=True)))
+            console.print(f"[green]Backup written:[/green] {result['file']} ({result['size'] / 1e6:.1f} MB)")
+        elif args.backup_check:
+            info = backup.check(Path(args.backup_check), _backup_password(confirm=False), work_dir=Path.cwd(),
+                                known_revisions=backup.known_revisions())  # fmt: skip
+            console.print(f"[green]The backup is complete and readable.[/green] Made {info['created_at']} by Argus "
+                          f"{info['argus_version']} on {info['computer']}: {info['counts']}")  # fmt: skip
+        else:
+            info = backup.stage_restore(settings, Path(args.backup_restore), _backup_password(confirm=False),
+                                        backup.known_revisions())  # fmt: skip
+            console.print(f"[green]Ready to restore the backup made {info['created_at']}.[/green] It takes over the "
+                          "next time Argus starts; the current data is kept in a before-restore folder.")  # fmt: skip
+    except backup.BackupError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 1
+    return 0
 
 
 def cli_entrypoint():
@@ -387,6 +428,13 @@ def cli_entrypoint():
         help="Verify every username-platform signature against live sites, then exit",
     )
     parser.add_argument("--platforms-report", metavar="FILE", help="With --check-platforms: write a JSON report")
+    parser.add_argument("--backup-to", metavar="FOLDER", help="Make an encrypted backup into FOLDER, then exit")
+    parser.add_argument(
+        "--backup-check", metavar="FILE", help="Open a backup with its password and check it, then exit"
+    )
+    parser.add_argument(
+        "--backup-restore", metavar="FILE", help="Prepare a restore from a backup (it takes over at the next start)"
+    )
     parser.add_argument(
         "--role",
         choices=["viewer", "analyst", "admin"],
@@ -400,6 +448,9 @@ def cli_entrypoint():
         revision = asyncio.run(migrate_cli(float(os.environ.get("ARGUS_MIGRATE_WAIT_SECONDS", "90"))))
         console.print(f"[green]Database schema at revision {revision}[/green]")
         return
+
+    if args.backup_to or args.backup_check or args.backup_restore:
+        raise SystemExit(backup_cli(args))
 
     if args.check_platforms:
         report = asyncio.run(check_platforms_cli())

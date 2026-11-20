@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.56.0] — Phase 56: Backups and alerts
+
+### Added
+- **Backups in Argus Personal** (Settings → Backups): automatic, encrypted backups of
+  everything (cases, evidence, settings, audit log and the encryption key) to a folder of the
+  investigator's choice, ideally a synced cloud folder or an external drive.
+  - Encrypted with a backup password (scrypt + AES-256-GCM in authenticated 4 MB pieces). The
+    password is never stored, and nothing readable is ever written to the backup folder.
+  - Every 6 or 12 hours, daily or weekly; keeps the latest N; *Back up now*.
+  - *Check it*: opens a backup and verifies every file's fingerprint, changing nothing.
+  - *Restore it*: checked first, then swapped in at a restart (the desktop app restarts itself).
+    The previous data is kept in a `before-restore-<date>` folder.
+  - Failing backups are retried within the hour and reported at sign-in; a weekly reminder
+    when they're off. Backups keep working when a subscription has lapsed.
+- **Backups for SQLite servers**: `ARGUS_BACKUP_DIR`, `ARGUS_BACKUP_PASSWORD`,
+  `ARGUS_BACKUP_EVERY_HOURS`, `ARGUS_BACKUP_KEEP`; and `argus --backup-to`, `--backup-check`,
+  `--backup-restore`.
+- **Owner alerts** by email:
+  - Health problems as they start (one email for several), a daily reminder while they last,
+    and "Fixed" when they're resolved.
+  - Disputes opened or lost, failed payments (once per customer every few days), new paying
+    customers.
+  - An optional daily summary.
+  - Owner console → **Alerts**: choose what to get and where, send a test alert, see recent
+    alerts (`ARGUS_OWNER_ALERTS_ENABLED`, `ARGUS_OWNER_ALERT_EMAIL`, `ARGUS_OWNER_ALERT_PAYMENTS`,
+    `ARGUS_OWNER_ALERT_NEW_CUSTOMERS`, `ARGUS_OWNER_DAILY_SUMMARY`, `ARGUS_OWNER_SUMMARY_HOUR`).
+- Health checks: **Backups** and **Disk space**.
+- API: `GET/PUT /api/backups`, `POST /api/backups/run`, `/check`, `/restore`,
+  `/restore/cancel`; `GET /api/owner/console/alerts`, `POST /api/owner/console/alerts/test`.
+- Helm chart 0.46.0.
+
 ## [1.55.0] — Phase 55: The desktop app
 
 ### Added

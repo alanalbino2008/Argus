@@ -24,6 +24,26 @@ const VAULT_FORMS = {
     toast(r.detail, "success");
     data.team = await api.get("/api/personal/team").catch(() => data.team);
   },
+  "backup-form": async () => {
+    const password = $("#backup-pass").value;
+    if (password !== $("#backup-pass2").value) throw new Error("The two passwords don't match");
+    data.backups = await api.put("/api/backups", { enabled: true, folder: $("#backup-folder").value.trim(), every_hours: Number($("#backup-every").value),
+      keep: Number($("#backup-keep").value), password: password || null });
+    toast(data.backups.last_success_at ? "Backup settings saved" : "Backups are on: the first one runs within a few minutes", "success", 6000);
+  },
+  "backup-file-form": async (e) => {
+    const body = { file: $("#backup-file").value.trim(), password: $("#backup-file-pass").value };
+    if (e.submitter?.value !== "restore") {
+      const r = await api.post("/api/backups/check", body);
+      const counts = r.backup.counts || {};
+      toast(`The backup is complete and readable: made ${formatDate(r.backup.created_at)}, ${counts.cases ?? 0} case(s), ${counts.evidence_captures ?? 0} evidence capture(s)`, "success", 9000);
+      return;
+    }
+    if (!await confirmDialog({ title: "Restore this backup?", message: "Argus restarts with the data from the backup. What's on this computer now is kept in a 'before-restore' folder in Argus's data folder, not deleted.", confirm: "Restore and restart", danger: true })) return;
+    const r = await api.post("/api/backups/restore", body);
+    if (r.restarting) return waitForRestart(r.detail);
+    toast(r.detail, "success", 10000);
+  },
   "vault-enable-form": async () => {
     if ($("#vault-new").value !== $("#vault-new2").value) throw new Error("The two passphrases don't match");
     const r = await api.post("/api/vault/enable", { passphrase: $("#vault-new").value, understood: $("#vault-understood").checked });
@@ -58,7 +78,7 @@ export function initSettings(el) {
     error.textContent = "";
     button.disabled = true;
     try {
-      await handler();
+      await handler(e);
       data.vault = await api.get("/api/vault/status").catch(() => data.vault);
       render();
     } catch (err) {
@@ -117,6 +137,31 @@ export function initSettings(el) {
         } finally {
           btn.disabled = false;
         }
+        return;
+      }
+      if (act === "backup-now") {
+        btn.disabled = true;
+        btn.textContent = "Backing up…";
+        try {
+          data.backups = await api.post("/api/backups/run");
+          toast("Backup made", "success");
+        } catch (err) {
+          toast(err.message, "error", 8000);
+          data.backups = await api.get("/api/backups").catch(() => data.backups);
+        }
+        render();
+        return;
+      }
+      if (act === "backup-folder") { $("#backup-folder").value = btn.dataset.path; return; }
+      if (act === "backup-pick") {
+        $("#backup-file-details").open = true;
+        $("#backup-file").value = btn.dataset.file;
+        $("#backup-file-pass").focus();
+        return;
+      }
+      if (act === "backup-restore-cancel") {
+        data.backups = await api.post("/api/backups/restore/cancel");
+        render();
         return;
       }
       if (act === "quit-argus") {
@@ -287,15 +332,16 @@ export async function refresh() {
     api.get("/api/opsec/routes").catch(() => null),
     fetch("/api/personal/status").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     platform ? api.get("/api/vault/status").catch(() => null) : null,
+    platform ? api.get("/api/backups").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -424,6 +470,68 @@ function verifyCard() {
 }
 
 let recoveryCode = null; // shown once, right after it is created
+
+function waitForRestart(message) {
+  document.body.innerHTML = "";
+  const note = document.createElement("p");
+  note.style.cssText = "font:16px system-ui;margin:20vh auto;max-width:480px;text-align:center";
+  note.textContent = message;
+  document.body.append(note);
+  const started = Date.now();
+  const poll = async () => {
+    try {
+      if ((await fetch("/api/live", { cache: "no-store" })).ok && Date.now() - started > 2500) { location.reload(); return; }
+    } catch { /* still restarting */ }
+    setTimeout(poll, 1000);
+  };
+  setTimeout(poll, 1500);
+}
+
+const sizeText = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(1)} GB` : n >= 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`);
+
+function backupsCard() {
+  const b = data.backups;
+  if (!b) return "";
+  const pill = { ok: ["ok", "Working"], warn: ["warn", b.enabled ? "Check" : "Off"], error: ["critical", "Failing"], off: ["", "Provider"] }[b.health] || ["", b.health];
+  const head = html`<div class="card-head wrap"><div><h2>${ico("download")}Backups</h2><p class="muted small">Everything (cases, evidence, settings and this installation's encryption key) in one encrypted file, so a lost, stolen or broken computer doesn't mean lost cases.</p></div><span class="pill ${pill[0]}">${pill[1]}</span></div>`;
+  if (!b.available) return html`<div class="card card-pad" style="margin-top:16px">${head}<p class="small">${b.summary}</p></div>`;
+  const list = b.backups.length ? html`<table class="table" style="margin-top:8px"><thead><tr><th>Made</th><th>Size</th><th>Argus</th><th></th></tr></thead><tbody>
+    ${b.backups.slice(0, 8).map((x) => html`<tr><td>${formatDate(x.created_at)} <span class="muted small">${timeAgo(x.created_at)}</span></td><td>${sizeText(x.size)}</td><td class="small">${x.argus_version}</td>
+      <td class="actions"><button class="btn sm ghost" data-act="backup-pick" data-file="${x.file}">Check or restore…</button></td></tr>`)}</tbody></table>` : "";
+  const setup = b.managed ? html`<dl class="kv"><dt>Folder</dt><dd class="mono small">${b.folder}</dd><dt>How often</dt><dd>every ${b.every_hours} hours, keeping ${b.keep}</dd></dl>
+      <p class="muted small">Set by this server's configuration (ARGUS_BACKUP_DIR, ARGUS_BACKUP_PASSWORD).</p>` : html`<details ${b.enabled ? "" : "open"} style="margin-top:10px"><summary>${b.enabled ? "Change where and how often" : "Set up automatic backups"}</summary>
+      <form id="backup-form" style="display:grid;gap:8px;max-width:560px;margin-top:8px">
+        <label class="label" for="backup-folder">Backup folder <span class="muted small">best: a cloud folder that syncs (OneDrive, iCloud Drive, Dropbox, Google Drive) or an external drive</span></label>
+        <input class="input mono" id="backup-folder" value="${b.folder || b.suggestions[0]?.path || ""}" placeholder="Full path, e.g. D:\\Argus backups" required>
+        ${b.suggestions.length ? html`<div class="small" style="display:flex;gap:6px;flex-wrap:wrap">${b.suggestions.map((f) => html`<button type="button" class="btn sm ghost" data-act="backup-folder" data-path="${f.path}">${f.label}</button>`)}</div>` : ""}
+        <label class="label" for="backup-pass">Backup password ${b.password_set ? html`<span class="muted small">leave empty to keep the current one</span>` : html`<span class="muted small">at least 10 characters; you'll need it to restore</span>`}</label>
+        <input class="input" type="password" id="backup-pass" autocomplete="new-password" minlength="10" maxlength="256" ${b.password_set ? "" : "required"}>
+        <label class="label" for="backup-pass2">Type it again</label>
+        <input class="input" type="password" id="backup-pass2" autocomplete="new-password" maxlength="256">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label class="small">Every <select class="select" id="backup-every" style="width:auto">${[[6, "6 hours"], [12, "12 hours"], [24, "day"], [168, "week"]].map(([v, l]) => html`<option value="${v}" ${b.every_hours === v ? "selected" : ""}>${l}</option>`)}</select></label>
+          <label class="small">keep the last <input class="input" type="number" id="backup-keep" min="1" max="365" value="${b.keep}" style="width:80px"></label></div>
+        <p class="muted small">Keep the password somewhere safe (a password manager). Without it a backup can't be opened, by anyone: that's what makes it safe in a cloud folder.</p>
+        <p class="error-text"></p><div><button class="btn primary" type="submit">${b.enabled ? "Save" : "Turn on backups"}</button></div>
+      </form></details>`;
+  return html`<div class="card card-pad" style="margin-top:16px" id="backups-card">${head}
+    ${b.restore_pending ? html`<div class="callout warn" style="margin-bottom:10px">${ico("alert")}<span>A restore is ready and takes over the next time Argus starts. <button class="btn sm" data-act="backup-restore-cancel">Cancel it</button></span></div>` : ""}
+    <p class="small"${b.health === "error" ? ' style="color:var(--sev-high)"' : ""}>${b.summary}${b.last_backup && b.health !== "error" ? ` · ${sizeText(b.last_backup.size)}` : ""}</p>
+    ${b.enabled ? html`<button class="btn sm" data-act="backup-now" ${b.running ? "disabled" : ""}>${ico("download")}${b.running ? "Backing up…" : "Back up now"}</button>` : ""}
+    ${setup}${list}
+    <details style="margin-top:12px" id="backup-file-details"><summary>Check or restore a backup</summary>
+      <form id="backup-file-form" style="display:grid;gap:8px;max-width:560px;margin-top:8px">
+        <label class="label" for="backup-file">Backup file <span class="muted small">full path to a .argusbackup file (from this list, a USB drive, or another computer's cloud folder)</span></label>
+        <input class="input mono" id="backup-file" required>
+        <label class="label" for="backup-file-pass">Its backup password</label>
+        <input class="input" type="password" id="backup-file-pass" autocomplete="off" required>
+        <p class="error-text"></p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" type="submit" value="check">${ico("check")}Check it</button>
+          ${data.personal ? html`<button class="btn danger" type="submit" value="restore">Restore it…</button>` : ""}</div>
+        <p class="muted small">Checking opens the whole backup and verifies every file's fingerprint without changing anything.${data.personal ? " Restoring replaces what's on this computer (kept aside, not deleted) and restarts Argus." : " On a server, restore with: argus --backup-restore FILE"}</p>
+      </form></details>
+  </div>`;
+}
 
 function vaultCard() {
   const v = data.vault;
@@ -717,6 +825,7 @@ function render() {
     ${appCard()}
     ${subscriptionCard()}
     ${data.personal?.signed_in ? ownKeysCard() : ""}
+    ${backupsCard()}
     ${vaultCard()}
     ${data.personal ? "" : workspacesCard()}
     ${safetyCard()}
