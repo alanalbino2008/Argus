@@ -39,6 +39,13 @@ def tc(make_client, monkeypatch):
     for watcher in (c.app.state.fingerprint_watcher, c.app.state.brand_watcher):
         watcher.kick = lambda: None
     c.app.state.brand_watcher.http_factory = contextlib.nullcontext
+
+    async def fake_dns(name):  # no real DNS in tests: the brand on its own servers, lookalikes elsewhere
+        if name == "acme-corp.com":
+            return {"ips": ["192.0.2.10"], "ns": ["ns1.acme-corp.com"], "mx": []}
+        return {"ips": ["203.0.113.5"], "ns": ["ns1.cheap-host.example"], "mx": []}
+
+    c.app.state.brand_watcher.dns_lookup = fake_dns
     viewer = c.post("/api/keys", json={"name": "siem", "role": "viewer"}).json()["key"]
     return c, viewer
 

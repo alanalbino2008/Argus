@@ -38,25 +38,15 @@ import dns.resolver
 from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.core.settings import get_settings
+from argus.intel.lookalike_triage import dns_verdict, parent_domain
 from argus.intel.lookalikes import Candidate, generate, has_sensitive_word, registrable, split_domain
 from argus.modules.base import BaseModule
 
 logger = logging.getLogger("argus.module.lookalike_domains")
 
 CONCURRENCY = 40
-PARKING_NS = (
-    "sedoparking.com", "parkingcrew.net", "bodis.com", "above.com", "dan.com", "afternic.com", "parklogic.com",
-    "uniregistrymarket.link", "namebrightdns.com", "hugedomains.com", "domaincontrol.com.parked",
-    "dsredirection.com", "parking.reg.ru", "fabulous.com", "smartname.com", "cashparking.com", "voodoo.com",
-)  # fmt: skip
 TECHNIQUE_WEIGHT = {"homoglyph": 30, "combosquat": 22, "typo": 20, "doppelganger": 20, "tld": 14, "bitsquat": 10}
-
-
-def _parent(host: str) -> str:
-    try:
-        return registrable(host.rstrip("."))
-    except ValueError:
-        return host.rstrip(".").lower()
+_parent = parent_domain
 
 
 def risk_score(technique: str, sensitive: bool, mx: bool, live: bool, verdict: str) -> int:
@@ -141,13 +131,7 @@ class LookalikeDomainsModule(BaseModule):
         self.report_ok()
 
         for candidate, profile in registered:
-            ns_parents = {_parent(n) for n in profile["ns"]}
-            if (own_ns and ns_parents & own_ns) or (own_ips and own_ips & set(profile["ips"])):
-                verdict = "yours"
-            elif any(n.endswith(p) or p.endswith(n) for n in ns_parents for p in PARKING_NS):
-                verdict = "parked"
-            else:
-                verdict = "suspicious"
+            verdict = dns_verdict(profile, own_ns, own_ips)
             sensitive = has_sensitive_word(candidate)
             facts = {
                 "of": original,

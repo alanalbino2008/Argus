@@ -14,12 +14,19 @@ let monitors = null;
 let fpWatches = []; // watched fingerprints (Shodan/Censys searches on a schedule)
 let brandWatches = []; // brands whose lookalike domains are looked for in Certificate Transparency
 let brandForm = false;
+let routes = []; // egress routes, for visiting lookalikes' websites without showing this server's address
 
 export function initMonitoring(el, appActions) {
   root = el;
   actions = appActions;
   initNotifications(refresh);
   initSchedules(refresh);
+  on(root, "change", "[data-act-change=brand-web]", async (_e, select) => {
+    try {
+      await api.patch(`/api/brand-watches/${enc(select.dataset.id)}`, { web_check: select.value });
+      toast(select.value === "off" ? "Lookalikes' websites will not be visited" : "Lookalikes' websites will be checked at the next run", "success");
+    } catch (err) { toast(err.message, "error"); refresh(); }
+  });
   on(root, "click", "[data-act]", async (_e, btn) => {
     const { act, id } = btn.dataset;
     if (await handleNotificationAction(act, id, btn)) return;
@@ -46,8 +53,9 @@ export function initMonitoring(el, appActions) {
       } else if (act === "brand-save") {
         const domain = root.querySelector("#brand-domain").value.trim();
         const allow = root.querySelector("#brand-allow").value.split(/[\s,]+/).filter(Boolean);
+        const web_check = root.querySelector("#brand-web").value;
         if (!domain) { toast("Enter the brand's domain, e.g. acme.com"); return; }
-        await api.post("/api/brand-watches", { domain, allow });
+        await api.post("/api/brand-watches", { domain, allow, web_check });
         brandForm = false;
         toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
       } else if (act === "brand-run") {
@@ -85,6 +93,7 @@ export async function refresh() {
     [alerts, monitors, fpWatches] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"),
       api.get("/api/fingerprint-watches").catch(() => []), loadNotifications(), loadSchedules()]);
     brandWatches = await api.get("/api/brand-watches").catch(() => []);
+    routes = (await api.get("/api/opsec/routes").catch(() => ({ routes: [] }))).routes || [];
   } catch {
     return;
   }
@@ -178,15 +187,25 @@ function brandCard() {
     ${brandForm ? html`<div class="card-pad" style="border:1px solid var(--border);border-radius:8px;margin:10px 0">
       <label class="small">Your domain<input id="brand-domain" class="input" placeholder="acme.com" autocomplete="off"></label>
       <label class="small" style="display:block;margin-top:8px">Other domains you own (never reported)<input id="brand-allow" class="input" placeholder="acme.co.uk, acme-careers.com" autocomplete="off"></label>
+      <label class="small" style="display:block;margin-top:8px">Visit lookalikes' websites (to spot cloned login pages)${webSelect("brand-web", "off")}</label>
+      <p class="muted small">Visiting a phishing site tells whoever runs it that someone looked, and from which address. Use a route (Tor, a VPN) to hide this server. DNS checks are always on and passive.</p>
       <div style="margin-top:10px"><button class="btn primary sm" data-act="brand-save">Start watching</button></div></div>` : ""}
     ${!brandWatches.length ? (brandForm ? "" : html`<p class="muted small">No brand watched yet.</p>`)
       : brandWatches.map((w) => html`<div class="list-row" style="align-items:flex-start">
         <div class="list-main"><div class="list-title"><b>${w.domain}</b> <span class="muted small">every ${w.interval_hours === 24 ? "day" : "week"} · ${w.known} lookalike${w.known === 1 ? "" : "s"} known${w.allow.length ? ` · ${w.allow.length} own domain${w.allow.length === 1 ? "" : "s"} excluded` : ""}</span></div>
           <div class="list-sub">${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : w.last_status === "partial" ? "medium" : "high"}" title="${Object.entries(w.sources || {}).map(([k, v]) => `${k}: ${v.message || v.status}`).join("\n")}">${w.last_status}</span> ${timeAgo(w.last_run_at)} · ${w.last_message}` : "First check pending"}</div>
-          ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.severity] || ""}">${f.severity}</span> <span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
+          ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.triage?.severity || f.severity] || ""}">${f.triage?.severity || f.severity}</span> ${f.triage ? html`<span class="pill ${f.triage.verdict === "phishing" ? "critical" : ""}" title="${(f.triage.reasons || []).join("\n")}">${f.triage.label}</span> ` : ""}<span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
         <div class="actions">
+          <label class="small muted" title="Visit lookalikes' websites to spot cloned login pages">Websites ${webSelect("", w.web_check, w.id)}</label>
           <button class="btn sm ghost" data-act="brand-run" data-id="${w.id}" title="Check Certificate Transparency now">Run now</button>
           <button class="btn sm ghost icon" data-act="brand-delete" data-id="${w.id}" title="Stop watching" aria-label="Stop watching">${ico("trash")}</button>
         </div></div>`)}
   </div>`;
+}
+
+/** Off, direct, or one of the configured egress routes. */
+function webSelect(id, value, watchId = "") {
+  const options = [["off", "Don't visit"], ["direct", "Visit directly"], ...routes.map((r) => [r.name, `Through ${r.name}`])];
+  return html`<select class="select" style="width:auto;margin-left:6px" ${id ? html`id="${id}"` : ""} ${watchId ? html`data-act-change="brand-web" data-id="${watchId}"` : ""}>
+    ${options.map(([v, label]) => html`<option value="${v}" ${v === value ? "selected" : ""}>${label}</option>`)}</select>`;
 }

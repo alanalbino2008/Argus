@@ -10,6 +10,7 @@ import pytest
 
 from argus.intel import brand_watch
 from argus.intel.brand_watch import Certificate, SourceFailed, candidate_map, classify, findings_from, own_domains
+from argus.intel.lookalike_triage import WebProfile
 from argus.notify.render import alert_event
 
 RED = {"X-Argus-Workspace": "red-team"}
@@ -42,6 +43,23 @@ def bw(make_client, monkeypatch):
     watcher = client.app.state.brand_watcher
     watcher.kick = lambda: None
     watcher.http_factory = contextlib.nullcontext
+    state["dns"], state["web"], state["web_calls"] = {}, {}, []
+
+    async def fake_dns(name):
+        if name in state["dns"]:
+            return state["dns"][name]
+        if name.startswith("acmebank."):  # the brand's own domain
+            return {"ips": ["192.0.2.10"], "ns": ["ns1.acmebank.com"], "mx": ["mx.acmebank.com"]}
+        return {"ips": ["203.0.113.5"], "ns": ["ns1.cheap-host.example"], "mx": []}
+
+    async def fake_web(http, name):
+        state["web_calls"].append(name)
+        if name == "acmebank.com":
+            return WebProfile(True, 200, name, "AcmeBank | Online banking", False, "f" * 64)
+        return state["web"].get(name, WebProfile(True, 200, name, "Welcome to nginx", False, ""))
+
+    watcher.dns_lookup, watcher.web_lookup = fake_dns, fake_web
+    watcher.web_factory = lambda route: contextlib.nullcontext()
     return client, state
 
 

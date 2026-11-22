@@ -75,3 +75,9 @@ DELETE /api/brand-watches/{id}
 ```python
 client.watch_brand("acme.com", allow=["acme.co.uk"])
 ```
+
+## Triage (Phase 74)
+
+Every lookalike is then **triaged** (see [74 — Lookalike triage](74-lookalike-triage.md)): whether it
+resolves, can send email, is parked or is a defensive registration of yours, and, if you allow it,
+whether its website copies yours with a login form. The verdict sets the severity.

@@ -26,7 +26,7 @@ import asyncio
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -34,7 +34,9 @@ import aiohttp
 
 from argus.accounts import features
 from argus.core.settings import Settings
+from argus.intel import lookalike_triage
 from argus.intel.account_watch import client as outbound_client
+from argus.intel.lookalike_triage import Triage, judge
 from argus.intel.lookalikes import SENSITIVE_WORDS, Candidate, generate, registrable, split_domain
 from argus.storage.brand_watch_repo import BrandWatchRepository
 
@@ -48,6 +50,7 @@ CANDIDATES = 400  # lookalikes cycled through by name
 MAX_CERTS = 20000  # crt.sh rows read per run
 FRESH = timedelta(days=14)  # on the first run, only certificates this recent are news
 RETRY = timedelta(hours=1)
+RETRIAGE_PER_RUN = 25  # known lookalikes re-checked per run (oldest check first): parked ones go live later
 ALERT_SAMPLE = 20
 MAX_HOSTS = 10
 POLL_SECONDS = 300.0
@@ -84,6 +87,9 @@ class Finding:
     source: str
     hosts: tuple[str, ...] = ()  # host names seen on its certificates (up to MAX_HOSTS)
     host_count: int = 0
+    verdict: str = ""  # from triage: phishing, clone, mail, live, suspicious, parked, dormant
+    reasons: tuple[str, ...] = ()
+    escalated_from: str = ""  # set when a known lookalike got worse (e.g. parked -> phishing)
 
 
 # ----------------------------------------------------------------------------- classification
@@ -256,6 +262,10 @@ def alert_summary(watch: dict[str, Any], news: list[Finding], baseline: bool) ->
 def alert_headline(watch: dict[str, Any], news: list[Finding]) -> str:
     names = ", ".join(f.display for f in news[:3]) + (f" and {len(news) - 3} more" if len(news) > 3 else "")
     plural = "s" if len(news) != 1 else ""
+    if any(f.verdict == "phishing" for f in news):
+        return f"Active phishing page{plural} imitating {watch['domain']}: {names}"
+    if news and all(f.escalated_from for f in news):
+        return f"Lookalike domain{plural} of {watch['domain']} became more dangerous: {names}"
     return f"Lookalike domain{plural} of {watch['domain']} in Certificate Transparency: {names}"
 
 
@@ -291,8 +301,54 @@ class BrandWatcher:
         self.settings = settings
         self.raise_alert = raise_alert
         self.http_factory = http_factory or (lambda: outbound_client(settings, None))
+        self.web_factory: Callable[[str], Any] = self._web_client  # route name or "direct" -> HTTP client
+        self.dns_lookup: Callable[[str], Awaitable[dict[str, Any] | None]] = lookalike_triage.dns_profile
+        self.web_lookup: Callable[[Any, str], Awaitable[Any]] = lookalike_triage.web_profile
         self.poll_seconds = poll_seconds
         self._running: set[asyncio.Task[Any]] = set()
+
+    def _web_client(self, route_name: str) -> Any:
+        from argus.api.opsec_routes import find_route
+
+        route = None if route_name == "direct" else find_route(self.settings, route_name)
+        if route_name != "direct" and route is None:
+            raise SourceFailed(f"The route '{route_name}' is not configured any more")
+        return outbound_client(self.settings, route)
+
+    async def triage(self, watch: dict[str, Any], findings: dict[str, Finding]) -> tuple[dict[str, Triage], str | None]:
+        """Triage ``findings`` (name -> finding). Returns the verdicts and a problem, if the web check failed."""
+        domain = watch["domain"]
+        brand = split_domain(domain)[0]
+        own_dns = await self.dns_lookup(domain) or {}
+        own: dict[str, Any] = {"ns": {lookalike_triage.parent_domain(n) for n in own_dns.get("ns") or []},
+                               "ips": set(own_dns.get("ips") or [])}  # fmt: skip
+        dns_results = {}
+        gate = asyncio.Semaphore(10)
+
+        async def lookup(name: str) -> None:
+            async with gate:
+                dns_results[name] = await self.dns_lookup(name)
+
+        await asyncio.gather(*(lookup(n) for n in findings))
+        web_results: dict[str, Any] = {}
+        problem = None
+        mode = watch.get("web_check") or "off"
+        live = [n for n, d in dns_results.items() if d and d.get("ips")]
+        if mode != "off" and live:
+            try:
+                async with self.web_factory(mode) as http:
+                    mine = await self.web_lookup(http, domain)
+                    own["title"], own["favicon_sha256"] = mine.title, mine.favicon_sha256
+                    for name in live:
+                        web_results[name] = await self.web_lookup(http, name)
+            except SourceFailed as exc:
+                problem = str(exc)
+        verdicts = {}
+        for name, finding in findings.items():
+            sensitive = bool(_sensitive(name))
+            verdicts[name] = judge(finding.severity, brand, dns_results.get(name), own, web_results.get(name),
+                                   sensitive=sensitive)  # fmt: skip
+        return verdicts, problem
 
     def _key(self) -> str:
         value = getattr(self.settings, "certspotter_api_key", None)
@@ -380,7 +436,34 @@ class BrandWatcher:
             seen.add(finding.name)
             known.append(finding.name)
             fresh.append(finding)
-        news = [f for f in fresh if not baseline or _recent(f.not_before, now)]
+        # Triage the new lookalikes and re-check the known ones checked longest ago.
+        previous = watch.get("triage") or {}
+        details = watch.get("details") or {}
+        fresh_names = {f.name for f in fresh}
+        stale = sorted((n for n in known if n not in fresh_names),
+                       key=lambda n: (previous.get(n) or {}).get("checked_at", ""))[:RETRIAGE_PER_RUN]  # fmt: skip
+        to_check: dict[str, Finding] = {f.name: f for f in fresh}
+        for name in stale:
+            info = details.get(name) or {}
+            base = (previous.get(name) or {}).get("base_severity") or info.get("severity") or "medium"
+            to_check[name] = Finding(name, str(info.get("display") or name), name, str(info.get("technique") or ""),
+                                     str(info.get("detail") or ""), base, "", "", "", "")  # fmt: skip
+        verdicts, web_problem = await self.triage(watch, to_check)
+        stamp = now.isoformat()
+        triaged = {name: {**t.as_dict(stamp), "base_severity": to_check[name].severity} for name, t in verdicts.items()}
+        fresh = [replace(f, severity=verdicts[f.name].severity, verdict=verdicts[f.name].verdict,
+                         reasons=tuple(verdicts[f.name].reasons)) for f in fresh]  # fmt: skip
+        reportable = [f for f in fresh if f.verdict != "yours"]
+        news = [f for f in reportable if not baseline or _recent(f.not_before, now) or f.verdict == "phishing"]
+        for name in stale:
+            before, after = previous.get(name) or {}, verdicts[name]
+            if (before and after.verdict != "yours" and SEVERITY_ORDER[after.severity] >= SEVERITY_ORDER["high"]
+                    and SEVERITY_ORDER[after.severity] > SEVERITY_ORDER.get(before.get("severity", "low"), 0)):  # fmt: skip
+                news.append(replace(to_check[name], severity=after.severity, verdict=after.verdict,
+                                    reasons=tuple(after.reasons), escalated_from=str(before.get("verdict"))))  # fmt: skip
+        news.sort(key=lambda f: -SEVERITY_ORDER[f.severity])
+        if web_problem:
+            problems = "; ".join(p for p in (problems, web_problem) if p)
         alert = None
         if news:
             try:
@@ -394,7 +477,7 @@ class BrandWatcher:
         await self.repo.record(
             watch["id"], status=status, sources=sources, message=message, known=known,
             new=[asdict(f) for f in fresh], cursor=cursor, alerted=alert is not None,
-            retry_in=RETRY if failed else None,
+            retry_in=RETRY if failed else None, triage=triaged,
         )  # fmt: skip
         logger.info("Brand watch %s (%s): %s", watch["id"], domain, message)
         return {"watch_id": watch["id"], "status": status, "baseline": baseline, "new": len(news),

@@ -30,14 +30,20 @@ def _iso(value: datetime | None) -> str | None:
     return moment.isoformat() if moment else None
 
 
-def _view(row: BrandWatchRow) -> dict[str, Any]:
+def _view(row: BrandWatchRow, *, full: bool = False) -> dict[str, Any]:
+    """The watch as the API shows it; ``full`` adds what the watcher needs (every verdict and detail)."""
     data = row.data or {}
+    triage = data.get("triage") or {}
+    recent = [{**f, "triage": triage.get(f.get("name"))} for f in data.get("recent") or []]
+    extra = {"triage": triage, "details": data.get("details") or {}} if full else {}
     return {
+        **extra,
+        "web_check": data.get("web_check") or "off",
         "id": row.id,
         "domain": row.domain,
         "allow": data.get("allow") or [],
         "known": len(data.get("known") or []),
-        "recent": data.get("recent") or [],
+        "recent": recent,
         "sources": data.get("sources") or {},
         "last_message": data.get("last_message", ""),
         "baselined": bool(data.get("baselined")),
@@ -68,12 +74,13 @@ class BrandWatchRepository:
         return _view(row) if row else None
 
     async def create(
-        self, *, workspace_id: str, domain: str, allow: list[str], interval_hours: int, by: str
+        self, *, workspace_id: str, domain: str, allow: list[str], interval_hours: int, by: str, web_check: str = "off"
     ) -> dict[str, Any]:
         now = _now()
         row = BrandWatchRow(
             id=f"bw_{secrets.token_hex(8)}", workspace_id=workspace_id, domain=domain,
-            data={"allow": allow, "known": [], "recent": [], "cursor": 0}, interval_hours=interval_hours,
+            data={"allow": allow, "known": [], "recent": [], "cursor": 0, "web_check": web_check},
+            interval_hours=interval_hours,
             enabled=True, next_run_at=now, alerts_raised=0, created_by=by, created_at=now,
         )  # fmt: skip
         async with self.db.session() as s, s.begin():
@@ -91,12 +98,13 @@ class BrandWatchRepository:
             row = await s.get(BrandWatchRow, watch_id)
         return _view(row) if row is not None and row.workspace_id == workspace_id else None
 
-    async def update_allow(self, watch_id: str, workspace_id: str, allow: list[str]) -> dict[str, Any] | None:
+    async def update(self, watch_id: str, workspace_id: str, **changes: Any) -> dict[str, Any] | None:
+        """Change ``allow`` and/or ``web_check``."""
         async with self.db.session() as s, s.begin():
             row = await s.get(BrandWatchRow, watch_id)
             if row is None or row.workspace_id != workspace_id:
                 return None
-            row.data = {**(row.data or {}), "allow": allow}
+            row.data = {**(row.data or {}), **{k: v for k, v in changes.items() if k in ("allow", "web_check")}}
             return _view(row)
 
     async def delete(self, watch_id: str, workspace_id: str) -> bool:
@@ -119,7 +127,9 @@ class BrandWatchRepository:
         moment = now or _now()
         async with self.db.session() as s:
             rows = (await s.scalars(select(BrandWatchRow).where(BrandWatchRow.enabled.is_(True)))).all()
-        return [_view(r) for r in rows if (_utc(r.next_run_at) or moment) <= moment]  # in Python: SQLite drops tzinfo
+        return [
+            _view(r, full=True) for r in rows if (_utc(r.next_run_at) or moment) <= moment
+        ]  # in Python: SQLite drops tzinfo
 
     async def claim(self, watch_id: str, now: datetime | None = None) -> bool:
         """Atomically take a due watch: only one replica's UPDATE still sees it due."""
@@ -158,7 +168,7 @@ class BrandWatchRepository:
     async def record(
         self, watch_id: str, *, status: str, sources: dict[str, Any], message: str, known: list[str] | None = None,
         new: list[dict[str, Any]] | None = None, cursor: int | None = None, alerted: bool = False,
-        retry_in: timedelta | None = None,
+        retry_in: timedelta | None = None, triage: dict[str, dict[str, Any]] | None = None,
     ) -> None:  # fmt: skip
         async with self.db.session() as s, s.begin():
             row = await s.get(BrandWatchRow, watch_id)
@@ -178,7 +188,17 @@ class BrandWatchRepository:
                     details.setdefault(
                         finding["name"], {k: finding.get(k) for k in ("technique", "detail", "severity", "display")}
                     )
+                for name, verdict in (triage or {}).items():  # the current severity, for TAXII
+                    if name in details:
+                        details[name] = {
+                            **details[name],
+                            "severity": verdict["severity"],
+                            "verdict": verdict["verdict"],
+                        }
                 data["details"] = {k: v for k, v in details.items() if k in kept}
+                data["triage"] = {
+                    k: v for k, v in {**(data.get("triage") or {}), **(triage or {})}.items() if k in kept
+                }
             if new:
                 data["recent"] = (new + list(data.get("recent") or []))[:MAX_RECENT]
             if cursor is not None:

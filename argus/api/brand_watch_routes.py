@@ -29,10 +29,13 @@ class BrandWatchRequest(BaseModel):
     allow: list[str] = Field(default_factory=list, max_length=MAX_ALLOW,
                              description="Other domains the organisation owns: never reported")  # fmt: skip
     interval_hours: Literal[24, 168] = Field(default=24, description="Every day (24) or every week (168)")
+    web_check: str = Field(default="off", max_length=64,
+                           description="Visit lookalikes' websites: 'off', 'direct', or an egress route's name")  # fmt: skip
 
 
 class BrandWatchUpdate(BaseModel):
-    allow: list[str] = Field(max_length=MAX_ALLOW)
+    allow: list[str] | None = Field(default=None, max_length=MAX_ALLOW)
+    web_check: str | None = Field(default=None, max_length=64)
 
 
 def _repo(request: Request) -> Any:
@@ -47,6 +50,16 @@ def _domain(value: str) -> str:
         return registrable(name)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"{value!r} is not a domain name") from exc
+
+
+def _web_check(request: Request, value: str) -> str:
+    """'off', 'direct' or a configured route: visiting a phishing site tells its operator who looked."""
+    from argus.api.opsec_routes import find_route
+
+    value = value.strip() or "off"
+    if value not in ("off", "direct") and find_route(request.app.state.settings, value) is None:
+        raise HTTPException(status_code=422, detail=f"No route called '{value}' (see Settings → Investigator safety)")
+    return value
 
 
 def _allow(values: list[str], own: str) -> list[str]:
@@ -69,7 +82,8 @@ async def create_brand_watch(body: BrandWatchRequest, request: Request, ws: Work
         raise HTTPException(status_code=409, detail=f"{domain} is already watched")
     if await _repo(request).count(ws.id) >= MAX_WATCHES:
         raise HTTPException(status_code=422, detail=f"A workspace can watch up to {MAX_WATCHES} brands")
-    watch = await _repo(request).create(workspace_id=ws.id, domain=domain, allow=allow,
+    web_check = _web_check(request, body.web_check)
+    watch = await _repo(request).create(workspace_id=ws.id, domain=domain, allow=allow, web_check=web_check,
                                         interval_hours=body.interval_hours, by=ws.principal.name)  # fmt: skip
     await audit(request, ws.principal, "brand_watch.create", watch["id"], details={"domain": domain})
     request.app.state.brand_watcher.kick()
@@ -78,12 +92,18 @@ async def create_brand_watch(body: BrandWatchRequest, request: Request, ws: Work
 
 @router.patch("/brand-watches/{watch_id}")
 async def update_brand_watch(watch_id: str, body: BrandWatchUpdate, request: Request, ws: WorkspaceContext = ANALYST):
-    """Change the domains the organisation owns (they are never reported)."""
+    """Change the domains the organisation owns (never reported) or whether lookalikes' sites are visited."""
     current = await _repo(request).get(watch_id, ws.id)
     if current is None:
         raise HTTPException(status_code=404, detail="Brand watch not found")
-    updated = await _repo(request).update_allow(watch_id, ws.id, _allow(body.allow, current["domain"]))
-    await audit(request, ws.principal, "brand_watch.update", watch_id, details={"allow": len(updated["allow"])})
+    changes: dict[str, Any] = {}
+    if body.allow is not None:
+        changes["allow"] = _allow(body.allow, current["domain"])
+    if body.web_check is not None:
+        changes["web_check"] = _web_check(request, body.web_check)
+    updated = await _repo(request).update(watch_id, ws.id, **changes)
+    await audit(request, ws.principal, "brand_watch.update", watch_id,
+                details={"allow": len(updated["allow"]), "web_check": updated["web_check"]})  # fmt: skip
     return updated
 
 

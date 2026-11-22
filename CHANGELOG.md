@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.74.0] — Phase 74: Lookalike triage
+
+### Added
+- **Every lookalike is triaged.** Brand watch no longer stops at "a certificate exists". For each new
+  lookalike, and for the 25 known ones checked longest ago on every run, Argus asks:
+  - **DNS (passive, always):** does it resolve, does it have **mail servers** (it can send phishing
+    email), is it **parked** (parking or resale name servers), or is it **yours** (a defensive
+    registration on your own name servers)?
+  - **Web (opt-in):** does the site answer, does it show a **password field**, and does it use **your
+    favicon** or **your page title**? A copy of your site with a password field is an **active
+    phishing page**.
+- **Severity follows the verdict:** active phishing is critical; a copy of your site, or a
+  mail-capable lookalike with a word like `login` or `pay`, is high; parked and dormant names are low;
+  your own defensive registrations are not reported. Each finding shows its verdict and reasons.
+- **Escalation alerts.** A known lookalike that gets worse (parked → live copy of your login page)
+  raises an alert, though it is not new. On the first run, an active phishing page always alerts,
+  however old its certificate.
+- **Visiting websites is your choice, per watch:** *Don't visit* (default), *Visit directly*, or
+  *Through* one of the egress routes (Tor, a VPN), because a visit tells the site's operator that
+  someone looked, and from where.
+
+### Changed
+- Sharing a **shared DNS provider** (Cloudflare, Route 53, Azure DNS, GoDaddy and others) or a CDN
+  address with the brand no longer marks a lookalike as the brand's own: a phishing site on Cloudflare
+  shares the brand's Cloudflare name servers. Only the brand's own name servers (or its addresses
+  behind its own name servers) count. This also applies to the lookalike check in scans.
+
 ## [1.73.0] — Phase 73: A TAXII 2.1 threat-intelligence feed
 
 ### Added
