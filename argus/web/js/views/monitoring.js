@@ -2,7 +2,7 @@
 
 import { api, enc } from "../api.js";
 import { empty, ico, severityPill } from "../components.js";
-import { confirmDialog, html, on, setHTML, timeAgo, toast } from "../dom.js";
+import { $, closeModal, confirmDialog, copyText, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, state } from "../state.js";
 import { handleNotificationAction, initNotifications, loadNotifications, notificationsCard } from "./notifications.js";
 import { handleScheduleAction, initSchedules, loadSchedules, schedulesCard } from "./schedules.js";
@@ -58,6 +58,8 @@ export function initMonitoring(el, appActions) {
         await api.post("/api/brand-watches", { domain, allow, web_check });
         brandForm = false;
         toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
+      } else if (act === "takedown") {
+        return openTakedown(id, btn.dataset.domain);
       } else if (act === "brand-run") {
         await api.post(`/api/brand-watches/${enc(id)}/run`);
         toast("Checking Certificate Transparency now: results show here in a minute", "success");
@@ -194,7 +196,7 @@ function brandCard() {
       : brandWatches.map((w) => html`<div class="list-row" style="align-items:flex-start">
         <div class="list-main"><div class="list-title"><b>${w.domain}</b> <span class="muted small">every ${w.interval_hours === 24 ? "day" : "week"} · ${w.known} lookalike${w.known === 1 ? "" : "s"} known${w.allow.length ? ` · ${w.allow.length} own domain${w.allow.length === 1 ? "" : "s"} excluded` : ""}</span></div>
           <div class="list-sub">${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : w.last_status === "partial" ? "medium" : "high"}" title="${Object.entries(w.sources || {}).map(([k, v]) => `${k}: ${v.message || v.status}`).join("\n")}">${w.last_status}</span> ${timeAgo(w.last_run_at)} · ${w.last_message}` : "First check pending"}</div>
-          ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.triage?.severity || f.severity] || ""}">${f.triage?.severity || f.severity}</span> ${f.triage ? html`<span class="pill ${f.triage.verdict === "phishing" ? "critical" : ""}" title="${(f.triage.reasons || []).join("\n")}">${f.triage.label}</span> ` : ""}<span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
+          ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.triage?.severity || f.severity] || ""}">${f.triage?.severity || f.severity}</span> ${f.triage ? html`<span class="pill ${f.triage.verdict === "phishing" ? "critical" : ""}" title="${(f.triage.reasons || []).join("\n")}">${f.triage.label}</span> ` : ""}${takedownPill(w, f)}<span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
         <div class="actions">
           <label class="small muted" title="Visit lookalikes' websites to spot cloned login pages">Websites ${webSelect("", w.web_check, w.id)}</label>
           <button class="btn sm ghost" data-act="brand-run" data-id="${w.id}" title="Check Certificate Transparency now">Run now</button>
@@ -208,4 +210,65 @@ function webSelect(id, value, watchId = "") {
   const options = [["off", "Don't visit"], ["direct", "Visit directly"], ...routes.map((r) => [r.name, `Through ${r.name}`])];
   return html`<select class="select" style="width:auto;margin-left:6px" ${id ? html`id="${id}"` : ""} ${watchId ? html`data-act-change="brand-web" data-id="${watchId}"` : ""}>
     ${options.map(([v, label]) => html`<option value="${v}" ${v === value ? "selected" : ""}>${label}</option>`)}</select>`;
+}
+
+const TAKEDOWN = { drafted: ["", "Takedown drafted"], reported: ["medium", "Reported"], down: ["ok", "Taken down"], closed: ["", "Takedown closed"] };
+
+/** A takedown's state, or a button to start one (for anything not defensive or already down). */
+function takedownPill(w, f) {
+  const t = (w.takedowns || {})[f.name];
+  if (t) {
+    const [cls, label] = TAKEDOWN[t.status] || ["", t.status];
+    const when = t.status === "down" && t.reported_at ? ` after ${timeAgo(t.reported_at).replace(" ago", "")}` : "";
+    return html`<button class="pill ${cls}" style="cursor:pointer;border:0" data-act="takedown" data-id="${w.id}" data-domain="${f.name}" title="Open the takedown request">${label}${when}</button> `;
+  }
+  if (!["analyst", "admin"].includes(state.workspace?.role) || ["yours", "dormant"].includes(f.triage?.verdict)) return "";
+  return html`<button class="btn sm ghost" style="padding:0 6px" data-act="takedown" data-id="${w.id}" data-domain="${f.name}">Report abuse</button> `;
+}
+
+async function openTakedown(watchId, domain) {
+  let watch = brandWatches.find((w) => w.id === watchId);
+  let record = watch?.takedowns?.[domain];
+  if (!record) {
+    toast(`Looking up ${domain}'s registrar and host…`);
+    record = await api.post(`/api/brand-watches/${enc(watchId)}/takedowns`, { domain });
+    await refresh();
+    watch = brandWatches.find((w) => w.id === watchId);
+  }
+  const d = record.draft || { to: [], subject: "", body: "" };
+  const reg = record.contacts?.registrar || {};
+  const contacts = [reg.registrar && `Registrar: ${reg.registrar}${reg.abuse_email ? ` (${reg.abuse_email})` : ""}`,
+    ...(record.contacts?.hosts || []).map((h) => `Host of ${h.ip}: ${h.network || "unknown"}${h.abuse_email ? ` (${h.abuse_email})` : ""}`)].filter(Boolean);
+  setHTML($("#takedown-title"), html`Takedown request: <span class="mono">${domain}</span>`);
+  setHTML($("#takedown-body"), html`
+    <dl class="kv"><dt>Status</dt><dd>${(TAKEDOWN[record.status] || ["", record.status])[1]}${record.reported_at ? ` · reported ${timeAgo(record.reported_at)}` : ""}${record.down_at ? ` · down ${timeAgo(record.down_at)}` : ""}</dd>
+      <dt>Send to</dt><dd class="mono">${d.to.length ? d.to.join(", ") : "No abuse address in RDAP: use the registrar's abuse form"}</dd>
+      ${contacts.length ? html`<dt>Found in RDAP</dt><dd>${contacts.map((c) => html`<div class="small">${c}</div>`)}</dd>` : ""}
+      <dt>Subject</dt><dd><input id="takedown-subject" class="input" value="${d.subject}"></dd></dl>
+    <textarea id="takedown-text" class="textarea" rows="16" style="width:100%;margin-top:8px;font-family:var(--mono, monospace);font-size:12px">${d.body}</textarea>
+    ${(record.history || []).length ? html`<p class="muted small" style="margin-top:8px">${record.history.map((h) => `${h.event} ${timeAgo(h.at)}${h.by ? ` by ${h.by}` : ""}`).join(" · ")}</p>` : ""}`);
+  const open = ["drafted", "reported"].includes(record.status);
+  setHTML($("#takedown-foot"), html`
+    <button class="btn ghost" data-close>Close</button>
+    <button class="btn" data-td="copy">Copy text</button>
+    <button class="btn" data-td="mail" ${d.to.length ? "" : "disabled"}>Open in email</button>
+    ${open ? html`<button class="btn ghost" data-td="close-takedown" title="Stop tracking (refused, false alarm, handled elsewhere)">Stop tracking</button>` : ""}
+    ${record.status === "drafted" ? html`<button class="btn primary" data-td="reported">Mark as reported</button>` : ""}`);
+  const foot = $("#takedown-foot");
+  foot.onclick = async (e) => {
+    const action = e.target.closest("[data-td]")?.dataset.td;
+    if (!action) return;
+    const subject = $("#takedown-subject").value;
+    const body = $("#takedown-text").value;
+    try {
+      if (action === "copy") return copyText(`To: ${d.to.join(", ")}\nSubject: ${subject}\n\n${body}`);
+      if (action === "mail") { window.location.href = `mailto:${d.to.map(encodeURIComponent).join(",")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; return; }
+      if (action === "reported") await api.post(`/api/brand-watches/${enc(watchId)}/takedowns/${enc(domain)}/reported`);
+      if (action === "close-takedown") await api.post(`/api/brand-watches/${enc(watchId)}/takedowns/${enc(domain)}/close`, { reason: "" });
+      closeModal("takedown-modal");
+      toast(action === "reported" ? "Reported: Argus will tell you when it goes down" : "No longer tracked", "success");
+      refresh();
+    } catch (err) { toast(err.message, "error"); }
+  };
+  openModal("takedown-modal");
 }

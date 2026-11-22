@@ -122,3 +122,88 @@ async def delete_brand_watch(watch_id: str, request: Request, ws: WorkspaceConte
         raise HTTPException(status_code=404, detail="Brand watch not found")
     await audit(request, ws.principal, "brand_watch.delete", watch_id)
     return Response(status_code=204)
+
+
+# ----------------------------------------------------------------------------- takedowns
+class TakedownRequest(BaseModel):
+    domain: str = Field(min_length=3, max_length=253, description="A lookalike this watch found")
+    organisation: str = Field(default="", max_length=200, description="Who the report is from (signs it)")
+
+
+class TakedownClose(BaseModel):
+    reason: str = Field(default="", max_length=300)
+
+
+def _finding(watch: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((f for f in watch.get("recent") or [] if f.get("name") == name), None)
+
+
+@router.post("/brand-watches/{watch_id}/takedowns", status_code=201)
+async def draft_takedown(watch_id: str, body: TakedownRequest, request: Request, ws: WorkspaceContext = ANALYST):
+    """Draft an abuse report for a lookalike: its registrar's and host's abuse contacts (from RDAP) and
+    the evidence triage found. Argus does not send it: send it from your mailbox, then mark it reported."""
+    from argus.intel import takedown
+
+    watch = await _repo(request).get(watch_id, ws.id)
+    if watch is None:
+        raise HTTPException(status_code=404, detail="Brand watch not found")
+    name = body.domain.strip().lower()
+    finding = _finding(watch, name)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="This watch has not found that domain")
+    current = (watch.get("takedowns") or {}).get(name)
+    if current and current.get("status") in ("drafted", "reported"):
+        raise HTTPException(status_code=409, detail="A takedown is already open for this domain")
+    triage = finding.get("triage") or {}
+    found = await request.app.state.brand_watcher.takedown_contacts(name, (triage.get("dns") or {}).get("ips") or [])
+    letter = takedown.draft(domain=name, display=finding.get("display") or name, brand=watch["domain"],
+                            finding=finding, triage=triage, found=found, organisation=body.organisation.strip())  # fmt: skip
+    record = await _repo(request).put_takedown(
+        watch_id, ws.id, name,
+        {"status": "drafted", "contacts": found, "draft": letter, "created_by": ws.principal.name,
+         "verdict_at_report": triage.get("verdict"), "misses": 0},
+        {"event": "drafted", "by": ws.principal.name},
+    )  # fmt: skip
+    await audit(
+        request, ws.principal, "takedown.draft", watch_id, details={"domain": name, "recipients": len(letter["to"])}
+    )
+    return record
+
+
+@router.post("/brand-watches/{watch_id}/takedowns/{domain}/reported")
+async def takedown_reported(watch_id: str, domain: str, request: Request, ws: WorkspaceContext = ANALYST):
+    """Record that the abuse report was sent; Argus then watches for the domain going down."""
+    record = await _takedown(request, ws, watch_id, domain)
+    if record.get("status") not in ("drafted", "reported"):
+        raise HTTPException(status_code=409, detail=f"This takedown is {record.get('status')}")
+    from datetime import datetime, timezone
+
+    changed = await _repo(request).put_takedown(
+        watch_id, ws.id, domain, {"status": "reported", "reported_at": datetime.now(timezone.utc).isoformat(),
+                                  "reported_by": ws.principal.name},
+        {"event": "reported", "by": ws.principal.name},
+    )  # fmt: skip
+    await audit(request, ws.principal, "takedown.reported", watch_id, details={"domain": domain})
+    return changed
+
+
+@router.post("/brand-watches/{watch_id}/takedowns/{domain}/close")
+async def takedown_close(
+    watch_id: str, domain: str, body: TakedownClose, request: Request, ws: WorkspaceContext = ANALYST
+):
+    """Stop tracking a takedown (refused, handled elsewhere, a false alarm)."""
+    await _takedown(request, ws, watch_id, domain)
+    changed = await _repo(request).put_takedown(
+        watch_id, ws.id, domain, {"status": "closed", "close_reason": body.reason.strip()},
+        {"event": "closed", "by": ws.principal.name, "reason": body.reason.strip()},
+    )  # fmt: skip
+    await audit(request, ws.principal, "takedown.close", watch_id, details={"domain": domain})
+    return changed
+
+
+async def _takedown(request: Request, ws: WorkspaceContext, watch_id: str, domain: str) -> dict[str, Any]:
+    watch = await _repo(request).get(watch_id, ws.id)
+    record = (watch or {}).get("takedowns", {}).get(domain.strip().lower())
+    if record is None:
+        raise HTTPException(status_code=404, detail="No takedown for that domain")
+    return dict(record)

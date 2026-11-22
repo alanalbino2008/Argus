@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.75.0] — Phase 75: Takedown requests
+
+### Added
+- **Report abuse, from the finding.** On any lookalike in Monitoring → Brand watch, **Report abuse**
+  looks up who can take it down in RDAP (the domain's **registrar** and its IANA id, and the
+  **hosting network** of each address, with their abuse emails; RDAP goes to the registries, never to
+  the lookalike) and drafts the abuse report: what it imitates, when it got its first certificate,
+  the triage evidence (your favicon, your page title, a password field, mail servers), its addresses
+  and host names, the registrar and the host.
+- **You send it.** Argus does not email third parties on your behalf: **Open in email** fills your
+  mail client (recipients, subject, text), **Copy text** copies it, and the text can be edited first.
+  Then **Mark as reported**.
+- **Followed until it is down.** Domains with an open takedown are re-checked on every run. When the
+  name stops resolving (the registrar suspended it), or its website has gone on two runs in a row
+  (with website checks on), the takedown is marked **Taken down** and a low-severity alert says so.
+  Each takedown keeps its history (drafted, reported, checks, down or closed, and by whom), and can
+  be closed (refused, handled elsewhere).
+- API: `POST /api/brand-watches/{id}/takedowns`, `…/takedowns/{domain}/reported`,
+  `…/takedowns/{domain}/close`; takedowns appear in `GET /api/brand-watches`. Python client:
+  `draft_takedown()`, `takedown_reported()`. All audited.
+
 ## [1.74.0] — Phase 74: Lookalike triage
 
 ### Added

@@ -39,6 +39,7 @@ def _view(row: BrandWatchRow, *, full: bool = False) -> dict[str, Any]:
     return {
         **extra,
         "web_check": data.get("web_check") or "off",
+        "takedowns": data.get("takedowns") or {},
         "id": row.id,
         "domain": row.domain,
         "allow": data.get("allow") or [],
@@ -106,6 +107,23 @@ class BrandWatchRepository:
                 return None
             row.data = {**(row.data or {}), **{k: v for k, v in changes.items() if k in ("allow", "web_check")}}
             return _view(row)
+
+    async def put_takedown(
+        self, watch_id: str, workspace_id: str | None, name: str, changes: dict[str, Any], event: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Create or change one takedown record (merging ``changes``) and add ``event`` to its history."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(BrandWatchRow, watch_id)
+            if row is None or (workspace_id is not None and row.workspace_id != workspace_id):
+                return None
+            data = dict(row.data or {})
+            takedowns = dict(data.get("takedowns") or {})
+            record = {**(takedowns.get(name) or {"history": []}), **changes}
+            record["history"] = [*record.get("history", []), {"at": _now().isoformat(), **event}][-50:]
+            takedowns[name] = record
+            data["takedowns"] = takedowns
+            row.data = data
+            return record
 
     async def delete(self, watch_id: str, workspace_id: str) -> bool:
         async with self.db.session() as s, s.begin():

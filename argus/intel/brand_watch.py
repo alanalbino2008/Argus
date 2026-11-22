@@ -262,6 +262,8 @@ def alert_summary(watch: dict[str, Any], news: list[Finding], baseline: bool) ->
 def alert_headline(watch: dict[str, Any], news: list[Finding]) -> str:
     names = ", ".join(f.display for f in news[:3]) + (f" and {len(news) - 3} more" if len(news) > 3 else "")
     plural = "s" if len(news) != 1 else ""
+    if news and all(f.verdict == "taken_down" for f in news):
+        return f"Taken down: {names} (lookalike{plural} of {watch['domain']})"
     if any(f.verdict == "phishing" for f in news):
         return f"Active phishing page{plural} imitating {watch['domain']}: {names}"
     if news and all(f.escalated_from for f in news):
@@ -349,6 +351,40 @@ class BrandWatcher:
             verdicts[name] = judge(finding.severity, brand, dns_results.get(name), own, web_results.get(name),
                                    sensitive=sensitive)  # fmt: skip
         return verdicts, problem
+
+    async def _follow_takedowns(
+        self,
+        watch: dict[str, Any],
+        tracked: list[str],
+        triaged: dict[str, dict[str, Any]],
+        to_check: dict[str, Finding],
+    ) -> list[Finding]:
+        """Mark open takedowns whose domain went down; returns them (for a low-severity alert)."""
+        from argus.intel import takedown
+
+        down = []
+        web_checked = (watch.get("web_check") or "off") != "off"
+        for name in tracked:
+            record = (watch.get("takedowns") or {}).get(name) or {}
+            gone, misses = takedown.went_down(triaged[name], web_checked, int(record.get("misses") or 0))
+            if gone:
+                stamp = datetime.now(timezone.utc).isoformat()
+                await self.repo.put_takedown(watch["id"], None, name, {"status": "down", "down_at": stamp, "misses": misses},
+                                             {"event": "down", "by": "Argus", "verdict": triaged[name]["verdict"]})  # fmt: skip
+                down.append(replace(to_check[name], severity="low", verdict="taken_down",
+                                    reasons=(f"Down: {triaged[name]['label'].lower()}",)))  # fmt: skip
+            elif misses != int(record.get("misses") or 0):
+                await self.repo.put_takedown(
+                    watch["id"], None, name, {"misses": misses}, {"event": "check", "by": "Argus"}
+                )
+        return down
+
+    async def takedown_contacts(self, domain: str, ips: list[str]) -> dict[str, Any]:
+        """Registrar and host abuse contacts (RDAP goes to the registries, not to the lookalike)."""
+        from argus.intel import takedown
+
+        async with outbound_client(self.settings, None) as http:
+            return await takedown.contacts(http, domain, ips)
 
     def _key(self) -> str:
         value = getattr(self.settings, "certspotter_api_key", None)
@@ -440,8 +476,10 @@ class BrandWatcher:
         previous = watch.get("triage") or {}
         details = watch.get("details") or {}
         fresh_names = {f.name for f in fresh}
-        stale = sorted((n for n in known if n not in fresh_names),
-                       key=lambda n: (previous.get(n) or {}).get("checked_at", ""))[:RETRIAGE_PER_RUN]  # fmt: skip
+        takedowns = watch.get("takedowns") or {}
+        tracked = [n for n, t in takedowns.items() if t.get("status") in ("drafted", "reported") and n in known]
+        stale = tracked + sorted((n for n in known if n not in fresh_names and n not in tracked),
+                                 key=lambda n: (previous.get(n) or {}).get("checked_at", ""))[:RETRIAGE_PER_RUN]  # fmt: skip
         to_check: dict[str, Finding] = {f.name: f for f in fresh}
         for name in stale:
             info = details.get(name) or {}
@@ -462,6 +500,9 @@ class BrandWatcher:
                 news.append(replace(to_check[name], severity=after.severity, verdict=after.verdict,
                                     reasons=tuple(after.reasons), escalated_from=str(before.get("verdict"))))  # fmt: skip
         news.sort(key=lambda f: -SEVERITY_ORDER[f.severity])
+        taken_down = await self._follow_takedowns(watch, tracked, triaged, to_check)
+        if taken_down and not news:
+            news = taken_down
         if web_problem:
             problems = "; ".join(p for p in (problems, web_problem) if p)
         alert = None
