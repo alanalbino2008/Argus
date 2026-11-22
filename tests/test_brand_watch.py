@@ -39,7 +39,7 @@ def bw(make_client, monkeypatch):
 
     monkeypatch.setattr(brand_watch, "crtsh", fake_crtsh)
     monkeypatch.setattr(brand_watch, "certspotter", fake_certspotter)
-    client = make_client(monitors_enabled="false")
+    client = make_client(monitors_enabled="false", notifications_enabled="false", encryption_key="k" * 40)
     watcher = client.app.state.brand_watcher
     watcher.kick = lambda: None
     watcher.http_factory = contextlib.nullcontext

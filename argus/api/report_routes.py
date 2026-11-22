@@ -124,8 +124,9 @@ async def verify_report(sha256: str, request: Request):
 
 # ---------------------------------------------------------------------------- scheduled reports
 class ScheduleOptions(BaseModel):
-    kind: Literal["assessment", "board"] = Field(
-        default="assessment", description="assessment: one target's report; board: the workspace's board report"
+    kind: Literal["assessment", "board", "brand"] = Field(
+        default="assessment",
+        description="assessment: one target's report; board: the workspace's board report; brand: brand protection",
     )
     period_days: Literal[30, 90, 180] = Field(default=90, description="Board reports: the period covered")
     prepared_for: str = Field(default="", max_length=200)
@@ -204,10 +205,12 @@ async def create_schedule(body: ScheduleRequest, request: Request, ws: Workspace
         values["weekday"] = None
     _check_timing(values)
     await _check_channels(request, ws.id, body.channel_ids)
-    board = body.options.kind == "board"
+    board = body.options.kind in ("board", "brand")
     if not board and not body.target.strip():
         raise HTTPException(status_code=422, detail="Choose the target this report is about")
-    values["target"] = BOARD_TARGET if board else body.target.strip()
+    values["target"] = (
+        ("Brand protection" if body.options.kind == "brand" else BOARD_TARGET) if board else body.target.strip()
+    )
     values["name"] = body.name.strip()
     values["channel_ids"] = list(dict.fromkeys(body.channel_ids))
     schedule = await _schedules(request).create(workspace_id=ws.id, by=ws.principal.name, **values)

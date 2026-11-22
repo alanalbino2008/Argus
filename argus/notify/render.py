@@ -142,6 +142,32 @@ def report_event(
     }
 
 
+def brand_event(
+    record: dict[str, Any],
+    summary: dict[str, Any],
+    schedule: dict[str, Any],
+    workspace: dict[str, Any],
+    public_url: str | None,
+) -> dict[str, Any]:
+    """A scheduled brand-protection report is ready: the headline numbers (email also gets the PDF)."""
+    take = summary["takedowns"]
+    return {
+        "type": "report.scheduled",
+        "id": f"evt_report_{record['id']}",
+        "occurred_at": record.get("created_at") or _now_iso(),
+        "workspace": {"id": workspace.get("id"), "name": workspace.get("name")},
+        "report": {
+            "id": record["id"], "kind": "brand", "schedule": {"id": schedule["id"], "name": schedule["name"]},
+            "target": record["target"], "investigation_id": None, "period_days": summary["period_days"],
+            "open_threats": summary["open_threats"]["count"], "new_lookalikes": summary["found"]["new"],
+            "taken_down": take["down_in_period"], "median_days_to_down": take["median_days_to_down"],
+            "campaigns": summary["campaigns"]["count"], "tlp": record["tlp"], "prepared_for": record.get("prepared_for"),
+            "sha256": record["sha256"], "url": _link(public_url, f"/?ws={workspace.get('id')}#/monitoring"),
+            "verify_url": _link(public_url, f"/api/reports/verify/{record['sha256']}"),
+        },
+    }  # fmt: skip
+
+
 def board_event(
     record: dict[str, Any],
     summary: dict[str, Any],
@@ -181,6 +207,18 @@ def _report_lines(event: dict[str, Any], *, attached: bool) -> list[str]:
         return [
             f"Overall: {str(r['overall']).upper()}. {r['verdict']}",
             *r["messages"],
+            f"Classification: TLP:{r['tlp']}"
+            + (f" · prepared for {r['prepared_for']}" if r.get("prepared_for") else ""),
+            f"Report {r['id']} · SHA-256 {r['sha256']}",
+            "The PDF is attached." if attached else "Download the PDF from Argus.",
+        ]
+    if r.get("kind") == "brand":
+        median = r.get("median_days_to_down")
+        return [
+            f"{r['open_threats']} open threat(s) · {r['new_lookalikes']} new lookalike domain(s) in "
+            f"{r['period_days']} days · {r['taken_down']} taken down"
+            + (f" (median {median:g} days from report to takedown)" if median is not None else ""),
+            f"{r['campaigns']} campaign(s) sharing infrastructure",
             f"Classification: TLP:{r['tlp']}"
             + (f" · prepared for {r['prepared_for']}" if r.get("prepared_for") else ""),
             f"Report {r['id']} · SHA-256 {r['sha256']}",
@@ -228,6 +266,11 @@ def _title(event: dict[str, Any]) -> str:
         report = event["report"]
         if report.get("kind") == "board":
             return f"{report['schedule']['name']}: board report ({str(report['overall']).upper()})"
+        if report.get("kind") == "brand":
+            threats = report["open_threats"]
+            return (
+                f"{report['schedule']['name']}: brand protection ({threats} open threat{'s' if threats != 1 else ''})"
+            )
         return f"{report['schedule']['name']}: {report['target']} ({str(report['rating']).upper()})"
     if event["type"] == "alert.raised":
         alert = event["alert"]

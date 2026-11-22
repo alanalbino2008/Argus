@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.79.0] — Phase 79: The brand-protection report
+
+### Added
+- **Brand protection in five numbers.** Monitoring → Brand watch opens with the last 90 days: open
+  threats (active phishing pages, copies of your site and high-severity mail-capable lookalikes not
+  yet taken down), new lookalikes, takedowns that succeeded, the **median time to takedown** (from
+  report to down), and campaigns.
+- **The report for management (PDF).** Headline numbers, the weekly trend of new lookalikes and
+  takedowns, the open threats, the takedowns waiting longest, the campaigns and every watched brand,
+  with a note on how to read it. Registered and verifiable by its SHA-256 like every Argus report,
+  marked with its TLP, and escaped throughout (domain names come from whoever registered them).
+- **Scheduled.** A new report kind in scheduled reports, *Brand protection*: every week or month to
+  Slack, Teams, email (with the PDF) or webhooks, with the headline numbers in the message.
+- API: `GET /api/brand-protection/summary?days=`, `POST /api/brand-protection/report`, schedule
+  `options.kind: "brand"`; Python client: `brand_protection()`, `brand_protection_report()`.
+
 ## [1.78.0] — Phase 78: Visual clone detection
 
 ### Added

@@ -55,11 +55,12 @@ export function schedulesCard() {
 }
 
 function toggleKind() {
-  const board = $("#schedule-kind").value === "board";
+  const board = ["board", "brand"].includes($("#schedule-kind").value); // workspace-wide: no target
   $("#schedule-target-field").hidden = board;
   $("#schedule-period-field").hidden = !board;
   document.querySelectorAll("#schedule-form .assessment-only").forEach((el) => { el.hidden = board; });
-  $("#schedule-name").placeholder = board ? "e.g. Monthly board report" : "e.g. Weekly exposure — Acme";
+  $("#schedule-name").placeholder = $("#schedule-kind").value === "brand" ? "e.g. Monthly brand protection"
+    : board ? "e.g. Monthly board report" : "e.g. Weekly exposure — Acme";
 }
 
 /** Open the dialog preset for a monthly board report (from the Executive page). */
@@ -136,7 +137,8 @@ export function initSchedules(refresh) {
     const channelIds = [...document.querySelectorAll("#schedule-channels input:checked")].map((i) => i.value);
     const [hour, minute] = ($("#schedule-time").value || "08:00").split(":").map(Number);
     const monthly = $("#schedule-frequency").value === "monthly";
-    const board = $("#schedule-kind").value === "board";
+    const kind = $("#schedule-kind").value;
+    const board = ["board", "brand"].includes(kind);
     const body = {
       name: $("#schedule-name").value.trim(),
       target: board ? "" : $("#schedule-target").value.trim(),
@@ -147,7 +149,7 @@ export function initSchedules(refresh) {
       timezone: $("#schedule-tz").value,
       channel_ids: channelIds,
       skip_unchanged: $("#schedule-skip").checked,
-      options: { kind: board ? "board" : "assessment", period_days: Number($("#schedule-period").value), prepared_for: $("#schedule-for").value.trim(), tlp: $("#schedule-tlp").value, include_inventory: $("#schedule-inventory").checked, compare_previous: $("#schedule-compare").checked },
+      options: { kind, period_days: Number($("#schedule-period").value), prepared_for: $("#schedule-for").value.trim(), tlp: $("#schedule-tlp").value, include_inventory: $("#schedule-inventory").checked, compare_previous: $("#schedule-compare").checked },
     };
     if (!body.name || (!board && !body.target)) return (error.textContent = board ? "Give the schedule a name." : "Give the schedule a name and a target.");
     if (!channelIds.length) return (error.textContent = "Choose at least one destination.");

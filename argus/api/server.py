@@ -65,6 +65,7 @@ from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
 from argus.api.brand_watch_routes import router as brand_watch_router
 from argus.api.business_routes import router as business_router
+from argus.api.campaign_routes import issue_brand_report
 from argus.api.campaign_routes import router as campaign_router
 from argus.api.case_report_routes import router as case_report_router
 from argus.api.case_routes import router as case_router
@@ -348,7 +349,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.report_scheduler = ReportScheduler(
         app.state.schedules, repo, app.state.reports, app.state.workspaces, app.state.audit, settings,
-        board=partial(issue_board_report, app),
+        board=partial(issue_board_report, app), brand=partial(issue_brand_report, app),
     )  # fmt: skip
     report_task = (
         asyncio.create_task(app.state.report_scheduler.run_forever(), name="report-scheduler")

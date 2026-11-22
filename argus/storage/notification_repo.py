@@ -109,6 +109,8 @@ def _summary(event: dict[str, Any]) -> str:
         report = event.get("report") or {}
         if report.get("kind") == "board":
             return f"Board report {report.get('id')} ({str(report.get('overall', '')).upper()})"[:300]
+        if report.get("kind") == "brand":
+            return f"Brand-protection report {report.get('id')} ({report.get('open_threats', 0)} open threats)"[:300]
         return f"Report {report.get('id')} for {report.get('target')} ({str(report.get('rating', '')).upper()})"[:300]
     if event.get("type") == "alert.raised":
         alert = event.get("alert") or {}

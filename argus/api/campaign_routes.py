@@ -6,7 +6,7 @@ and the team's tags have already recorded: nothing is looked up.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -132,3 +132,79 @@ async def campaign_takedown(campaign_id: str, body: CampaignTakedown, request: R
         "domains": [{"domain": m["value"], "watch_id": m["watch_id"]} for m in lookalikes],
         "drafted": [i["domain"] for i in items], "already_open": [m["value"] for m in existing],
     }  # fmt: skip
+
+
+# ----------------------------------------------------------------------------- brand-protection metrics
+BRAND_TARGET = "Brand protection"
+
+
+@router.get("/brand-protection/summary")
+async def brand_protection_summary(request: Request, ws: WorkspaceContext = VIEWER, days: int = 90):
+    """Lookalikes found, open threats, takedowns (with median time to takedown), campaigns and weekly trend."""
+    from argus.intel.brand_metrics import summarise
+
+    days = max(7, min(days, 365))
+    watches = await request.app.state.brand_watches.first_seen(ws.id)
+    return summarise(watches, await campaigns_of(request, ws.id), days=days)
+
+
+async def issue_brand_report(
+    app: Any, workspace: dict[str, Any], *, days: int, tlp: str, prepared_for: str, issued_by: str,
+    trigger: str = "manual", keep_file_for: Any = None, after_record: Any = None,
+) -> dict[str, Any]:  # fmt: skip
+    """Render, fingerprint and register a brand-protection report (one code path for the API and schedules)."""
+    import hashlib
+    from datetime import datetime, timezone
+
+    from argus import __version__
+    from argus.intel.brand_metrics import summarise
+    from argus.observability import metrics
+    from argus.reports.brand import render_brand_pdf
+    from argus.reports.data import new_report_id
+    from argus.reports.service import default_issuer
+
+    class _Request:  # campaigns_of only needs the application
+        def __init__(self, application: Any) -> None:
+            self.app = application
+
+    watches = await app.state.brand_watches.first_seen(workspace["id"])
+    summary = summarise(watches, await campaigns_of(_Request(app), workspace["id"]), days=days)  # type: ignore[arg-type]
+    branding = await app.state.reports.branding(workspace["id"], default_org=default_issuer(workspace))
+    base = app.state.settings.public_url
+    verify_url = f"{base.rstrip('/')}/api/reports/verify/<sha256>" if base else None
+    report_id, generated_at = new_report_id(), datetime.now(timezone.utc)
+    pdf = await anyio.to_thread.run_sync(lambda: render_brand_pdf(
+        summary, branding=branding, report_id=report_id, workspace=str(workspace.get("name") or workspace["id"]),
+        tlp=tlp, prepared_for=prepared_for, generated_at=generated_at, generator=f"Argus {__version__}",
+        verify_url=verify_url,
+    ))  # fmt: skip
+    digest = hashlib.sha256(pdf).hexdigest()
+    filename = f"argus-brand-protection-{generated_at:%Y%m%d}-{report_id}.pdf"
+    record, after = await app.state.reports.record(
+        fields={"id": report_id, "workspace_id": workspace["id"], "investigation_id": "", "target": BRAND_TARGET,
+                "sha256": digest, "size": len(pdf), "tlp": tlp, "prepared_for": prepared_for or None,
+                "issued_by_org": branding.organisation, "created_by": issued_by[:128]},
+        file=(filename, pdf, keep_file_for) if keep_file_for else None,
+        after_record=(lambda session, rec: after_record(session, rec, summary)) if after_record else None,
+    )  # fmt: skip
+    metrics.REPORTS_GENERATED.labels(f"brand_{trigger}").inc()
+    return {"record": record, "pdf": pdf, "sha256": digest, "filename": filename, "summary": summary, "after": after}
+
+
+class BrandReportRequest(BaseModel):
+    days: int = Field(default=90, ge=7, le=365)
+    tlp: Literal["CLEAR", "GREEN", "AMBER", "AMBER+STRICT", "RED"] = "AMBER"
+    prepared_for: str = Field(default="", max_length=200)
+
+
+@router.post("/brand-protection/report")
+async def brand_protection_report(body: BrandReportRequest, request: Request, ws: WorkspaceContext = ANALYST):
+    """The brand-protection report as a PDF, registered like every Argus report (verifiable by SHA-256)."""
+    from fastapi import Response
+
+    issued = await issue_brand_report(request.app, ws.workspace, days=body.days, tlp=body.tlp,
+                                      prepared_for=body.prepared_for.strip(), issued_by=ws.principal.name)  # fmt: skip
+    await audit(request, ws.principal, "report.brand", issued["record"]["id"], details={"sha256": issued["sha256"]})
+    return Response(issued["pdf"], media_type="application/pdf", headers={
+        "Content-Disposition": f'attachment; filename="{issued["filename"]}"', "X-Report-SHA256": issued["sha256"],
+        "Cache-Control": "no-store"})  # fmt: skip

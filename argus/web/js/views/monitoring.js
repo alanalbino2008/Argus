@@ -1,6 +1,6 @@
 // Monitoring: drift alerts first, then watched targets.
 
-import { api, enc } from "../api.js";
+import { api, downloadPost, enc } from "../api.js";
 import { empty, ico, severityPill } from "../components.js";
 import { $, closeModal, confirmDialog, copyText, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, state } from "../state.js";
@@ -14,6 +14,7 @@ let monitors = null;
 let fpWatches = []; // watched fingerprints (Shodan/Censys searches on a schedule)
 let brandWatches = []; // brands whose lookalike domains are looked for in Certificate Transparency
 let brandForm = false;
+let brandSummary = null; // headline brand-protection numbers (90 days)
 let campaigns = []; // lookalikes, watched servers and tagged indicators sharing infrastructure
 let routes = []; // egress routes, for visiting lookalikes' websites without showing this server's address
 
@@ -61,6 +62,10 @@ export function initMonitoring(el, appActions) {
         await api.post("/api/brand-watches", { domain, allow, web_check, reference_urls: login ? [home, login] : [] });
         brandForm = false;
         toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
+      } else if (act === "brand-report") {
+        toast("Preparing the brand-protection report…");
+        await downloadPost("/api/brand-protection/report", { days: 90 });
+        return;
       } else if (act === "campaign-takedown") {
         return openCampaignTakedown(id);
       } else if (act === "takedown") {
@@ -102,6 +107,7 @@ export async function refresh() {
     brandWatches = await api.get("/api/brand-watches").catch(() => []);
     routes = (await api.get("/api/opsec/routes").catch(() => ({ routes: [] }))).routes || [];
     campaigns = (await api.get("/api/campaigns").catch(() => ({ campaigns: [] }))).campaigns || [];
+    brandSummary = brandWatches.length ? await api.get("/api/brand-protection/summary?days=90").catch(() => null) : null;
   } catch {
     return;
   }
@@ -192,6 +198,7 @@ function brandCard() {
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><h2>Brand watch</h2>
       <button class="btn sm" data-act="brand-new">${ico("eye")}Watch a brand</button></div>
+    ${brandStrip()}
     <p class="muted small">Phishing sites need a certificate, and certificates are public. Argus checks Certificate Transparency every day for lookalikes of your domain (acme-login.com, acrne.com, look-alike letters) and alerts on new ones.</p>
     ${brandForm ? html`<div class="card-pad" style="border:1px solid var(--border);border-radius:8px;margin:10px 0">
       <label class="small">Your domain<input id="brand-domain" class="input" placeholder="acme.com" autocomplete="off"></label>
@@ -347,4 +354,21 @@ async function openCampaignTakedown(campaignId) {
   };
   openModal("takedown-modal");
   refresh();
+}
+
+/** The last 90 days in five numbers, and the report for management. */
+function brandStrip() {
+  const b = brandSummary;
+  if (!b) return "";
+  const take = b.takedowns;
+  const cell = (value, label, tone = "") => html`<div style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border);border-radius:8px">
+    <div style="font-size:20px;font-weight:700;${tone}">${value}</div><div class="muted small">${label}</div></div>`;
+  return html`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px">
+    ${cell(b.open_threats.count, "open threats", b.open_threats.count ? "color:var(--sev-critical)" : "")}
+    ${cell(b.found.new, "new lookalikes (90 days)")}
+    ${cell(take.down_in_period, "taken down (90 days)")}
+    ${cell(take.median_days_to_down != null ? `${take.median_days_to_down} d` : "–", "median time to takedown")}
+    ${cell(b.campaigns.count, "campaigns")}
+    ${["analyst", "admin"].includes(state.workspace?.role) ? html`<div style="display:flex;align-items:center"><button class="btn sm" data-act="brand-report" title="A PDF for management, registered and verifiable like every Argus report">${ico("download")}Report (PDF)</button></div>` : ""}
+  </div>`;
 }
