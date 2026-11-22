@@ -162,3 +162,69 @@ def went_down(triage: dict[str, Any], web_checked: bool, previous_misses: int) -
         misses = previous_misses + 1 if gone else 0
         return misses >= 2, misses
     return False, 0
+
+
+def campaign_letters(
+    *, campaign: dict[str, Any], domains: list[dict[str, Any]], organisation: str
+) -> list[dict[str, Any]]:
+    """One abuse report per recipient for a campaign: each registrar or host gets the campaign's domains
+    it is responsible for, with the shared infrastructure that ties them together.
+
+    ``domains``: {domain, display, brand, finding, triage, found} for each lookalike of the campaign.
+    """
+    by_recipient: dict[str, list[dict[str, Any]]] = {}
+    roles: dict[str, set[str]] = {}
+    for item in domains:
+        found = item.get("found") or {}
+        registrar = found.get("registrar") or {}
+        if registrar.get("abuse_email"):
+            email = registrar["abuse_email"].lower()
+            by_recipient.setdefault(email, []).append(item)
+            roles.setdefault(email, set()).add(f"registrar ({registrar.get('registrar') or 'unknown'})")
+        for host in found.get("hosts") or []:
+            if host.get("abuse_email"):
+                email = host["abuse_email"].lower()
+                if item not in by_recipient.setdefault(email, []):
+                    by_recipient[email].append(item)
+                roles.setdefault(email, set()).add(f"host ({host.get('network') or 'unknown'})")
+    shared = [
+        f"{link['label']}: {link['value']} ({len(link['members'])} of them)" for link in campaign.get("links") or []
+    ][:5]
+    brands = sorted({i["brand"] for i in domains if i.get("brand")})
+    letters = []
+    for email, items in sorted(by_recipient.items(), key=lambda kv: (-len(kv[1]), kv[0])):
+        names = [i["domain"] for i in items]
+        phishing = any((i.get("triage") or {}).get("verdict") == "phishing" for i in items)
+        lines = [
+            "Hello,",
+            "",
+            (f"We are reporting {len(items)} domains" if len(items) > 1 else "We are reporting a domain")
+            + f" impersonating {organisation or ', '.join(brands)}"
+            + (f" (official domain{'s' if len(brands) > 1 else ''}: {', '.join(brands)})" if organisation else "")
+            + (". They are not ours, were registered without our permission, and appear to be run by one party: "
+               "they share infrastructure. We ask you to suspend them and remove the content they host."
+               if len(items) > 1 else
+               f". It is not ours and was registered without our permission. It belongs to a group of "
+               f"{len(domains)} lookalike domains sharing infrastructure, reported to their other providers too. "
+               "We ask you to suspend it and remove the content it hosts."),
+            "",
+            "Shared infrastructure:",
+            *[f"- {s}." for s in shared],
+            "",
+            "Domains:",
+        ]  # fmt: skip
+        for item in items:
+            triage, finding = item.get("triage") or {}, item.get("finding") or {}
+            facts = [finding.get("technique"), (triage.get("label") or "").lower() or None,
+                     f"first certificate {str(finding['not_before'])[:10]}" if finding.get("not_before") else None,
+                     f"addresses {', '.join((triage.get('dns') or {}).get('ips', [])[:3])}" if (triage.get("dns") or {}).get("ips") else None]  # fmt: skip
+            lines.append(f"- {item['domain']}: " + "; ".join(f for f in facts if f) + ".")
+            lines.extend(f"    {r}." for r in triage.get("reasons") or [] if r != "Resolves")
+        lines += ["", f"You are listed in RDAP as the abuse contact for these domains' {', '.join(sorted(roles[email]))}.",
+                  "Please let us know what action you take. Thank you.", "",
+                  organisation or "[Your name, organisation and how to reach you]"]  # fmt: skip
+        subject = (f"Abuse report: {len(items)} domains impersonating {', '.join(brands)}" if len(items) > 1
+                   else f"Abuse report: {names[0]} impersonates {', '.join(brands)}") + (" (phishing)" if phishing else "")  # fmt: skip
+        letters.append({"to": [email], "subject": subject, "body": "\n".join(lines), "domains": names,
+                        "roles": sorted(roles[email])})  # fmt: skip
+    return letters

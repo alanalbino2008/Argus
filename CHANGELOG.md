@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.77.0] — Phase 77: Campaign takedowns, and campaigns in the TAXII feed
+
+### Added
+- **Take down a whole campaign.** On a campaign, **Take down campaign** looks up every domain's
+  registrar and hosts in RDAP and drafts **one abuse report per recipient**: the host gets the list of
+  all the campaign's domains on its network, each registrar the ones it registered, with the
+  infrastructure they share ("IP address 45.77.10.50, 3 of them") and each domain's evidence.
+  Each report can be edited, opened in your mail client or copied, and **Mark reported** marks all its
+  domains. Every domain also gets its own takedown record and is followed until it goes down, as in
+  Phase 75. Running it again re-shows the reports and drafts only domains not yet reported.
+- **Campaigns in TAXII.** A fourth collection, **Campaigns**, carries a STIX `campaign` per campaign
+  (name, first and last seen, the evidence linking it, severity and brands as labels), an
+  `indicates` relationship from each member's indicator, and those indicators, with the **same ids**
+  as in the other collections, so OpenCTI or MISP attach the campaign to indicators they already have.
+- API: `POST /api/campaigns/{id}/takedown`; Python client: `take_down_campaign()`. Audited
+  (`takedown.campaign`).
+
 ## [1.76.0] — Phase 76: Campaigns
 
 ### Added

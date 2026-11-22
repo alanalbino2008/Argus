@@ -50,3 +50,13 @@ GET /api/campaigns
 Returns `campaigns` (each with `id`, `name`, `severity`, `size`, `members`, `links`, `brands`,
 `first_seen`, `last_seen`) and the number of `indicators` considered. A campaign's `id` is derived
 from its members, so it is stable while its membership is.
+
+## Acting on a campaign (Phase 77)
+
+**Take down campaign** drafts one abuse report per registrar and host, each listing the campaign's
+domains that recipient is responsible for and the infrastructure they share; each domain is then
+followed on its own until it goes down (see [75 — Takedown requests](75-takedown-requests.md)).
+
+Campaigns are also published in the TAXII feed's **Campaigns** collection as STIX `campaign` objects,
+with `indicates` relationships from the same indicators the other collections serve (see
+[73 — A TAXII 2.1 threat-intelligence feed](73-taxii-feed.md)).

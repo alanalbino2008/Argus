@@ -20,6 +20,10 @@ and attributed to the Argus identity:
 | **Lookalike domains** | Lookalikes found by brand watches | `lookalike-domain`, the technique, `brand:acme.com`; high severity → `malicious-activity` |
 | **Fingerprint-watch servers** | Servers sharing a watched favicon, JARM, HASSH or certificate | Address and port; the fingerprint and its search in the description |
 
+A fourth collection, **Campaigns** (Phase 77), carries a STIX `campaign` per group of the indicators
+above that share infrastructure, with an `indicates` relationship from each member's indicator (the
+same ids as in the other collections) and the indicators themselves.
+
 People, organisations and other non-observables are never exported: only what a security tool can
 match on.
 

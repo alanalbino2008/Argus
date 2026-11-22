@@ -126,6 +126,7 @@ events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then 
 | `GET/POST /api/brand-watches` · `PATCH`/`DELETE /api/brand-watches/{id}` · `POST /api/brand-watches/{id}/run` | Lookalike domains of a brand in Certificate Transparency (crt.sh, Cert Spotter), daily; alerts on new ones |
 | `POST /api/brand-watches/{id}/takedowns` · `POST …/takedowns/{domain}/reported` · `POST …/takedowns/{domain}/close` | Draft an abuse report for a lookalike (registrar and host abuse contacts from RDAP, with the evidence); track it until the domain goes down |
 | `GET /api/campaigns` | Lookalike domains, fingerprint-watch servers and tagged indicators grouped by shared infrastructure (addresses, private name servers, mail hosts, favicons, titles), worst first |
+| `POST /api/campaigns/{id}/takedown` | One abuse report per registrar and host for a whole campaign; each domain gets its own takedown record. TAXII adds a `campaigns` collection (STIX campaigns, `indicates` relationships, indicators) |
 | `GET /taxii2/` · `GET /taxii2/{workspace}/collections/{id}/objects/` (and `/manifest/`, `/objects/{id}/`) | Read-only TAXII 2.1 server: tagged entities, lookalike domains and fingerprint-watch servers as STIX 2.1 indicators; API key as Bearer or HTTP Basic password |
 | `GET /api/internet-search` · `POST /api/investigation/{id}/internet-search` | Shodan or Censys pivots for a fingerprint entity: `{"entity_id": "...", "engine": "shodan", "mode": "count"}`; `engine` is `shodan` or `censys`, `mode` is `count` or `search` |
 

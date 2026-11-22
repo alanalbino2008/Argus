@@ -59,6 +59,8 @@ export function initMonitoring(el, appActions) {
         await api.post("/api/brand-watches", { domain, allow, web_check });
         brandForm = false;
         toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
+      } else if (act === "campaign-takedown") {
+        return openCampaignTakedown(id);
       } else if (act === "takedown") {
         return openTakedown(id, btn.dataset.domain);
       } else if (act === "brand-run") {
@@ -243,6 +245,7 @@ async function openTakedown(watchId, domain) {
   const contacts = [reg.registrar && `Registrar: ${reg.registrar}${reg.abuse_email ? ` (${reg.abuse_email})` : ""}`,
     ...(record.contacts?.hosts || []).map((h) => `Host of ${h.ip}: ${h.network || "unknown"}${h.abuse_email ? ` (${h.abuse_email})` : ""}`)].filter(Boolean);
   setHTML($("#takedown-title"), html`Takedown request: <span class="mono">${domain}</span>`);
+  setHTML($("#takedown-intro"), html`Argus drafted this abuse report for the domain's registrar and host. Send it from your own mailbox (abuse desks reply to the sender), then mark it reported: Argus keeps checking the domain and tells you when it goes down.`);
   setHTML($("#takedown-body"), html`
     <dl class="kv"><dt>Status</dt><dd>${(TAKEDOWN[record.status] || ["", record.status])[1]}${record.reported_at ? ` · reported ${timeAgo(record.reported_at)}` : ""}${record.down_at ? ` · down ${timeAgo(record.down_at)}` : ""}</dd>
       <dt>Send to</dt><dd class="mono">${d.to.length ? d.to.join(", ") : "No abuse address in RDAP: use the registrar's abuse form"}</dd>
@@ -257,6 +260,7 @@ async function openTakedown(watchId, domain) {
     <button class="btn" data-td="mail" ${d.to.length ? "" : "disabled"}>Open in email</button>
     ${open ? html`<button class="btn ghost" data-td="close-takedown" title="Stop tracking (refused, false alarm, handled elsewhere)">Stop tracking</button>` : ""}
     ${record.status === "drafted" ? html`<button class="btn primary" data-td="reported">Mark as reported</button>` : ""}`);
+  $("#takedown-body").onclick = null; // the campaign dialog shares this modal
   const foot = $("#takedown-foot");
   foot.onclick = async (e) => {
     const action = e.target.closest("[data-td]")?.dataset.td;
@@ -290,6 +294,54 @@ function campaignCard() {
         <div class="list-sub">${c.links.slice(0, 4).map((l) => html`<span class="pill" style="text-transform:none" title="${l.members.join("\n")}">${l.label}: <span class="mono">${l.value}</span> (${l.members.length})</span> `)}</div>
         <div class="list-sub">${c.members.slice(0, 12).map((m) => html`<span class="pill ${m.verdict === "phishing" ? "critical" : ""}" style="text-transform:none" title="${[KIND[m.kind], m.verdict, m.takedown && `takedown ${m.takedown}`, (m.tags || []).join(", ")].filter(Boolean).join(" · ")}"><span class="mono">${m.display}</span>${m.takedown === "down" ? " ✓" : ""}</span> `)}${c.members.length > 12 ? html`<span class="muted small">+${c.members.length - 12} more</span>` : ""}</div>
         ${c.first_seen ? html`<div class="list-sub muted small">First seen ${timeAgo(c.first_seen)}${c.last_seen && c.last_seen !== c.first_seen ? ` · latest ${timeAgo(c.last_seen)}` : ""}</div>` : ""}</div>
+      ${["analyst", "admin"].includes(state.workspace?.role) && c.members.some((m) => m.kind === "lookalike")
+        ? html`<button class="btn sm" data-act="campaign-takedown" data-id="${c.id}" title="One abuse report per registrar and host, listing all of this campaign's domains">Take down campaign</button>` : ""}
     </div>`)}
   </div>`;
+}
+
+/** Takedowns for a whole campaign: one report per registrar and host, each domain tracked on its own. */
+async function openCampaignTakedown(campaignId) {
+  toast("Looking up the registrars and hosts of the campaign's domains…", "info", 6000);
+  let result;
+  try { result = await api.post(`/api/campaigns/${enc(campaignId)}/takedown`, {}); } catch (err) { toast(err.message, "error"); return; }
+  const where = Object.fromEntries(result.domains.map((d) => [d.domain, d.watch_id]));
+  setHTML($("#takedown-title"), html`Campaign takedown: ${result.letters.length} report${result.letters.length === 1 ? "" : "s"}`);
+  setHTML($("#takedown-intro"), html`One report per registrar and host, each listing the campaign's domains it is responsible for. Send each from your own mailbox, then mark it reported: Argus follows every domain until it goes down.`);
+  setHTML($("#takedown-body"), html`
+    <p class="muted small">${result.drafted.length ? `${result.drafted.length} domain(s) drafted now` : "No new domains"}${result.already_open.length ? ` · ${result.already_open.length} already had a takedown` : ""}. Each registrar and host gets one report listing its domains; each domain is followed until it goes down.</p>
+    ${!result.letters.length ? html`<div class="callout warn">No abuse address was found in RDAP for these domains: use the registrars' abuse forms.</div>` : ""}
+    ${result.letters.map((l, i) => html`<div class="card card-pad" style="margin-top:10px">
+      <div class="small"><b class="mono">${l.to.join(", ")}</b> <span class="muted">${(l.roles || []).join(", ")}</span></div>
+      <div class="small muted">${l.domains.length} domain${l.domains.length === 1 ? "" : "s"}: <span class="mono">${l.domains.join(", ")}</span></div>
+      <input class="input" data-letter-subject="${i}" value="${l.subject}" style="margin-top:6px">
+      <textarea class="textarea" data-letter-body="${i}" rows="10" style="width:100%;margin-top:6px;font-family:var(--mono, monospace);font-size:12px">${l.body}</textarea>
+      <div style="margin-top:6px;display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn sm" data-letter="copy" data-i="${i}">Copy text</button>
+        <button class="btn sm" data-letter="mail" data-i="${i}">Open in email</button>
+        <button class="btn sm primary" data-letter="reported" data-i="${i}">${l.domains.length > 1 ? `Mark these ${l.domains.length} reported` : "Mark reported"}</button></div></div>`)}`);
+  setHTML($("#takedown-foot"), html`<button class="btn ghost" data-close>Close</button>`);
+  $("#takedown-foot").onclick = null;
+  $("#takedown-body").onclick = async (e) => {
+    const btn = e.target.closest("[data-letter]");
+    if (!btn) return;
+    const i = Number(btn.dataset.i);
+    const letter = result.letters[i];
+    const subject = $(`[data-letter-subject="${i}"]`).value;
+    const body = $(`[data-letter-body="${i}"]`).value;
+    try {
+      if (btn.dataset.letter === "copy") return copyText(`To: ${letter.to.join(", ")}\nSubject: ${subject}\n\n${body}`);
+      if (btn.dataset.letter === "mail") { window.location.href = `mailto:${letter.to.map(encodeURIComponent).join(",")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`; return; }
+      let marked = 0;
+      for (const domain of letter.domains) {
+        try { await api.post(`/api/brand-watches/${enc(where[domain])}/takedowns/${enc(domain)}/reported`); marked += 1; } catch { /* already reported or down */ }
+      }
+      btn.disabled = true;
+      btn.textContent = "Reported";
+      toast(`${marked} domain(s) marked reported: Argus will tell you when they go down`, "success");
+      refresh();
+    } catch (err) { toast(err.message, "error"); }
+  };
+  openModal("takedown-modal");
+  refresh();
 }

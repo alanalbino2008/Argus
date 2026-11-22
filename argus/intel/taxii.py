@@ -33,6 +33,10 @@ COLLECTIONS = {
         "Fingerprint-watch servers",
         "Servers sharing a watched favicon, JARM, HASSH or certificate",
     ),
+    "campaigns": (
+        "Campaigns",
+        "Groups of the indicators above that share infrastructure, as STIX campaigns with their indicators",
+    ),
 }
 OBSERVABLE_TYPES = {"domain": "domain-name", "subdomain": "domain-name", "email": "email-addr", "url": "url",
                     "social_profile": "url", "ip_address": None}  # fmt: skip
@@ -99,6 +103,10 @@ def _stamp(value: str | None) -> str:
     return moment.strftime("%Y-%m-%dT%H:%M:%S.") + f"{moment.microsecond // 1000:03d}Z"
 
 
+def indicator_id(workspace_id: str, kind: str, key: str) -> str:
+    return f"indicator--{uuid.uuid5(ARGUS_NAMESPACE, f'taxii|{workspace_id}|{kind}|{key}')}"
+
+
 def indicator(
     workspace_id: str, kind: str, key: str, *, name: str, pattern: str, created: str, modified: str | None = None,
     labels: list[str], description: str = "", indicator_types: list[str] | None = None,
@@ -106,7 +114,7 @@ def indicator(
     created_at = _stamp(created)
     obj: dict[str, Any] = {
         "type": "indicator", "spec_version": "2.1",
-        "id": f"indicator--{uuid.uuid5(ARGUS_NAMESPACE, f'taxii|{workspace_id}|{kind}|{key}')}",
+        "id": indicator_id(workspace_id, kind, key),
         "created": created_at, "modified": max(created_at, _stamp(modified or created)),
         "name": name[:250], "pattern": pattern, "pattern_type": "stix", "valid_from": created_at,
         "labels": labels[:20], "created_by_ref": ARGUS_IDENTITY.id, "object_marking_refs": [MARKING.id],
@@ -184,6 +192,57 @@ def fingerprint_servers(
                 created=when, labels=["fingerprint-watch", watch["engine"]],
                 description=f"Shares {watch['label']} ({watch['engine']} search: {watch['query']}).",
             )))  # fmt: skip
+    return out
+
+
+def campaign_objects(
+    workspace_id: str, campaigns: list[dict[str, Any]], indicators: dict[str, tuple[str, dict[str, Any]]]
+) -> list[tuple[str, dict[str, Any]]]:
+    """A STIX ``campaign`` per campaign, ``indicates`` relationships from its members' indicators (the
+    same ids as in the other collections, so platforms link rather than duplicate), and those indicators."""
+    out: list[tuple[str, dict[str, Any]]] = []
+    included: set[str] = set()
+    for campaign in campaigns:
+        member_ids = []
+        for member in campaign["members"]:
+            if member["kind"] == "lookalike":
+                member_ids.append(indicator_id(workspace_id, "lookalikes", f"{member.get('brand')}|{member['value']}"))
+            for watch_id, server in member.get("servers") or []:
+                member_ids.append(indicator_id(workspace_id, "fingerprint-servers", f"{watch_id}|{server}"))
+            if member.get("entity_id"):
+                member_ids.append(indicator_id(workspace_id, "tagged", member["entity_id"]))
+        member_ids = [i for i in dict.fromkeys(member_ids) if i in indicators]
+        if len(member_ids) < 2:
+            continue
+        first, last = (
+            _stamp(campaign.get("first_seen")),
+            _stamp(campaign.get("last_seen") or campaign.get("first_seen")),
+        )
+        key = f"taxii|{workspace_id}|campaign|{campaign['id']}"
+        cid = f"campaign--{uuid.uuid5(ARGUS_NAMESPACE, key)}"
+        evidence = "; ".join(
+            f"{link['label']}: {link['value']} ({len(link['members'])})" for link in campaign["links"][:5]
+        )
+        brands = ", ".join(campaign.get("brands") or [])
+        out.append((first, {
+            "type": "campaign", "spec_version": "2.1", "id": cid, "created": first, "modified": max(first, last),
+            "name": campaign["name"], "first_seen": first, "last_seen": max(first, last),
+            "description": (f"Infrastructure shared by {campaign['size']} items" + (f" imitating {brands}" if brands else "")
+                            + f". Linked by: {evidence}. Severity: {campaign['severity']}."),
+            "labels": [f"severity:{campaign['severity']}", *[f"brand:{b}" for b in campaign.get("brands") or []]],
+            "created_by_ref": ARGUS_IDENTITY.id, "object_marking_refs": [MARKING.id],
+        }))  # fmt: skip
+        for mid in member_ids:
+            rid = f"relationship--{uuid.uuid5(ARGUS_NAMESPACE, f'taxii|{workspace_id}|indicates|{mid}|{cid}')}"
+            added = indicators[mid][0]
+            out.append((max(first, added), {
+                "type": "relationship", "spec_version": "2.1", "id": rid, "created": max(first, added),
+                "modified": max(first, added), "relationship_type": "indicates", "source_ref": mid, "target_ref": cid,
+                "created_by_ref": ARGUS_IDENTITY.id, "object_marking_refs": [MARKING.id],
+            }))  # fmt: skip
+            if mid not in included:
+                included.add(mid)
+                out.append(indicators[mid])
     return out
 
 

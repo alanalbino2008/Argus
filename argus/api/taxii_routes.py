@@ -96,8 +96,15 @@ async def _objects(request: Request, ws: WorkspaceContext, kind: str) -> list[tu
         found = taxii.tagged(ws.id, await state.annotations.all(ws.id))
     elif kind == "lookalikes":
         found = taxii.lookalikes(ws.id, await state.brand_watches.first_seen(ws.id))
-    else:
+    elif kind == "fingerprint-servers":
         found = taxii.fingerprint_servers(ws.id, await state.fingerprint_watches.first_seen(ws.id))
+    else:
+        from argus.api.campaign_routes import campaigns_of
+
+        every = [*taxii.tagged(ws.id, await state.annotations.all(ws.id)),
+                 *taxii.lookalikes(ws.id, await state.brand_watches.first_seen(ws.id)),
+                 *taxii.fingerprint_servers(ws.id, await state.fingerprint_watches.first_seen(ws.id))]  # fmt: skip
+        found = taxii.campaign_objects(ws.id, await campaigns_of(request, ws.id), {o["id"]: (a, o) for a, o in every})
     if found:  # the identity the indicators' created_by_ref points to, as a member of the collection
         identity = json.loads(ARGUS_IDENTITY.serialize())
         found.append((identity["created"], identity))

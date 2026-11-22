@@ -80,7 +80,7 @@ def test_discovery_collections_and_objects(tc):
         "versions"
     ] == [TAXII]
     cols = c.get("/taxii2/ws_default/collections/", headers=headers).json()["collections"]
-    assert {x["alias"] for x in cols} == {"tagged", "lookalikes", "fingerprint-servers"}
+    assert {x["alias"] for x in cols} == {"tagged", "lookalikes", "fingerprint-servers", "campaigns"}
     assert all(x["can_read"] and not x["can_write"] for x in cols)
     by_alias = {x["alias"]: x["id"] for x in cols}
     assert (

@@ -107,7 +107,8 @@ def cluster(
         node = f"domain:{item['name']}"
         members[node] = {"kind": "lookalike", "value": item["name"], "display": item.get("display") or item["name"],
                          "brand": item.get("brand"), "severity": item.get("severity") or "medium",
-                         "verdict": item.get("verdict") or "", "first_seen": item.get("first_seen") or ""}  # fmt: skip
+                         "verdict": item.get("verdict") or "", "first_seen": item.get("first_seen") or "",
+                         "watch_id": item.get("watch_id")}  # fmt: skip
         triage = item.get("triage") or {}
         dns, web = triage.get("dns") or {}, triage.get("web") or {}
         for ip in dns.get("ips") or []:
@@ -128,9 +129,11 @@ def cluster(
     for item in servers:
         ip = _split_server(item["server"])
         node = f"ip:{ip}"
-        members.setdefault(node, {"kind": "server", "value": ip, "display": item["server"], "severity": "high",
-                                  "verdict": "", "first_seen": item.get("first_seen") or "",
-                                  "watches": []})["watches"].append(item.get("label"))  # fmt: skip
+        member = members.setdefault(node, {"kind": "server", "value": ip, "display": item["server"], "severity": "high",
+                                           "verdict": "", "first_seen": item.get("first_seen") or "",
+                                           "watches": [], "servers": []})  # fmt: skip
+        member.setdefault("watches", []).append(item.get("label"))
+        member.setdefault("servers", []).append([str(item.get("watch_id")), item["server"]])  # for STIX ids
         keys[("fingerprint", str(item.get("watch_id")))].add(node)
         if distinctive_ip(ip):
             keys[("ip", ip)].add(node)
@@ -147,6 +150,8 @@ def cluster(
         member = members.setdefault(node, {"kind": "tagged", "value": value, "display": value, "severity": "medium",
                                            "verdict": "", "first_seen": item.get("updated_at") or ""})  # fmt: skip
         member["tags"] = sorted(set(member.get("tags", [])) | set(item.get("tags") or []))
+        if item.get("entity_id"):
+            member["entity_id"] = item["entity_id"]  # the tagged entity (its STIX indicator's id derives from it)
 
     union = _Union()
     for node in members:
