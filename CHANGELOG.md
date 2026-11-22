@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.73.0] — Phase 73: A TAXII 2.1 threat-intelligence feed
+
+### Added
+- **TAXII 2.1 server (read-only).** OpenCTI, MISP, Microsoft Sentinel, Splunk and any other TAXII
+  client can pull a workspace's indicators on their own schedule. Discovery at `/taxii2/`; each
+  workspace is its own API root, `/taxii2/{workspace}/` (id or slug), so clients need no custom
+  header. Three collections of STIX 2.1 indicators, marked TLP:AMBER:
+  - **Tagged entities**: every domain, IP address, email address and URL the team has tagged
+    (Phase 68); tags become `labels` and the note the description. "Tag it `c2` in Argus" now means
+    "it reaches the SIEM".
+  - **Lookalike domains** from brand watches (Phase 71), with technique and brand.
+  - **Fingerprint-watch servers** (Phase 69): addresses and ports sharing a watched fingerprint.
+- **Incremental and stable.** Indicator ids are deterministic (platforms update rather than
+  duplicate them) and `date_added` is when Argus first knew each one, so `added_after` pulls fetch
+  only what is new. Paging (`limit`, `next`), `match[id]`, `match[type]`, manifests, single objects
+  and the `X-TAXII-Date-Added-*` headers follow the specification. Tested with the OASIS
+  `taxii2-client`.
+- **Authentication for TAXII clients.** API keys are accepted as the password of HTTP Basic (the
+  user name is ignored), which most TAXII clients can send, as well as Bearer tokens. A viewer key
+  is enough; other teams' roots are invisible. Every pull is audited (`taxii.read`).
+- Settings → API & integrations shows the discovery URL and this workspace's API root.
+
+### Changed
+- Fingerprint watches write IPv6 servers as `[2001:db8::5]:22` (the address and port were ambiguous
+  before). An IPv6 server already known under the old form is reported once more as new.
+- Fingerprint and brand watches record when each server or lookalike was first seen.
+
 ## [1.72.0] — Phase 72: Signed case reports
 
 ### Added

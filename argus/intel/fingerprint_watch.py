@@ -44,7 +44,10 @@ def server_key(host: dict[str, Any]) -> str | None:
     """A server is its address and port: the same fingerprint on a new port of a known host is news too."""
     if not host.get("ip"):
         return None
-    return f"{host['ip']}:{host['port']}" if host.get("port") else str(host["ip"])
+    ip = str(host["ip"])
+    if not host.get("port"):
+        return ip
+    return f"[{ip}]:{host['port']}" if ":" in ip else f"{ip}:{host['port']}"  # IPv6 in brackets, as in URLs
 
 
 def alert_summary(watch: dict[str, Any], new: list[dict[str, Any]], total: int) -> dict[str, Any]:
@@ -159,7 +162,7 @@ class FingerprintWatcher:
         await self.repo.record(
             watch["id"], status="ok", total=total, known=known,
             new=[server_key(h) or "" for h in new_hosts] if not baseline else [], message=message,
-            alerted=alert is not None,
+            alerted=alert is not None, seen=[k for k in (server_key(h) for h in new_hosts) if k],
         )  # fmt: skip
         logger.info("Fingerprint watch %s: %s", watch["id"], message)
         return {

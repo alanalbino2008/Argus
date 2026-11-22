@@ -419,6 +419,9 @@ print(argus.rating(done["id"])["grade"])`;
       <div><div class="section-title">curl</div>${snippet(curl, "the curl example")}</div>
       <div><div class="section-title">Python (clients/python)</div>${snippet(python, "the Python example")}</div>
     </div>
+    <div class="section-title" style="margin-top:14px">Threat-intelligence feed (TAXII 2.1)</div>
+    <p class="muted small">OpenCTI, MISP, Microsoft Sentinel, Splunk and other TAXII clients can pull this workspace's indicators on their own schedule: entities your team has tagged (tags become labels), lookalike domains from brand watches, and servers found by fingerprint watches. Read-only. Use a <b>viewer</b> API key as the password (HTTP Basic; any user name) or as a Bearer token.</p>
+    <dl class="kv"><dt>Discovery URL</dt><dd class="mono">${base}/taxii2/</dd><dt>API root</dt><dd class="mono">${base}/taxii2/${ws}/</dd></dl>
     <p class="muted small" style="margin-top:12px">${ico("info")} To open Jira issues or ServiceNow incidents for alerts, or stream events to Splunk or Microsoft Sentinel, add them as destinations under <a href="#" data-goto="monitoring">Monitoring → Notifications</a>.</p>
   </div>`;
 }

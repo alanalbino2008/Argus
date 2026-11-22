@@ -137,6 +137,19 @@ class BrandWatchRepository:
             )  # fmt: skip
         return bool(getattr(result, "rowcount", 0))
 
+    async def first_seen(self, workspace_id: str) -> list[tuple[dict[str, Any], dict[str, str], dict[str, Any]]]:
+        """Every watch of the workspace with its lookalikes, when each was first seen, and what it is."""
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(BrandWatchRow).where(BrandWatchRow.workspace_id == workspace_id))).all()
+        out = []
+        for row in rows:
+            data = row.data or {}
+            fallback = _iso(row.last_run_at) or _iso(row.created_at) or ""
+            dates = data.get("first_seen") or {}
+            known = data.get("known") or []
+            out.append((_view(row), {k: dates.get(k, fallback) for k in known}, dict(data.get("details") or {})))
+        return out
+
     async def known(self, watch_id: str) -> list[str]:
         async with self.db.session() as s:
             row = await s.get(BrandWatchRow, watch_id)
@@ -154,6 +167,18 @@ class BrandWatchRepository:
             data = dict(row.data or {})
             if known is not None:
                 data["known"] = known[-MAX_KNOWN:]
+                first_seen = dict(data.get("first_seen") or {})
+                stamp = _now().isoformat()
+                for finding in new or []:
+                    first_seen.setdefault(finding["name"], stamp)
+                kept = set(data["known"])
+                data["first_seen"] = {k: v for k, v in first_seen.items() if k in kept}
+                details = dict(data.get("details") or {})  # what TAXII says about each lookalike
+                for finding in new or []:
+                    details.setdefault(
+                        finding["name"], {k: finding.get(k) for k in ("technique", "detail", "severity", "display")}
+                    )
+                data["details"] = {k: v for k, v in details.items() if k in kept}
             if new:
                 data["recent"] = (new + list(data.get("recent") or []))[:MAX_RECENT]
             if cursor is not None:

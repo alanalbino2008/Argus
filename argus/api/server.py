@@ -102,6 +102,7 @@ from argus.api.research_routes import router as research_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.supplier_routes import router as supplier_router
+from argus.api.taxii_routes import router as taxii_router
 from argus.api.team_routes import router as team_router
 from argus.api.vault_routes import router as vault_router
 from argus.api.vault_routes import vault_gate
@@ -582,6 +583,10 @@ API_TAGS = [
     },
     {"name": "monitoring", "description": "Continuous monitoring of targets and the alerts it raises."},
     {"name": "notifications", "description": "Alert destinations and integrations, and the delivery log."},
+    {
+        "name": "threat intelligence",
+        "description": "A read-only TAXII 2.1 server: tagged entities, lookalike domains and fingerprint-watch servers as STIX indicators, per workspace.",
+    },
     {"name": "reports", "description": "Signed PDF reports, verification and schedules."},
     {"name": "workspaces", "description": "Team workspaces and their members."},
     {"name": "security", "description": "API keys, users and the audit log."},
@@ -658,6 +663,7 @@ app.include_router(query_router)
 app.include_router(annotation_router)
 app.include_router(fingerprint_watch_router)
 app.include_router(brand_watch_router)
+app.include_router(taxii_router)
 app.include_router(case_report_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)

@@ -135,6 +135,20 @@ class FingerprintWatchRepository:
             )  # fmt: skip
         return bool(getattr(result, "rowcount", 0))
 
+    async def first_seen(self, workspace_id: str) -> list[tuple[dict[str, Any], dict[str, str]]]:
+        """Every watch of the workspace with its servers and when each was first seen (for TAXII)."""
+        async with self.db.session() as s:
+            rows = (
+                await s.scalars(select(FingerprintWatchRow).where(FingerprintWatchRow.workspace_id == workspace_id))
+            ).all()
+        out = []
+        for row in rows:
+            data = row.data or {}
+            fallback = _iso(row.last_run_at) or _iso(row.created_at) or ""
+            dates = data.get("first_seen") or {}
+            out.append((_view(row), {k: dates.get(k, fallback) for k in data.get("known") or []}))
+        return out
+
     async def known(self, watch_id: str) -> list[str]:
         async with self.db.session() as s:
             row = await s.get(FingerprintWatchRow, watch_id)
@@ -142,8 +156,9 @@ class FingerprintWatchRepository:
 
     async def record(
         self, watch_id: str, *, status: str, total: int | None = None, known: list[str] | None = None,
-        new: list[str] | None = None, message: str = "", alerted: bool = False,
+        new: list[str] | None = None, message: str = "", alerted: bool = False, seen: list[str] | None = None,
     ) -> None:  # fmt: skip
+        """``seen``: servers seen for the first time in this run (baseline included), dated now."""
         async with self.db.session() as s, s.begin():
             row = await s.get(FingerprintWatchRow, watch_id)
             if row is None:
@@ -151,6 +166,12 @@ class FingerprintWatchRepository:
             data = dict(row.data or {})
             if known is not None:
                 data["known"] = known[-MAX_KNOWN:]
+                first_seen = dict(data.get("first_seen") or {})
+                stamp = _now().isoformat()
+                for key in seen or []:
+                    first_seen.setdefault(key, stamp)
+                kept = set(data["known"])
+                data["first_seen"] = {k: v for k, v in first_seen.items() if k in kept}
             if new is not None:
                 data["last_new"] = new[:50]
             data["last_message"] = message[:300]

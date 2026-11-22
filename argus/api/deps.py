@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
@@ -58,6 +60,14 @@ def _extract_key(request: Request) -> str | None:
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
+    if auth.lower().startswith("basic "):
+        # For clients that only speak HTTP Basic (TAXII clients such as OpenCTI and MISP): the password
+        # is an Argus API key, the user name is ignored. Account passwords are never accepted here.
+        try:
+            _user, _, password = base64.b64decode(auth[6:].strip(), validate=True).decode().partition(":")
+        except (binascii.Error, UnicodeDecodeError):
+            return None
+        return password.strip() or None
     return request.headers.get("x-api-key")
 
 
