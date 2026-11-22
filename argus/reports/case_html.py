@@ -22,8 +22,6 @@ from datetime import datetime
 from html import escape
 from typing import Any
 
-import networkx as nx
-
 from argus import __version__
 from argus.reports.case_pdf import CAVEAT, CONFIDENCE_COLOUR, RANGE
 
@@ -96,26 +94,66 @@ def _size(n: int | None) -> str:
 
 
 # ----------------------------------------------------------------------------- the network chart
+def force_layout(
+    order: list[str], links: list[tuple[str, str]], iterations: int = 150
+) -> dict[str, tuple[float, float]]:
+    """Fruchterman-Reingold in plain Python: linked nodes pull together, all nodes push apart.
+
+    Deterministic (nodes start on a circle in ``order``, no randomness) and dependency-free; at most
+    ``MAX_CHART_NODES`` nodes, so the O(n^2) steps stay well under a second.
+    """
+    n = len(order)
+    if n == 1:
+        return {order[0]: (0.0, 0.0)}
+    index = {nid: i for i, nid in enumerate(order)}
+    xs = [math.cos(2 * math.pi * i / n) for i in range(n)]
+    ys = [math.sin(2 * math.pi * i / n) for i in range(n)]
+    pairs = [(index[a], index[b]) for a, b in links]
+    k = 1.6 / math.sqrt(n)
+    temperature = 0.2
+    for _ in range(iterations):
+        dx, dy = [0.0] * n, [0.0] * n
+        for i in range(n):
+            for j in range(i + 1, n):
+                ox, oy = xs[i] - xs[j], ys[i] - ys[j]
+                dist2 = max(ox * ox + oy * oy, 1e-6)
+                push = k * k / dist2  # force k²/d along the unit vector (o/d)
+                dx[i] += ox * push
+                dy[i] += oy * push
+                dx[j] -= ox * push
+                dy[j] -= oy * push
+        for i, j in pairs:
+            ox, oy = xs[i] - xs[j], ys[i] - ys[j]
+            pull = math.sqrt(ox * ox + oy * oy) / k  # force d²/k along o/d
+            dx[i] -= ox * pull
+            dy[i] -= oy * pull
+            dx[j] += ox * pull
+            dy[j] += oy * pull
+        for i in range(n):
+            length = math.sqrt(dx[i] * dx[i] + dy[i] * dy[i])
+            if length > 0:
+                step = min(length, temperature) / length
+                xs[i] += dx[i] * step
+                ys[i] += dy[i] * step
+        temperature = max(temperature * 0.97, 0.002)
+    return {nid: (xs[i], ys[i]) for i, nid in enumerate(order)}
+
+
 def network_svg(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> str:
     """The case's link chart as inline SVG (laid out here, deterministically: same case, same picture)."""
     if not nodes:
         return ""
     ranked = sorted(nodes, key=lambda n: (-int(n.get("degree") or 0), str(n.get("label"))))[:MAX_CHART_NODES]
-    shown = {n["id"] for n in ranked}
-    g: nx.Graph[str] = nx.Graph()
-    g.add_nodes_from(shown)
+    order = [n["id"] for n in ranked]
+    shown = set(order)
     drawn = [x for x in edges if x["from"] in shown and x["to"] in shown and x["from"] != x["to"]]
-    g.add_edges_from((x["from"], x["to"]) for x in drawn)
-    if len(g) == 1:
-        pos = {next(iter(g)): (0.0, 0.0)}
-    else:
-        pos = nx.spring_layout(g, seed=7, k=1.6 / math.sqrt(len(g)), iterations=120)
+    pos = force_layout(order, [(x["from"], x["to"]) for x in drawn])
     xs, ys = [p[0] for p in pos.values()], [p[1] for p in pos.values()]
     span_x, span_y = (max(xs) - min(xs)) or 1.0, (max(ys) - min(ys)) or 1.0
 
     def at(nid: str) -> tuple[float, float]:
         x, y = pos[nid]
-        if len(g) == 1:
+        if len(order) == 1:
             return CHART_W / 2, CHART_H / 2
         return (
             PAD_X + (x - min(xs)) / span_x * (CHART_W - 2 * PAD_X),

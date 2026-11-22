@@ -30,7 +30,7 @@ def install(tmp_path):
     db.execute("CREATE TABLE cases (id TEXT)")
     db.execute("CREATE TABLE alembic_version (version_num TEXT)")
     db.execute("INSERT INTO alembic_version VALUES ('0026')")
-    db.executemany("INSERT INTO cases VALUES (?)", [(f"c{i}",) for i in range(3)])
+    db.executemany("INSERT INTO cases VALUES (?)", [(f"case-plaintext-marker-{i}",) for i in range(3)])
     db.commit()
     (data / "secret.key").write_text("k" * 48)
     settings = SimpleNamespace(database_url=f"sqlite+aiosqlite:///{data / 'argus.db'}", encryption_key=None,
@@ -44,7 +44,9 @@ def test_a_backup_and_its_checks(install, tmp_path):
     key = backup.new_key(PASSWORD)
     made = backup.create(settings, tmp_path / "backups", key)
     raw = Path(made["file"]).read_bytes()
-    assert raw.startswith(backup.MAGIC) and b"c1" not in raw and b"k" * 48 not in raw  # nothing readable
+    assert (
+        raw.startswith(backup.MAGIC) and b"case-plaintext-marker" not in raw and b"k" * 48 not in raw
+    )  # nothing readable
     assert not [p for p in (tmp_path / "backups").iterdir() if p.suffix != backup.SUFFIX]  # no plaintext left there
     info = backup.check(Path(made["file"]), PASSWORD, work_dir=data, known_revisions={"0026"})
     assert info["counts"]["cases"] == 3 and info["has_key"]
