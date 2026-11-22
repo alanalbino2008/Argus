@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.75.0"
+__version__ = "1.76.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -258,6 +258,10 @@ class ArgusClient:
 
     def brand_watches(self) -> list[dict[str, Any]]:
         return self.get("/api/brand-watches")
+
+    def campaigns(self) -> list[dict[str, Any]]:
+        """Lookalikes, watched servers and tagged indicators grouped by shared infrastructure, worst first."""
+        return self.get("/api/campaigns")["campaigns"]
 
     def draft_takedown(self, watch_id: str, domain: str, *, organisation: str = "") -> dict[str, Any]:
         """Draft an abuse report for a lookalike (registrar and host contacts from RDAP, with the evidence)."""

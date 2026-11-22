@@ -14,6 +14,7 @@ let monitors = null;
 let fpWatches = []; // watched fingerprints (Shodan/Censys searches on a schedule)
 let brandWatches = []; // brands whose lookalike domains are looked for in Certificate Transparency
 let brandForm = false;
+let campaigns = []; // lookalikes, watched servers and tagged indicators sharing infrastructure
 let routes = []; // egress routes, for visiting lookalikes' websites without showing this server's address
 
 export function initMonitoring(el, appActions) {
@@ -96,6 +97,7 @@ export async function refresh() {
       api.get("/api/fingerprint-watches").catch(() => []), loadNotifications(), loadSchedules()]);
     brandWatches = await api.get("/api/brand-watches").catch(() => []);
     routes = (await api.get("/api/opsec/routes").catch(() => ({ routes: [] }))).routes || [];
+    campaigns = (await api.get("/api/campaigns").catch(() => ({ campaigns: [] }))).campaigns || [];
   } catch {
     return;
   }
@@ -149,6 +151,7 @@ function render() {
             </td></tr>`)}
         </tbody></table>`}
     </div>
+    ${campaignCard()}
     ${brandCard()}
     ${fingerprintCard()}
     ${notificationsCard()}
@@ -271,4 +274,22 @@ async function openTakedown(watchId, domain) {
     } catch (err) { toast(err.message, "error"); }
   };
   openModal("takedown-modal");
+}
+
+const KIND = { lookalike: "Lookalike", server: "Server", tagged: "Tagged" };
+
+/** Groups of lookalikes, watched servers and tagged indicators sharing infrastructure (one actor, one report). */
+function campaignCard() {
+  if (!campaigns.length) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><h2>Campaigns</h2><span class="muted small">${campaigns.length} group${campaigns.length === 1 ? "" : "s"} sharing infrastructure</span></div>
+    <p class="muted small">Lookalike domains, watched servers and tagged indicators that share an address, private name servers, a mail host, a favicon or a page title are probably one actor's. One report to their host can take several down.</p>
+    ${campaigns.slice(0, 20).map((c) => html`<div class="list-row" style="align-items:flex-start">
+      ${severityPill(c.severity)}
+      <div class="list-main"><div class="list-title" style="white-space:normal"><b>${c.size} items</b> · ${c.name}${c.brands.length ? html` <span class="muted small">imitating ${c.brands.join(", ")}</span>` : ""}</div>
+        <div class="list-sub">${c.links.slice(0, 4).map((l) => html`<span class="pill" style="text-transform:none" title="${l.members.join("\n")}">${l.label}: <span class="mono">${l.value}</span> (${l.members.length})</span> `)}</div>
+        <div class="list-sub">${c.members.slice(0, 12).map((m) => html`<span class="pill ${m.verdict === "phishing" ? "critical" : ""}" style="text-transform:none" title="${[KIND[m.kind], m.verdict, m.takedown && `takedown ${m.takedown}`, (m.tags || []).join(", ")].filter(Boolean).join(" · ")}"><span class="mono">${m.display}</span>${m.takedown === "down" ? " ✓" : ""}</span> `)}${c.members.length > 12 ? html`<span class="muted small">+${c.members.length - 12} more</span>` : ""}</div>
+        ${c.first_seen ? html`<div class="list-sub muted small">First seen ${timeAgo(c.first_seen)}${c.last_seen && c.last_seen !== c.first_seen ? ` · latest ${timeAgo(c.last_seen)}` : ""}</div>` : ""}</div>
+    </div>`)}
+  </div>`;
 }

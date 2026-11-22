@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.76.0] — Phase 76: Campaigns
+
+### Added
+- **Campaigns (Monitoring → Campaigns).** Lookalike domains, fingerprint-watch servers and tagged
+  IP addresses and domains are grouped when they share infrastructure a stranger would not share by
+  chance: the same **IP address**, the same **private name servers**, the same **mail host**, the same
+  **favicon**, a distinctive identical **page title**, or the same **fingerprint watch**. Ten alerts
+  about one actor become one campaign, with the evidence that links it (strongest first), its
+  members with their verdicts, tags and takedown status, the brands it imitates, and when it was
+  first and last seen. One report to their host can take several down.
+- **No false campaigns from big providers.** Cloudflare and Fastly addresses (their published
+  ranges), shared DNS providers (Cloudflare, Route 53, Azure DNS, GoDaddy…), large mail providers
+  (Google, Microsoft, Zoho…), private and documentation addresses, and generic page titles ("Welcome
+  to nginx", "Just a moment…") never link anything.
+- Computed on request from what the watches and tags already recorded: nothing is looked up.
+  API: `GET /api/campaigns`; Python client: `campaigns()`.
+
 ## [1.75.0] — Phase 75: Takedown requests
 
 ### Added

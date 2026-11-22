@@ -175,7 +175,9 @@ class BrandWatchRepository:
             fallback = _iso(row.last_run_at) or _iso(row.created_at) or ""
             dates = data.get("first_seen") or {}
             known = data.get("known") or []
-            out.append((_view(row), {k: dates.get(k, fallback) for k in known}, dict(data.get("details") or {})))
+            out.append(
+                (_view(row, full=True), {k: dates.get(k, fallback) for k in known}, dict(data.get("details") or {}))
+            )
         return out
 
     async def known(self, watch_id: str) -> list[str]:

@@ -65,6 +65,7 @@ from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
 from argus.api.brand_watch_routes import router as brand_watch_router
 from argus.api.business_routes import router as business_router
+from argus.api.campaign_routes import router as campaign_router
 from argus.api.case_report_routes import router as case_report_router
 from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
@@ -664,6 +665,7 @@ app.include_router(annotation_router)
 app.include_router(fingerprint_watch_router)
 app.include_router(brand_watch_router)
 app.include_router(taxii_router)
+app.include_router(campaign_router)
 app.include_router(case_report_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
