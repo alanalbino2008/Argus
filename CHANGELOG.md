@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.72.0] — Phase 72: Signed case reports
+
+### Added
+- **Every case report is signed.** Each installation has an Ed25519 report-signing key, created on
+  first use and kept in the database sealed with the server's encryption key, or set with
+  `ARGUS_REPORT_SIGNING_KEY` (base64) so replicas and rebuilt servers sign with the same key. The
+  report stays one HTML file: the signature and public key are two `<meta>` tags, and its footer
+  names the key id and how to check it.
+- **Anyone can check a report, without an account.** Any change, down to one character, breaks the
+  signature. Ways to check:
+  - in Argus: **Cases → Verify a report** (genuine and signed by this server; altered; or intact but
+    signed by another key);
+  - on the command line: `argus --verify-report report.html --report-key 7a5b-2880-b2fa-813b`;
+  - in Python, offline with only `cryptography`: `argus_client.verify_report(path, key_id)`;
+  - by comparing the key id in the report with `GET /api/report-signing-key` (public).
+- Downloads carry `X-Argus-Report-Key`; the audit log records each report's key id and SHA-256, and
+  each verification (`report.verify`).
+
 ## [1.71.0] — Phase 71: Brand watch on Certificate Transparency
 
 ### Added

@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.71.0"
+__version__ = "1.72.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -265,6 +265,10 @@ class ArgusClient:
     def case_report(self, case_id: str) -> bytes:
         """The whole case as one self-contained HTML file (opens offline; loads nothing, runs no scripts)."""
         return self.request("GET", f"/api/cases/{case_id}/report.html", raw=True).content
+
+    def report_signing_key(self) -> dict[str, Any]:
+        """The public key that signs this server's case reports (compare its ``key_id`` with a report's)."""
+        return self.get("/api/report-signing-key")
 
     def saved_queries(self) -> list[dict[str, Any]]:
         return self.get("/api/saved-queries")
@@ -536,6 +540,48 @@ class ArgusClient:
 
     def alerts(self, **params: Any) -> list[dict[str, Any]]:
         return self.get("/api/alerts", **params)
+
+
+_SIGNATURE_TAG = '<meta name="argus-signature" content="{}">'
+
+
+def verify_report(report: bytes | str, trusted_key: str | None = None) -> dict[str, Any]:
+    """Check a signed Argus case report offline (needs the ``cryptography`` package).
+
+    ``report`` is the file's bytes or its path. Returns ``valid`` (unaltered since it was signed by the
+    key it carries), ``key_id``, and ``trusted`` (that key is ``trusted_key``, a public key or key id;
+    None when no key was given).
+    """
+    import re
+
+    try:
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise ImportError("verify_report needs the 'cryptography' package: pip install cryptography") from exc
+    data = report if isinstance(report, bytes) else open(report, "rb").read()  # noqa: SIM115
+    html = data.decode("utf-8", errors="strict")
+    signatures = re.findall(r'<meta name="argus-signature" content="([^"]*)">', html)
+    keys = re.findall(r'<meta name="argus-signing-key" content="([A-Za-z0-9+/=]*)">', html)
+    if len(signatures) != 1 or len(keys) != 1 or not signatures[0].startswith("ed25519:"):
+        return {"valid": False, "trusted": None, "problem": "Not a signed Argus report"}
+    _scheme, claimed_id, signature = signatures[0].split(":", 2)
+    raw_key = base64.b64decode(keys[0])
+    digest = hashlib.sha256(raw_key).hexdigest()[:16]
+    key_id = "-".join(digest[i : i + 4] for i in range(0, 16, 4))
+    unsigned = html.replace(_SIGNATURE_TAG.format(signatures[0]), _SIGNATURE_TAG.format(""), 1).encode()
+    message = b"argus-case-report/v1\n" + hashlib.sha256(unsigned).digest()
+    try:
+        if claimed_id != key_id:
+            raise InvalidSignature
+        Ed25519PublicKey.from_public_bytes(raw_key).verify(base64.b64decode(signature), message)
+    except (InvalidSignature, ValueError):
+        return {"valid": False, "trusted": None, "key_id": key_id, "problem": "Changed after signing, or not signed"}
+    trusted = None
+    if trusted_key:
+        wanted = trusted_key.strip()
+        trusted = wanted == keys[0] or wanted.replace("-", "").lower() == key_id.replace("-", "")
+    return {"valid": True, "trusted": trusted, "key_id": key_id, "sha256": hashlib.sha256(data).hexdigest()}
 
 
 def verify_webhook(secret: str, headers: Mapping[str, str], body: bytes, *, tolerance: int = 300) -> None:

@@ -302,6 +302,7 @@ async def lifespan(app: FastAPI):
     app.state.annotations = AnnotationRepository(db)
     app.state.fingerprint_watches = FingerprintWatchRepository(db)
     app.state.brand_watches = BrandWatchRepository(db)
+    app.state.report_signer = None  # loaded on first use (settings or the sealed key in the database)
     app.state.playbook_scan = _playbook_scan
     app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
 

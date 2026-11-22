@@ -230,6 +230,11 @@ evidence itself is never changed.
   hashes, chain of custody, integrity checked at export), scans and notes. No scripts, nothing
   fetched. The file's SHA-256 is in `X-Argus-Report-SHA256` and in the audit log (`case.report`).
 
+* Reports are **signed** (Ed25519). `GET /api/report-signing-key` (public, no key needed) gives the
+  signing key and its id; `POST /api/reports/verify` (multipart `file`) checks a report: `valid`
+  (unaltered since signing) and `trusted` (signed by this server). Offline: `argus --verify-report
+  FILE --report-key KEY_ID`, or `argus_client.verify_report(path, key_id)`.
+
 ## Case timeline and map
 
 * `GET /api/cases/{id}/timeline`: every dated entry, oldest first, each with `at`, `kind`

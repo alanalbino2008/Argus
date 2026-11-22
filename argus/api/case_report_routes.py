@@ -7,17 +7,27 @@ import re
 from datetime import datetime, timezone
 
 import anyio
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 
 from argus.api.case_routes import _case, _repo
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.api.map_routes import _scans, _timeline
 from argus.intel.relationships import analyse, entity_nodes, link_edges
+from argus.reports import signing
 from argus.reports.case_html import case_report_html
 from argus.security.auth import Role
 
 router = APIRouter(prefix="/api", tags=["cases"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
+MAX_VERIFY_BYTES = 64 * 1024 * 1024
+
+
+async def report_signer(request: Request) -> signing.ReportSigner:
+    state = request.app.state
+    if getattr(state, "report_signer", None) is None:
+        state.report_signer = await signing.signer_for(state.app_state, state.secret_box, state.settings)
+    signer: signing.ReportSigner = state.report_signer
+    return signer
 
 
 def _slug(title: str) -> str:
@@ -47,18 +57,41 @@ async def case_report(case_id: str, request: Request, ws: WorkspaceContext = VIE
     timeline = await _timeline(request, case_id, facts=True)
     scans = await _scans(request, items)
     generated_at = datetime.now(timezone.utc)
+    signer = await report_signer(request)
     page = await anyio.to_thread.run_sync(
         lambda: case_report_html(
             case, items=items, captures=captures, network=network, timeline=timeline,
             scans=scans, by=ws.principal.name, generated_at=generated_at,
+            signing={"tags": signer.tags(), "key_id": signer.key_id},
         )
     )  # fmt: skip
-    data = page.encode()
+    data = signer.sign(page).encode()
     digest = hashlib.sha256(data).hexdigest()
     await audit(request, ws.principal, "case.report", case_id,
-                details={"sha256": digest, "bytes": len(data), "captures": len(captures), "entries": len(timeline)})  # fmt: skip
+                details={"sha256": digest, "bytes": len(data), "key_id": signer.key_id, "captures": len(captures), "entries": len(timeline)})  # fmt: skip
     name = f"argus-case-{_slug(case['title'])}-{generated_at:%Y%m%d}.html"
     return Response(data, media_type="text/html; charset=utf-8", headers={
         "Content-Disposition": f'attachment; filename="{name}"', "X-Argus-Report-SHA256": digest,
+        "X-Argus-Report-Key": signer.key_id,
         "Cache-Control": "no-store", "Content-Security-Policy": "sandbox; default-src 'none'; style-src 'unsafe-inline'",
     })  # fmt: skip
+
+
+@router.get("/report-signing-key")
+async def report_signing_key(request: Request):
+    """The public key that signs this server's case reports, and its id. Public: a report's recipient
+    (who may have no account) compares the id in the report with this one."""
+    return (await report_signer(request)).info()
+
+
+@router.post("/reports/verify")
+async def verify_signed_report(request: Request, file: UploadFile = File(...), ws: WorkspaceContext = VIEWER):
+    """Check a case report: unaltered since it was signed (``valid``), and signed by this server (``trusted``)."""
+    data = await file.read(MAX_VERIFY_BYTES + 1)
+    if len(data) > MAX_VERIFY_BYTES:
+        raise HTTPException(status_code=413, detail="That file is larger than any Argus report")
+    signer = await report_signer(request)
+    result = signing.verify(data, trusted_key=signer.public_key)
+    await audit(request, ws.principal, "report.verify", None,
+                details={"valid": result["valid"], "trusted": result["trusted"], "sha256": result["sha256"]})  # fmt: skip
+    return {**result, "this_server_key_id": signer.key_id}

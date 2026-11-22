@@ -377,6 +377,10 @@ class Settings(BaseSettings):
         description="Nominatim-compatible address look-up, used only when asked; '' = off",
     )
     account_watch_enabled: bool = Field(default=True, description="Re-read watched accounts and record changes")
+    report_signing_key: SecretStr | None = Field(
+        default=None,
+        description="Base64 Ed25519 private key that signs case reports; unset: one is created and kept sealed",
+    )
     brand_watch_enabled: bool = Field(
         default=True, description="Look for lookalike domains of watched brands in Certificate Transparency"
     )

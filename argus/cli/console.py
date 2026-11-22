@@ -437,6 +437,28 @@ async def query_cli(text: str, source: str, as_json: bool) -> int:
     return 0
 
 
+def verify_report_cli(path: str, trusted_key: str | None) -> int:
+    """0: genuine and unaltered (and signed by the given key, if one was given); 1 otherwise."""
+    from pathlib import Path
+
+    from argus.reports.signing import verify
+
+    result = verify(Path(path).read_bytes(), trusted_key)
+    if not result["valid"]:
+        console.print(f"[red]NOT VALID[/red]: {result['problem']}")
+        return 1
+    console.print(f"[green]Valid[/green]: unaltered since it was signed by key {result['key_id']}")
+    if result["trusted"] is False:
+        console.print(f"[red]But not by the key you trust[/red] ({trusted_key})")
+        return 1
+    if result["trusted"] is None:
+        console.print("Compare the key id with the one published by the organisation that issued the report.")
+    else:
+        console.print("[green]Signed by the key you trust.[/green]")
+    console.print(f"SHA-256 of the file: {result['sha256']}")
+    return 0
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -505,6 +527,10 @@ def cli_entrypoint():
     parser.add_argument(
         "--backup-restore", metavar="FILE", help="Prepare a restore from a backup (it takes over at the next start)"
     )
+    parser.add_argument("--verify-report", metavar="FILE", help="Check a signed case report, then exit")
+    parser.add_argument(
+        "--report-key", metavar="KEY", help="With --verify-report: the issuer's public key or key id to trust"
+    )
     parser.add_argument(
         "--role",
         choices=["viewer", "analyst", "admin"],
@@ -513,6 +539,9 @@ def cli_entrypoint():
     )
 
     args = parser.parse_args()
+
+    if args.verify_report:
+        raise SystemExit(verify_report_cli(args.verify_report, args.report_key))
 
     if args.migrate:
         revision = asyncio.run(migrate_cli(float(os.environ.get("ARGUS_MIGRATE_WAIT_SECONDS", "90"))))

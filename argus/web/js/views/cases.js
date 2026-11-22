@@ -50,7 +50,8 @@ function renderList() {
   setHTML(root, html`<div class="page">
     <div class="page-head">
       <div><h1>Cases</h1><p>One place per story or inquiry: notes, people and how they connect, a timeline, scans, and web pages preserved as evidence with fingerprints and a chain of custody.</p></div>
-      ${canEdit() ? html`<div class="page-actions"><button class="btn primary" data-act="new-case">${ico("plus")}New case</button></div>` : ""}
+      <div class="page-actions"><button class="btn" data-act="verify-report" title="Check that a case report is genuine and unaltered">${ico("check")}Verify a report</button>
+      ${canEdit() ? html`<button class="btn primary" data-act="new-case">${ico("plus")}New case</button>` : ""}</div>
     </div>
     ${cases.some((c) => c.review_due) ? html`<div class="callout warn" style="margin-bottom:12px">${ico("history")}<span><b>${cases.filter((c) => c.review_due).length} case(s) haven't been touched in a long time.</b> Data protection law expects you to keep personal information only while you need it: close, export or delete the ones you've finished with.</span></div>` : ""}
     ${!cases.length ? html`<div class="card">${empty("report", "No cases yet", "Open a case for each investigation. Capture pages before they change or disappear, and export a bundle anyone can verify.")}</div>`
@@ -464,6 +465,26 @@ async function showEntity(actions, investigationId, entityId) {
   toast("The scan is taking a while to open: find the entity with the search box");
 }
 
+/** Pick a case report file and check its signature (on this server, against this server's key). */
+function verifyReport() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".html,text/html";
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const r = await api.post("/api/reports/verify", form);
+      if (!r.valid) toast(`NOT genuine: ${r.problem}`, "error", 12000);
+      else if (r.trusted) toast(`Genuine: signed by this Argus (key ${r.key_id}) and unaltered since`, "success", 10000);
+      else toast(`Unaltered since it was signed, but by another key (${r.key_id}); this server's is ${r.this_server_key_id}`, "error", 12000);
+    } catch (err) { toast(err.message, "error"); }
+  });
+  input.click();
+}
+
 export function initCases(el, actions) {
   root = el;
   actionsRef = actions;
@@ -513,6 +534,7 @@ export function initCases(el, actions) {
         return refresh();
       }
       if (act === "case-scan") return actionsRef.newInvestigation({ caseId: current.id, caseTitle: current.title, egress: current.egress, anonymous: anonymous(current) });
+      if (act === "verify-report") return verifyReport();
       if (act === "case-report") return download(`/api/cases/${enc(current.id)}/report.html`, `argus-case-${current.id}-report.html`);
       if (act === "export") return download(`/api/cases/${enc(current.id)}/export`, `argus-case-${current.id}.zip`);
       if (act === "file") return download(`/api/evidence/${enc(id)}/files/${enc(btn.dataset.file)}?download=true`, btn.dataset.file);
