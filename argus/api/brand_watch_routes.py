@@ -7,6 +7,7 @@ alerts on new ones. Domains the organisation owns can be listed so they are neve
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -31,11 +32,14 @@ class BrandWatchRequest(BaseModel):
     interval_hours: Literal[24, 168] = Field(default=24, description="Every day (24) or every week (168)")
     web_check: str = Field(default="off", max_length=64,
                            description="Visit lookalikes' websites: 'off', 'direct', or an egress route's name")  # fmt: skip
+    reference_urls: list[str] = Field(default_factory=list, max_length=5,
+                                      description="Your pages lookalikes are compared with (default: your home page)")  # fmt: skip
 
 
 class BrandWatchUpdate(BaseModel):
     allow: list[str] | None = Field(default=None, max_length=MAX_ALLOW)
     web_check: str | None = Field(default=None, max_length=64)
+    reference_urls: list[str] | None = Field(default=None, max_length=5)
 
 
 def _repo(request: Request) -> Any:
@@ -62,6 +66,19 @@ def _web_check(request: Request, value: str) -> str:
     return value
 
 
+def _references(values: list[str]) -> list[str]:
+    """Pages of the brand's own to compare lookalikes with: full http(s) addresses."""
+    urls = []
+    for value in values:
+        url = value.strip()
+        if not url:
+            continue
+        if not re.match(r"^https?://[^/\s]+", url) or len(url) > 500:
+            raise HTTPException(status_code=422, detail=f"{value!r} is not a web address (https://…)")
+        urls.append(url)
+    return list(dict.fromkeys(urls))
+
+
 def _allow(values: list[str], own: str) -> list[str]:
     return sorted({d for d in (_domain(v) for v in values if v.strip()) if d != own})
 
@@ -85,6 +102,8 @@ async def create_brand_watch(body: BrandWatchRequest, request: Request, ws: Work
     web_check = _web_check(request, body.web_check)
     watch = await _repo(request).create(workspace_id=ws.id, domain=domain, allow=allow, web_check=web_check,
                                         interval_hours=body.interval_hours, by=ws.principal.name)  # fmt: skip
+    if body.reference_urls:
+        watch = await _repo(request).update(watch["id"], ws.id, reference_urls=_references(body.reference_urls))
     await audit(request, ws.principal, "brand_watch.create", watch["id"], details={"domain": domain})
     request.app.state.brand_watcher.kick()
     return watch
@@ -101,6 +120,8 @@ async def update_brand_watch(watch_id: str, body: BrandWatchUpdate, request: Req
         changes["allow"] = _allow(body.allow, current["domain"])
     if body.web_check is not None:
         changes["web_check"] = _web_check(request, body.web_check)
+    if body.reference_urls is not None:
+        changes["reference_urls"] = _references(body.reference_urls)
     updated = await _repo(request).update(watch_id, ws.id, **changes)
     await audit(request, ws.principal, "brand_watch.update", watch_id,
                 details={"allow": len(updated["allow"]), "web_check": updated["web_check"]})  # fmt: skip

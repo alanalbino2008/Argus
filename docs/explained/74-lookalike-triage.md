@@ -27,8 +27,16 @@ servers and anycast addresses.
 **Web (opt-in, per watch).** Argus fetches the home page (HTTPS, then HTTP) and its favicon once, and
 compares them with your own site:
 
-* the **same favicon** as yours, or your **page title** or brand name in its title: *Copies your site*;
+* the **same favicon** as yours, your **page title** or brand name in its title, or a page that
+  **looks like yours** (visual match): *Copies your site*;
 * that, plus a **password field**: *Active phishing page*.
+
+**Visual (Phase 78, with website checks on).** The lookalike's page is rendered by the headless
+browser, through the same route, and its first screen compared with your own pages (your home page,
+and your login page if you add it): a perceptual fingerprint (a 64-bit difference hash and a 16 x 16
+light-and-dark layout, both of which must agree). Phishing kits often change the favicon and title but
+keep the look; this catches them. Blank pages never match; at most 8 pages are rendered per run, and
+your own pages are re-rendered weekly.
 
 ## Verdicts and severity
 

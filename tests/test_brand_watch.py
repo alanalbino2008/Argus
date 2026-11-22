@@ -58,7 +58,13 @@ def bw(make_client, monkeypatch):
             return WebProfile(True, 200, name, "AcmeBank | Online banking", False, "f" * 64)
         return state["web"].get(name, WebProfile(True, 200, name, "Welcome to nginx", False, ""))
 
-    watcher.dns_lookup, watcher.web_lookup = fake_dns, fake_web
+    state["shots"], state["shot_calls"] = {}, []
+
+    async def fake_screenshot(url, mode):
+        state["shot_calls"].append((url, mode))
+        return state["shots"].get(url)
+
+    watcher.dns_lookup, watcher.web_lookup, watcher.screenshot = fake_dns, fake_web, fake_screenshot
     watcher.web_factory = lambda route: contextlib.nullcontext()
     return client, state
 

@@ -35,10 +35,16 @@ def _view(row: BrandWatchRow, *, full: bool = False) -> dict[str, Any]:
     data = row.data or {}
     triage = data.get("triage") or {}
     recent = [{**f, "triage": triage.get(f.get("name"))} for f in data.get("recent") or []]
-    extra = {"triage": triage, "details": data.get("details") or {}} if full else {}
+    extra = (
+        {"triage": triage, "details": data.get("details") or {}, "visual_refs": data.get("visual_refs") or []}
+        if full
+        else {}
+    )
     return {
         **extra,
         "web_check": data.get("web_check") or "off",
+        "reference_urls": data.get("reference_urls") or [],
+        "references": [{"url": r["url"], "captured_at": r.get("captured_at")} for r in data.get("visual_refs") or []],
         "takedowns": data.get("takedowns") or {},
         "id": row.id,
         "domain": row.domain,
@@ -105,7 +111,8 @@ class BrandWatchRepository:
             row = await s.get(BrandWatchRow, watch_id)
             if row is None or row.workspace_id != workspace_id:
                 return None
-            row.data = {**(row.data or {}), **{k: v for k, v in changes.items() if k in ("allow", "web_check")}}
+            row.data = {**(row.data or {}),
+                        **{k: v for k, v in changes.items() if k in ("allow", "web_check", "reference_urls")}}  # fmt: skip
             return _view(row)
 
     async def put_takedown(
@@ -189,6 +196,7 @@ class BrandWatchRepository:
         self, watch_id: str, *, status: str, sources: dict[str, Any], message: str, known: list[str] | None = None,
         new: list[dict[str, Any]] | None = None, cursor: int | None = None, alerted: bool = False,
         retry_in: timedelta | None = None, triage: dict[str, dict[str, Any]] | None = None,
+        visual_refs: list[dict[str, Any]] | None = None,
     ) -> None:  # fmt: skip
         async with self.db.session() as s, s.begin():
             row = await s.get(BrandWatchRow, watch_id)
@@ -226,6 +234,8 @@ class BrandWatchRepository:
             if status in ("ok", "partial"):
                 data["baselined"] = True  # the first run that reached a source records what exists today
             data["sources"], data["last_message"] = sources, message[:300]
+            if visual_refs is not None:
+                data["visual_refs"] = visual_refs
             row.data = data
             row.last_run_at, row.last_status = _now(), status
             if alerted:

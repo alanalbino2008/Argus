@@ -55,8 +55,10 @@ export function initMonitoring(el, appActions) {
         const domain = root.querySelector("#brand-domain").value.trim();
         const allow = root.querySelector("#brand-allow").value.split(/[\s,]+/).filter(Boolean);
         const web_check = root.querySelector("#brand-web").value;
+        const login = root.querySelector("#brand-login").value.trim();
         if (!domain) { toast("Enter the brand's domain, e.g. acme.com"); return; }
-        await api.post("/api/brand-watches", { domain, allow, web_check });
+        const home = `https://${domain.replace(/^https?:\/\//, "").split("/")[0]}/`;
+        await api.post("/api/brand-watches", { domain, allow, web_check, reference_urls: login ? [home, login] : [] });
         brandForm = false;
         toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
       } else if (act === "campaign-takedown") {
@@ -196,10 +198,11 @@ function brandCard() {
       <label class="small" style="display:block;margin-top:8px">Other domains you own (never reported)<input id="brand-allow" class="input" placeholder="acme.co.uk, acme-careers.com" autocomplete="off"></label>
       <label class="small" style="display:block;margin-top:8px">Visit lookalikes' websites (to spot cloned login pages)${webSelect("brand-web", "off")}</label>
       <p class="muted small">Visiting a phishing site tells whoever runs it that someone looked, and from which address. Use a route (Tor, a VPN) to hide this server. DNS checks are always on and passive.</p>
+      <label class="small" style="display:block;margin-top:8px">Your login page (optional: lookalikes that look like it are flagged, even with a different title and icon)<input id="brand-login" class="input" placeholder="https://login.acme.com/" autocomplete="off"></label>
       <div style="margin-top:10px"><button class="btn primary sm" data-act="brand-save">Start watching</button></div></div>` : ""}
     ${!brandWatches.length ? (brandForm ? "" : html`<p class="muted small">No brand watched yet.</p>`)
       : brandWatches.map((w) => html`<div class="list-row" style="align-items:flex-start">
-        <div class="list-main"><div class="list-title"><b>${w.domain}</b> <span class="muted small">every ${w.interval_hours === 24 ? "day" : "week"} · ${w.known} lookalike${w.known === 1 ? "" : "s"} known${w.allow.length ? ` · ${w.allow.length} own domain${w.allow.length === 1 ? "" : "s"} excluded` : ""}</span></div>
+        <div class="list-main"><div class="list-title"><b>${w.domain}</b> <span class="muted small">every ${w.interval_hours === 24 ? "day" : "week"} · ${w.known} lookalike${w.known === 1 ? "" : "s"} known${w.allow.length ? ` · ${w.allow.length} own domain${w.allow.length === 1 ? "" : "s"} excluded` : ""}${w.references?.length ? ` · compared with ${w.references.length} of your page${w.references.length === 1 ? "" : "s"}` : ""}</span></div>
           <div class="list-sub">${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : w.last_status === "partial" ? "medium" : "high"}" title="${Object.entries(w.sources || {}).map(([k, v]) => `${k}: ${v.message || v.status}`).join("\n")}">${w.last_status}</span> ${timeAgo(w.last_run_at)} · ${w.last_message}` : "First check pending"}</div>
           ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.triage?.severity || f.severity] || ""}">${f.triage?.severity || f.severity}</span> ${f.triage ? html`<span class="pill ${f.triage.verdict === "phishing" ? "critical" : ""}" title="${(f.triage.reasons || []).join("\n")}">${f.triage.label}</span> ` : ""}${takedownPill(w, f)}<span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
         <div class="actions">

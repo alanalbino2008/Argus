@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.78.0] — Phase 78: Visual clone detection
+
+### Added
+- **Lookalikes are compared by how they look.** Phishing kits copy a login page's look and change
+  what a machine checks first (favicon, title, markup). With website checks on, Argus renders each live
+  lookalike's page in the headless browser (through the watch's route) and compares its first screen
+  with the brand's own pages: a 64-bit difference hash and a 16 x 16 light-and-dark layout, both of
+  which must agree. A visual copy counts as a copy of your site; with a password field it is an
+  **active phishing page** (critical). The reason says which of your pages it resembles and how
+  closely ("Looks like your page https://login.acme.com/ (97% visual match)").
+- **Your reference pages.** Your home page by default; add your login page (or up to five pages) when
+  creating a watch, or with `reference_urls`. They are rendered once a week, not on every run.
+- **Careful by design.** Blank and near-uniform pages never match anything; at most 8 lookalikes are
+  rendered per run (newest first); without a headless browser, or with website checks off, nothing is
+  rendered. A failed render never breaks the rest of the triage.
+- API: `reference_urls` on `POST`/`PATCH /api/brand-watches`; `references` (URL and when rendered) in
+  `GET`; each triage carries `visual` (`url`, `similarity`).
+
 ## [1.77.0] — Phase 77: Campaign takedowns, and campaigns in the TAXII feed
 
 ### Added

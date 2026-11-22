@@ -36,6 +36,7 @@ import dns.resolver
 
 from argus.intel.favicon import MAX_ICON_BYTES, icon_links, sniff_image
 from argus.intel.lookalikes import registrable
+from argus.intel.visual import MATCH as VISUAL_MATCH
 
 PARKING_NS = (
     "sedoparking.com", "parkingcrew.net", "bodis.com", "above.com", "dan.com", "afternic.com", "parklogic.com",
@@ -192,10 +193,12 @@ class Triage:
     reasons: list[str] = field(default_factory=list)
     dns: dict[str, Any] | None = None
     web: dict[str, Any] | None = None
+    visual: dict[str, Any] | None = None  # the closest reference page: {url, similarity}
 
     def as_dict(self, checked_at: str) -> dict[str, Any]:
         return {"verdict": self.verdict, "label": VERDICT_LABELS[self.verdict], "severity": self.severity,
-                "reasons": self.reasons, "dns": self.dns, "web": self.web, "checked_at": checked_at}  # fmt: skip
+                "reasons": self.reasons, "dns": self.dns, "web": self.web, "visual": self.visual,
+                "checked_at": checked_at}  # fmt: skip
 
 
 def _raise(severity: str, floor: str) -> str:
@@ -208,7 +211,7 @@ def _cap(severity: str, ceiling: str) -> str:
 
 def judge(
     base_severity: str, brand: str, dns_info: dict[str, Any] | None, own: dict[str, Any],
-    web: WebProfile | None, *, sensitive: bool,
+    web: WebProfile | None, *, sensitive: bool, visual: dict[str, Any] | None = None,
 ) -> Triage:  # fmt: skip
     """The verdict for one lookalike. ``base_severity`` comes from how its name imitates the brand;
     ``own`` holds the brand's own name servers, addresses, page title and favicon."""
@@ -231,18 +234,22 @@ def judge(
         own_title = (own.get("title") or "").strip().lower()
         title = web.title.lower()
         brand_title = bool(title and ((own_title and own_title == title) or brand in re.sub(r"[^a-z0-9]", "", title)))
+        looks_alike = bool(visual and visual.get("similarity", 0) >= VISUAL_MATCH)
+        if looks_alike and visual:
+            reasons.append(f"Looks like your page {visual['url']} ({round(visual['similarity'] * 100)}% visual match)")
         if same_icon:
             reasons.append("Serves your favicon")
         if brand_title:
             reasons.append(f"Page title imitates you: “{web.title}”")
         if web.login_form:
             reasons.append("Shows a password field")
-        if (same_icon or brand_title) and web.login_form:
-            return Triage("phishing", "critical", reasons, dns_info, web.as_dict())
-        if same_icon or brand_title:
-            return Triage("clone", _raise(severity, "high"), reasons, dns_info, web.as_dict())
+        copies = same_icon or brand_title or looks_alike
+        if copies and web.login_form:
+            return Triage("phishing", "critical", reasons, dns_info, web.as_dict(), visual)
+        if copies:
+            return Triage("clone", _raise(severity, "high"), reasons, dns_info, web.as_dict(), visual)
         reasons.append(f"Website answers ({web.status})")
-        return Triage("live" if result == "suspicious" else result, severity, reasons, dns_info, web.as_dict())
+        return Triage("live" if result == "suspicious" else result, severity, reasons, dns_info, web.as_dict(), visual)
     if web is not None:
         reasons.append(f"Website did not answer ({web.error or web.status})" if not web.reachable
                        else f"Website error ({web.status})")  # fmt: skip

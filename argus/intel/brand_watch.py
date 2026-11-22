@@ -34,7 +34,7 @@ import aiohttp
 
 from argus.accounts import features
 from argus.core.settings import Settings
-from argus.intel import lookalike_triage
+from argus.intel import lookalike_triage, visual
 from argus.intel.account_watch import client as outbound_client
 from argus.intel.lookalike_triage import Triage, judge
 from argus.intel.lookalikes import SENSITIVE_WORDS, Candidate, generate, registrable, split_domain
@@ -50,6 +50,8 @@ CANDIDATES = 400  # lookalikes cycled through by name
 MAX_CERTS = 20000  # crt.sh rows read per run
 FRESH = timedelta(days=14)  # on the first run, only certificates this recent are news
 RETRY = timedelta(hours=1)
+VISUAL_PER_RUN = 8  # lookalike pages rendered and compared per run (a browser render takes seconds)
+REFERENCES_EVERY = timedelta(days=7)  # the brand's own pages are re-rendered this often
 RETRIAGE_PER_RUN = 25  # known lookalikes re-checked per run (oldest check first): parked ones go live later
 ALERT_SAMPLE = 20
 MAX_HOSTS = 10
@@ -306,6 +308,7 @@ class BrandWatcher:
         self.web_factory: Callable[[str], Any] = self._web_client  # route name or "direct" -> HTTP client
         self.dns_lookup: Callable[[str], Awaitable[dict[str, Any] | None]] = lookalike_triage.dns_profile
         self.web_lookup: Callable[[Any, str], Awaitable[Any]] = lookalike_triage.web_profile
+        self.screenshot: Callable[[str, str], Awaitable[bytes | None]] = self._screenshot  # (url, mode) -> PNG
         self.poll_seconds = poll_seconds
         self._running: set[asyncio.Task[Any]] = set()
 
@@ -317,8 +320,45 @@ class BrandWatcher:
             raise SourceFailed(f"The route '{route_name}' is not configured any more")
         return outbound_client(self.settings, route)
 
-    async def triage(self, watch: dict[str, Any], findings: dict[str, Finding]) -> tuple[dict[str, Triage], str | None]:
-        """Triage ``findings`` (name -> finding). Returns the verdicts and a problem, if the web check failed."""
+    async def _screenshot(self, url: str, mode: str) -> bytes | None:
+        """The page as the headless browser shows it, through the watch's route (None without a browser)."""
+        from argus.api.opsec_routes import find_route
+        from argus.evidence.capture import find_browser, render
+        from argus.evidence.guard_proxy import GuardProxy
+
+        browser = find_browser(self.settings)
+        if browser is None:
+            return None
+        route = None if mode == "direct" else find_route(self.settings, mode)
+        async with GuardProxy(allow_private=self.settings.allow_private_targets, upstream=route) as proxy:
+            shot: bytes | None = (await render(url, browser, self.settings, proxy))["screenshot"]
+        return shot
+
+    async def _references(self, watch: dict[str, Any], mode: str) -> list[dict[str, Any]] | None:
+        """Fingerprints of the brand's own pages; None when the stored ones are still current."""
+        urls = watch.get("reference_urls") or [f"https://{watch['domain']}/"]
+        stored = watch.get("visual_refs") or []
+        now = datetime.now(timezone.utc)
+        fresh = [
+            r
+            for r in stored
+            if r.get("captured_at") and now - datetime.fromisoformat(r["captured_at"]) < REFERENCES_EVERY
+        ]
+        if stored and [r["url"] for r in stored] == urls and len(fresh) == len(stored):
+            return None
+        refs = []
+        for url in urls:
+            shot = await self.screenshot(url, mode)
+            print_ = visual.fingerprint(shot) if shot else None
+            if print_ is not None and not print_.blank:
+                refs.append({"url": url, "fingerprint": print_.as_dict(), "captured_at": now.isoformat()})
+        return refs
+
+    async def triage(
+        self, watch: dict[str, Any], findings: dict[str, Finding]
+    ) -> tuple[dict[str, Triage], str | None, list[dict[str, Any]] | None]:
+        """Triage ``findings`` (name -> finding). Returns the verdicts, a problem if the web check failed,
+        and the brand's reference pages when they were (re)rendered."""
         domain = watch["domain"]
         brand = split_domain(domain)[0]
         own_dns = await self.dns_lookup(domain) or {}
@@ -345,12 +385,30 @@ class BrandWatcher:
                         web_results[name] = await self.web_lookup(http, name)
             except SourceFailed as exc:
                 problem = str(exc)
+        # What the pages look like: the brand's own (references) against the live lookalikes, newest first.
+        matches: dict[str, dict[str, Any]] = {}
+        new_refs = None
+        reachable = [n for n in live if getattr(web_results.get(n), "reachable", False)][:VISUAL_PER_RUN]
+        if mode != "off" and reachable and problem is None:
+            try:
+                new_refs = await self._references(watch, mode)
+                refs = new_refs if new_refs is not None else watch.get("visual_refs") or []
+                if refs:
+                    for name in reachable:
+                        host = web_results[name].final_host or name
+                        shot = await self.screenshot(f"https://{host}/", mode)
+                        page = visual.fingerprint(shot) if shot else None
+                        best = visual.best_match(page, refs) if page is not None else None
+                        if best is not None:
+                            matches[name] = best
+            except (SourceFailed, OSError, ValueError) as exc:  # visual checks never break the triage
+                logger.warning("Visual comparison for %s failed: %s", domain, exc)
         verdicts = {}
         for name, finding in findings.items():
             sensitive = bool(_sensitive(name))
             verdicts[name] = judge(finding.severity, brand, dns_results.get(name), own, web_results.get(name),
-                                   sensitive=sensitive)  # fmt: skip
-        return verdicts, problem
+                                   sensitive=sensitive, visual=matches.get(name))  # fmt: skip
+        return verdicts, problem, new_refs
 
     async def _follow_takedowns(
         self,
@@ -486,7 +544,7 @@ class BrandWatcher:
             base = (previous.get(name) or {}).get("base_severity") or info.get("severity") or "medium"
             to_check[name] = Finding(name, str(info.get("display") or name), name, str(info.get("technique") or ""),
                                      str(info.get("detail") or ""), base, "", "", "", "")  # fmt: skip
-        verdicts, web_problem = await self.triage(watch, to_check)
+        verdicts, web_problem, new_refs = await self.triage(watch, to_check)
         stamp = now.isoformat()
         triaged = {name: {**t.as_dict(stamp), "base_severity": to_check[name].severity} for name, t in verdicts.items()}
         fresh = [replace(f, severity=verdicts[f.name].severity, verdict=verdicts[f.name].verdict,
@@ -518,7 +576,7 @@ class BrandWatcher:
         await self.repo.record(
             watch["id"], status=status, sources=sources, message=message, known=known,
             new=[asdict(f) for f in fresh], cursor=cursor, alerted=alert is not None,
-            retry_in=RETRY if failed else None, triage=triaged,
+            retry_in=RETRY if failed else None, triage=triaged, visual_refs=new_refs,
         )  # fmt: skip
         logger.info("Brand watch %s (%s): %s", watch["id"], domain, message)
         return {"watch_id": watch["id"], "status": status, "baseline": baseline, "new": len(news),
