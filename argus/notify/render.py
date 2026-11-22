@@ -37,6 +37,8 @@ def _alert_path(summary: dict[str, Any], workspace_id: Any, investigation_id: st
     for page in ("exposure", "remediation"):
         if summary.get(page):
             return f"/?ws={workspace_id}#/{page}"
+    if summary.get("brand_watch"):
+        return f"/?ws={workspace_id}#/monitoring"
     return f"/?ws={workspace_id}&inv={investigation_id}"
 
 
@@ -70,6 +72,7 @@ def alert_event(alert: dict[str, Any], workspace: dict[str, Any], public_url: st
             "url": _link(public_url, _alert_path(summary, workspace.get("id"), alert["investigation_id"])),
             **{key: summary[key] for key in ("exposure", "remediation") if summary.get(key)},
             **({"saved_query": _saved_query_event(summary["saved_query"])} if summary.get("saved_query") else {}),
+            **({"brand_watch": _brand_event(summary["brand_watch"])} if summary.get("brand_watch") else {}),
             **(
                 {"fingerprint_watch": _fingerprint_event(summary["fingerprint_watch"])}
                 if summary.get("fingerprint_watch")
@@ -87,6 +90,13 @@ def _saved_query_event(sq: dict[str, Any]) -> dict[str, Any]:
 def _fingerprint_event(fw: dict[str, Any]) -> dict[str, Any]:
     """What a fingerprint-watch alert tells a webhook: which fingerprint, and the servers newly sharing it."""
     return {k: fw.get(k) for k in ("id", "engine", "label", "query", "new_count", "total_count", "new_servers")}
+
+
+def _brand_event(bw: dict[str, Any]) -> dict[str, Any]:
+    """What a brand-watch alert tells a webhook: the brand and the lookalike domains that got certificates."""
+    keys = ("name", "display", "technique", "detail", "severity", "issuer", "not_before", "link", "hosts", "host_count")
+    return {"id": bw.get("id"), "domain": bw.get("domain"), "baseline": bw.get("baseline"), "new_count": bw.get("new_count"),
+            "lookalikes": [{k: f.get(k) for k in keys} for f in bw.get("findings") or []]}  # fmt: skip
 
 
 def probe_event(workspace: dict[str, Any], channel_name: str, by: str) -> dict[str, Any]:

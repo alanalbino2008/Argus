@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.71.0] — Phase 71: Brand watch on Certificate Transparency
+
+### Added
+- **Brand watch.** On **Monitoring → Brand watch**, enter your domain (and other domains you own).
+  Every day Argus looks in the Certificate Transparency logs for certificates on names that imitate
+  it and alerts on new ones. Phishing sites need HTTPS, and every public certificate is logged, so
+  this often shows a campaign before its first email is sent.
+- **Two sources.** crt.sh is searched by keyword (every certificate whose names contain the brand:
+  `acme-login.net`, `acme.evil.example`). Cert Spotter is asked by name for the lookalikes a keyword
+  cannot find (typos, look-alike letters, Cyrillic homographs), a few per run from the lookalike
+  generator's list, most dangerous first, so every candidate is covered over the days.
+  `ARGUS_CERTSPOTTER_API_KEY` checks more per run.
+- **Classified, grouped, ranked.** Each name is matched to a technique (homoglyph, combosquat,
+  typo, other TLD, the brand used as a subdomain of someone else's domain). Names under one
+  registration are one finding (`secure-acme.com`, +60 hosts). Sensitive words (`login`, `secure`,
+  `pay`…) and look-alike letters make it high severity. Your own domains are never reported.
+- **Quiet start.** The first run records what already exists and alerts only on domains whose first
+  certificate is from the last 14 days; after that, every new lookalike domain is announced, in one
+  alert per run, through Slack, Teams, email and webhooks (with a `brand_watch` block).
+- **Resilient.** crt.sh is often overloaded: when a source fails the run is partial, the other source
+  still counts, and the watch is retried within the hour. Runs are claimed atomically across replicas.
+- Analysts create, change, run and remove watches; viewers see them; other teams never do. Audited;
+  the own-domain list and findings are encrypted at rest. Up to 20 brands per workspace.
+- API: `GET/POST /api/brand-watches`, `PATCH`/`DELETE /api/brand-watches/{id}`,
+  `POST /api/brand-watches/{id}/run`. Python client: `watch_brand()`, `brand_watches()`.
+  Migration 0031. Helm chart 0.61.0.
+
 ## [1.70.0] — Phase 70: The case report, in one file
 
 ### Added

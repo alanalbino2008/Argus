@@ -12,6 +12,8 @@ let actions;
 let alerts = null;
 let monitors = null;
 let fpWatches = []; // watched fingerprints (Shodan/Censys searches on a schedule)
+let brandWatches = []; // brands whose lookalike domains are looked for in Certificate Transparency
+let brandForm = false;
 
 export function initMonitoring(el, appActions) {
   root = el;
@@ -36,6 +38,26 @@ export function initMonitoring(el, appActions) {
         if (!ok) return;
         await api.del(`/api/monitors/${enc(id)}`);
         toast("Monitor removed");
+      } else if (act === "brand-new") {
+        brandForm = !brandForm;
+        render();
+        if (brandForm) root.querySelector("#brand-domain")?.focus();
+        return;
+      } else if (act === "brand-save") {
+        const domain = root.querySelector("#brand-domain").value.trim();
+        const allow = root.querySelector("#brand-allow").value.split(/[\s,]+/).filter(Boolean);
+        if (!domain) { toast("Enter the brand's domain, e.g. acme.com"); return; }
+        await api.post("/api/brand-watches", { domain, allow });
+        brandForm = false;
+        toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
+      } else if (act === "brand-run") {
+        await api.post(`/api/brand-watches/${enc(id)}/run`);
+        toast("Checking Certificate Transparency now: results show here in a minute", "success");
+      } else if (act === "brand-delete") {
+        const ok = await confirmDialog({ title: "Stop watching this brand?", message: "Alerts it raised are kept.", confirm: "Stop watching", danger: true });
+        if (!ok) return;
+        await api.del(`/api/brand-watches/${enc(id)}`);
+        toast("Brand watch removed");
       } else if (act === "fp-run") {
         await api.post(`/api/fingerprint-watches/${enc(id)}/run`);
         toast("Running now: the result shows here in a minute", "success");
@@ -62,6 +84,7 @@ export async function refresh() {
   try {
     [alerts, monitors, fpWatches] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"),
       api.get("/api/fingerprint-watches").catch(() => []), loadNotifications(), loadSchedules()]);
+    brandWatches = await api.get("/api/brand-watches").catch(() => []);
   } catch {
     return;
   }
@@ -88,8 +111,10 @@ function render() {
           <div class="list-row" style="${a.acknowledged_at ? "opacity:.6" : ""}">
             ${severityPill(a.severity)}
             <div class="list-main"><div class="list-title" style="white-space:normal">${a.headline}</div>
+              ${a.summary?.brand_watch ? html`<div class="list-sub mono">${a.summary.brand_watch.findings.slice(0, 6).map((f) => f.display).join(" · ")}</div>` : ""}
               <div class="list-sub">${timeAgo(a.created_at)}${a.acknowledged_at ? html` · acknowledged by ${a.acknowledged_by}` : ""}</div></div>
-            ${a.summary?.exposure ? html`<a class="btn sm" href="#/exposure">${ico("breach")}View exposure</a>`
+            ${a.summary?.brand_watch ? ""
+              : a.summary?.exposure ? html`<a class="btn sm" href="#/exposure">${ico("breach")}View exposure</a>`
               : a.summary?.fingerprint_watch ? html`<button class="btn sm" data-act="open" data-id="${a.investigation_id}" title="${(a.summary.fingerprint_watch.new_servers || []).map((h) => h.ip + (h.port ? ":" + h.port : "")).join(", ")}">${ico("eye")}Open investigation</button>`
               : html`<button class="btn sm" data-act="changes" data-inv="${a.investigation_id}" data-prev="${a.previous_investigation_id}">${ico("compare")}What changed</button>`}
             ${a.acknowledged_at ? "" : html`<button class="btn sm ghost" data-act="ack" data-id="${a.id}">${ico("check")}Acknowledge</button>`}
@@ -113,6 +138,7 @@ function render() {
             </td></tr>`)}
         </tbody></table>`}
     </div>
+    ${brandCard()}
     ${fingerprintCard()}
     ${notificationsCard()}
     ${schedulesCard()}
@@ -139,4 +165,28 @@ function fingerprintCard() {
         <button class="btn sm ghost icon" data-act="fp-delete" data-id="${w.id}" title="Stop watching" aria-label="Stop watching">${ico("trash")}</button>
       </td></tr>`)}
     </tbody></table></div>`;
+}
+
+const SEV = { high: "high", medium: "medium", low: "low", critical: "critical" };
+
+/** Brands whose lookalike domains are looked for in Certificate Transparency every day. */
+function brandCard() {
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><h2>Brand watch</h2>
+      <button class="btn sm" data-act="brand-new">${ico("eye")}Watch a brand</button></div>
+    <p class="muted small">Phishing sites need a certificate, and certificates are public. Argus checks Certificate Transparency every day for lookalikes of your domain (acme-login.com, acrne.com, look-alike letters) and alerts on new ones.</p>
+    ${brandForm ? html`<div class="card-pad" style="border:1px solid var(--border);border-radius:8px;margin:10px 0">
+      <label class="small">Your domain<input id="brand-domain" class="input" placeholder="acme.com" autocomplete="off"></label>
+      <label class="small" style="display:block;margin-top:8px">Other domains you own (never reported)<input id="brand-allow" class="input" placeholder="acme.co.uk, acme-careers.com" autocomplete="off"></label>
+      <div style="margin-top:10px"><button class="btn primary sm" data-act="brand-save">Start watching</button></div></div>` : ""}
+    ${!brandWatches.length ? (brandForm ? "" : html`<p class="muted small">No brand watched yet.</p>`)
+      : brandWatches.map((w) => html`<div class="list-row" style="align-items:flex-start">
+        <div class="list-main"><div class="list-title"><b>${w.domain}</b> <span class="muted small">every ${w.interval_hours === 24 ? "day" : "week"} · ${w.known} lookalike${w.known === 1 ? "" : "s"} known${w.allow.length ? ` · ${w.allow.length} own domain${w.allow.length === 1 ? "" : "s"} excluded` : ""}</span></div>
+          <div class="list-sub">${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : w.last_status === "partial" ? "medium" : "high"}" title="${Object.entries(w.sources || {}).map(([k, v]) => `${k}: ${v.message || v.status}`).join("\n")}">${w.last_status}</span> ${timeAgo(w.last_run_at)} · ${w.last_message}` : "First check pending"}</div>
+          ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.severity] || ""}">${f.severity}</span> <span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
+        <div class="actions">
+          <button class="btn sm ghost" data-act="brand-run" data-id="${w.id}" title="Check Certificate Transparency now">Run now</button>
+          <button class="btn sm ghost icon" data-act="brand-delete" data-id="${w.id}" title="Stop watching" aria-label="Stop watching">${ico("trash")}</button>
+        </div></div>`)}
+  </div>`;
 }

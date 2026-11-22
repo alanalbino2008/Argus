@@ -63,6 +63,7 @@ from argus.api.annotation_routes import router as annotation_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
+from argus.api.brand_watch_routes import router as brand_watch_router
 from argus.api.business_routes import router as business_router
 from argus.api.case_report_routes import router as case_report_router
 from argus.api.case_routes import router as case_router
@@ -113,12 +114,14 @@ from argus.core.graph import IntelligenceGraph
 from argus.core.models import EntityType, Investigation, InvestigationStatus, ScanConfig
 from argus.core.settings import EgressRoute, Settings, get_settings
 from argus.demo import DEMO_TARGET, load_demo
+from argus.intel import brand_watch as brand
 from argus.intel import fingerprint_watch as fp_watch
 from argus.intel import hunt as hunting
 from argus.intel import internet_search
 from argus.intel.account_watch import AccountWatcher
 from argus.intel.account_watch import client as outbound_client
 from argus.intel.attack import map_investigation, to_navigator_layer
+from argus.intel.brand_watch import BrandWatcher
 from argus.intel.diff import compare, headline
 from argus.intel.exposure import demo_findings
 from argus.intel.exposure_monitor import ExposureMonitor
@@ -153,6 +156,7 @@ from argus.storage import backup as backup_files
 from argus.storage.account_mail_repo import AccountMailRepository
 from argus.storage.annotation_repo import AnnotationRepository
 from argus.storage.backup_service import BackupService
+from argus.storage.brand_watch_repo import BrandWatchRepository
 from argus.storage.case_repo import CaseRepository
 from argus.storage.exposure_repo import ExposureRepository
 from argus.storage.fingerprint_watch_repo import FingerprintWatchRepository
@@ -297,6 +301,7 @@ async def lifespan(app: FastAPI):
     app.state.saved_queries = SavedQueryRepository(db)
     app.state.annotations = AnnotationRepository(db)
     app.state.fingerprint_watches = FingerprintWatchRepository(db)
+    app.state.brand_watches = BrandWatchRepository(db)
     app.state.playbook_scan = _playbook_scan
     app.state.scan_engines = lambda: list(INVESTIGATIONS.values())
 
@@ -379,6 +384,12 @@ async def lifespan(app: FastAPI):
         if settings.fingerprint_watch_enabled and settings.monitors_enabled
         else None
     )
+    app.state.brand_watcher = BrandWatcher(app.state.brand_watches, settings, raise_alert=partial(_brand_alert, app))
+    brand_task = (
+        asyncio.create_task(app.state.brand_watcher.run_forever(), name="brand-watcher")
+        if settings.brand_watch_enabled and settings.monitors_enabled
+        else None
+    )
     app.state.account_watcher = AccountWatcher(app.state.account_watches, app.state.cases, settings, app.state.audit)
     watch_task = (
         asyncio.create_task(app.state.account_watcher.run_forever(), name="account-watcher")
@@ -433,6 +444,7 @@ async def lifespan(app: FastAPI):
                 remediation_task,
                 watch_task,
                 fingerprint_task,
+                brand_task,
                 licence_task,
                 mailer_task,
                 config_task,
@@ -644,6 +656,7 @@ app.include_router(analyst_router)
 app.include_router(query_router)
 app.include_router(annotation_router)
 app.include_router(fingerprint_watch_router)
+app.include_router(brand_watch_router)
 app.include_router(case_report_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)
@@ -1047,6 +1060,28 @@ async def _fingerprint_alert(
     await app.state.audit.record(
         SCHEDULER, "fingerprint_watch.alert", alert["id"],
         details={"watch": watch["id"], "new_servers": len(new)}, workspace_id=watch["workspace_id"],
+    )  # fmt: skip
+    return alert
+
+
+async def _brand_alert(app: FastAPI, watch: dict[str, Any], news: list[Any], baseline: bool) -> dict[str, Any] | None:
+    """New lookalike domains of a watched brand got certificates: one alert per run."""
+    severity = brand.worst(news)
+    alert = await app.state.monitors.create_alert(
+        monitor_id=None,
+        investigation_id="",
+        previous_investigation_id="",
+        target=watch["domain"],
+        severity=severity,
+        headline=brand.alert_headline(watch, news),
+        summary=brand.alert_summary(watch, news, baseline),
+        workspace_id=watch["workspace_id"],
+        public_url=app.state.settings.public_url,
+    )
+    metrics.ALERTS_RAISED.labels(severity).inc()
+    await app.state.audit.record(
+        SCHEDULER, "brand_watch.alert", alert["id"],
+        details={"watch": watch["id"], "lookalikes": len(news)}, workspace_id=watch["workspace_id"],
     )  # fmt: skip
     return alert
 

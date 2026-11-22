@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.70.0"
+__version__ = "1.71.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -249,6 +249,15 @@ class ArgusClient:
         """Re-run a fingerprint's Shodan or Censys search every day (24) or week (168); alert on new servers."""
         return self.post("/api/fingerprint-watches", {"investigation_id": investigation_id, "entity_id": entity_id,
                          "engine": engine, "interval_hours": interval_hours, "severity": severity})  # fmt: skip
+
+    def watch_brand(self, domain: str, *, allow: list[str] | None = None, interval_hours: int = 24) -> dict[str, Any]:
+        """Look for lookalike domains of ``domain`` in Certificate Transparency; ``allow`` lists domains you own."""
+        return self.post(
+            "/api/brand-watches", {"domain": domain, "allow": allow or [], "interval_hours": interval_hours}
+        )
+
+    def brand_watches(self) -> list[dict[str, Any]]:
+        return self.get("/api/brand-watches")
 
     def fingerprint_watches(self) -> list[dict[str, Any]]:
         return self.get("/api/fingerprint-watches")

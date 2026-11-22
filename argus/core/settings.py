@@ -377,6 +377,12 @@ class Settings(BaseSettings):
         description="Nominatim-compatible address look-up, used only when asked; '' = off",
     )
     account_watch_enabled: bool = Field(default=True, description="Re-read watched accounts and record changes")
+    brand_watch_enabled: bool = Field(
+        default=True, description="Look for lookalike domains of watched brands in Certificate Transparency"
+    )
+    certspotter_api_key: SecretStr | None = Field(
+        default=None, description="Cert Spotter API key: more lookalike names checked per brand-watch run"
+    )
     fingerprint_watch_enabled: bool = Field(
         default=True, description="Re-run watched fingerprints' Shodan/Censys searches and alert on new servers"
     )

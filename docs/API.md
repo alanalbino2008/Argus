@@ -123,6 +123,7 @@ events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then 
 | `POST /api/saved-queries/{id}/hunt` | Hunt with a saved query |
 | `GET /api/annotations` · `GET /api/annotations/tags` · `PUT /api/annotations/{entity_id}` | The team's tags and note on an entity, applied in every investigation; queried as `tag` and `note` |
 | `GET/POST /api/fingerprint-watches` · `POST /api/fingerprint-watches/{id}/run` · `DELETE /api/fingerprint-watches/{id}` | Re-run a fingerprint's Shodan or Censys search daily or weekly; alerts when new servers share it |
+| `GET/POST /api/brand-watches` · `PATCH`/`DELETE /api/brand-watches/{id}` · `POST /api/brand-watches/{id}/run` | Lookalike domains of a brand in Certificate Transparency (crt.sh, Cert Spotter), daily; alerts on new ones |
 | `GET /api/internet-search` · `POST /api/investigation/{id}/internet-search` | Shodan or Censys pivots for a fingerprint entity: `{"entity_id": "...", "engine": "shodan", "mode": "count"}`; `engine` is `shodan` or `censys`, `mode` is `count` or `search` |
 
 A query returns `kind` (`nodes`, `paths`, `groups` or `count`), `count`, `rows`, `groups`,
