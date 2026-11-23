@@ -122,6 +122,7 @@ events over a WebSocket: get a one-time ticket from `POST /api/ws-ticket`, then 
 | `GET/POST /api/saved-queries` · `PATCH/DELETE /api/saved-queries/{id}` | Saved queries; `alert: true` checks every finished scan |
 | `POST /api/saved-queries/{id}/hunt` | Hunt with a saved query |
 | `GET /api/annotations` · `GET /api/annotations/tags` · `PUT /api/annotations/{entity_id}` | The team's tags and note on an entity, applied in every investigation; queried as `tag` and `note` |
+| `GET /api/alerts?status=open,investigating&assignee=me` · `GET`/`PATCH /api/alerts/{id}` · `POST /api/alerts/{id}/comments` · `GET /api/alerts/stats` · `GET /api/alerts/assignees` | Alert workflow: status (open, investigating, resolved, false_positive), assignee, comments and activity; open work and median hours to acknowledge and resolve |
 | `GET/POST /api/fingerprint-watches` · `POST /api/fingerprint-watches/{id}/run` · `DELETE /api/fingerprint-watches/{id}` | Re-run a fingerprint's Shodan or Censys search daily or weekly; alerts when new servers share it |
 | `GET/POST /api/brand-watches` · `PATCH`/`DELETE /api/brand-watches/{id}` · `POST /api/brand-watches/{id}/run` | Lookalike domains of a brand in Certificate Transparency (crt.sh, Cert Spotter), daily; alerts on new ones |
 | `POST /api/brand-watches/{id}/takedowns` · `POST …/takedowns/{domain}/reported` · `POST …/takedowns/{domain}/close` | Draft an abuse report for a lookalike (registrar and host abuse contacts from RDAP, with the evidence); track it until the domain goes down |

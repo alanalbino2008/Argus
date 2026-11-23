@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.81.0] — Phase 81: Alert workflow
+
+### Added
+- **Alerts are work items.** Each alert has a **status** (open → investigating → resolved, or false
+  positive), an **assignee** (a member of the workspace, or yourself) and an **activity** history:
+  status changes and assignments with the reason given, and the team's comments. Acknowledging an
+  alert now means "seen, someone is on it" (open → investigating).
+- **Monitoring → Alerts** has filters (Open, Mine, Unassigned, Closed), shows each alert's status,
+  owner and comments, and opens an alert to change its status, assign it and discuss it. The header
+  shows open and unassigned alerts and the median time to resolve over 30 days.
+- **Response times.** `GET /api/alerts/stats`: open alerts by severity, unassigned, raised and
+  resolved in the period, false-positive rate, and the median hours to acknowledge and to resolve.
+- Analysts change and comment; viewers read; other teams never see them. Every change is audited
+  (`alert.update`, `alert.comment`); comments and activity are encrypted at rest. Migration 0033:
+  alerts acknowledged before this version count as resolved.
+- API: `GET /api/alerts?status=&assignee=me|none|name`, `GET`/`PATCH /api/alerts/{id}`,
+  `POST /api/alerts/{id}/comments`, `GET /api/alerts/stats`, `GET /api/alerts/assignees`. Python
+  client: `update_alert()`, `comment_alert()`, `alert_stats()`.
+
+### Fixed
+- The Python client's `brand_protection(days=…)` sent the period as a parameter the server ignored
+  (it always used 90 days).
+
 ## [1.80.0] — Phase 80: Lookalikes in their own table
 
 ### Changed

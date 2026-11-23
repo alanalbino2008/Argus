@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from statistics import median
 from typing import Any, cast
 
 from sqlalchemy import delete, select, update
@@ -61,7 +62,18 @@ def _alert(row: AlertRow) -> dict[str, Any]:
         "created_at": _iso(row.created_at),
         "acknowledged_at": _iso(row.acknowledged_at),
         "acknowledged_by": row.acknowledged_by,
+        "status": row.status or "open",
+        "assignee": row.assignee,
+        "resolved_at": _iso(row.resolved_at),
+        "resolved_by": row.resolved_by,
+        "comments": sum(1 for a in row.activity or [] if a.get("event") == "comment"),
     }
+
+
+ALERT_STATUSES = ("open", "investigating", "resolved", "false_positive")
+OPEN = ("open", "investigating")
+CLOSED = ("resolved", "false_positive")
+MAX_ACTIVITY = 200
 
 
 class MonitorRepository:
@@ -230,8 +242,9 @@ class MonitorRepository:
         return alert
 
     async def alerts(
-        self, *, workspace_id: str, limit: int = 50, unacknowledged_only: bool = False
-    ) -> list[dict[str, Any]]:
+        self, *, workspace_id: str, limit: int = 50, unacknowledged_only: bool = False,
+        statuses: list[str] | None = None, assignee: str | None = None,
+    ) -> list[dict[str, Any]]:  # fmt: skip
         stmt = (
             select(AlertRow)
             .where(AlertRow.workspace_id == workspace_id)
@@ -240,17 +253,108 @@ class MonitorRepository:
         )
         if unacknowledged_only:
             stmt = stmt.where(AlertRow.acknowledged_at.is_(None))
+        if statuses:
+            stmt = stmt.where(AlertRow.status.in_(statuses))
+        if assignee is not None:
+            stmt = stmt.where(AlertRow.assignee == assignee) if assignee else stmt.where(AlertRow.assignee.is_(None))
         async with self.db.session() as s:
             rows = (await s.execute(stmt)).scalars().all()
         return [_alert(r) for r in rows]
 
     async def acknowledge(self, alert_id: str, by: str, *, workspace_id: str) -> bool:
+        """Seen, and someone is on it: an open alert moves to *investigating*."""
         async with self.db.session() as s, s.begin():
-            result = await s.execute(
-                update(AlertRow)
-                .where(
-                    AlertRow.id == alert_id, AlertRow.workspace_id == workspace_id, AlertRow.acknowledged_at.is_(None)
-                )
-                .values(acknowledged_at=_now(), acknowledged_by=by)
-            )
-        return (cast("CursorResult[Any]", result).rowcount or 0) > 0
+            row = await s.get(AlertRow, alert_id)
+            if row is None or row.workspace_id != workspace_id or row.acknowledged_at is not None:
+                return False
+            row.acknowledged_at, row.acknowledged_by = _now(), by
+            if (row.status or "open") == "open":
+                row.status = "investigating"
+            row.activity = [*(row.activity or []), {"at": _now().isoformat(), "by": by, "event": "acknowledged"}][
+                -MAX_ACTIVITY:
+            ]
+            return True
+
+    async def get_alert(self, alert_id: str, *, workspace_id: str) -> dict[str, Any] | None:
+        """One alert with its activity (comments, status changes, assignments)."""
+        async with self.db.session() as s:
+            row = await s.get(AlertRow, alert_id)
+        if row is None or row.workspace_id != workspace_id:
+            return None
+        return {**_alert(row), "activity": list(row.activity or [])}
+
+    async def update_alert(
+        self, alert_id: str, *, workspace_id: str, by: str, status: str | None = None,
+        assignee: str | None = None, unassign: bool = False, note: str = "",
+    ) -> dict[str, Any] | None:  # fmt: skip
+        """Change an alert's status and/or assignee; every change is recorded in its activity."""
+        async with self.db.session() as s, s.begin():
+            row = await s.get(AlertRow, alert_id)
+            if row is None or row.workspace_id != workspace_id:
+                return None
+            now = _now()
+            events: list[dict[str, Any]] = []
+            if status is not None and status != (row.status or "open"):
+                events.append({"event": "status", "from": row.status or "open", "to": status})
+                row.status = status
+                if status in CLOSED:
+                    row.resolved_at, row.resolved_by = now, by
+                else:
+                    row.resolved_at = row.resolved_by = None
+                if row.acknowledged_at is None:  # any decision means someone has seen it
+                    row.acknowledged_at, row.acknowledged_by = now, by
+            if unassign and row.assignee is not None:
+                events.append({"event": "assigned", "from": row.assignee, "to": None})
+                row.assignee = None
+            elif assignee is not None and assignee != row.assignee:
+                events.append({"event": "assigned", "from": row.assignee, "to": assignee})
+                row.assignee = assignee
+            if events:
+                stamp = now.isoformat()
+                extra = {"note": note} if note else {}
+                row.activity = [*(row.activity or []), *({"at": stamp, "by": by, **e, **extra} for e in events)][
+                    -MAX_ACTIVITY:
+                ]
+            return {**_alert(row), "activity": list(row.activity or [])}
+
+    async def comment(self, alert_id: str, *, workspace_id: str, by: str, body: str) -> dict[str, Any] | None:
+        async with self.db.session() as s, s.begin():
+            row = await s.get(AlertRow, alert_id)
+            if row is None or row.workspace_id != workspace_id:
+                return None
+            entry = {"at": _now().isoformat(), "by": by, "event": "comment", "body": body}
+            row.activity = [*(row.activity or []), entry][-MAX_ACTIVITY:]
+            return entry
+
+    async def alert_stats(self, *, workspace_id: str, days: int, now: datetime | None = None) -> dict[str, Any]:
+        """Open work by severity, and how fast alerts are acknowledged and resolved (medians, in hours)."""
+        moment = now or _now()
+        since = moment - timedelta(days=days)
+        async with self.db.session() as s:
+            open_rows = (await s.execute(select(AlertRow.severity, AlertRow.assignee).where(
+                AlertRow.workspace_id == workspace_id, AlertRow.status.in_(OPEN)))).all()  # fmt: skip
+            recent = (await s.execute(select(AlertRow.created_at, AlertRow.acknowledged_at, AlertRow.resolved_at,
+                                             AlertRow.status).where(AlertRow.workspace_id == workspace_id,
+                                                                    AlertRow.created_at >= since))).all()  # fmt: skip
+
+        def hours(start: datetime | None, end: datetime | None) -> float | None:
+            a, b = _utc(start), _utc(end)
+            return round((b - a).total_seconds() / 3600, 1) if a and b else None
+
+        to_ack = [h for h in (hours(c, a) for c, a, _r, _s in recent) if h is not None]
+        to_resolve = [h for h in (hours(c, r) for c, _a, r, st in recent if st in CLOSED) if h is not None]
+        by_severity: dict[str, int] = {}
+        for severity, _who in open_rows:
+            by_severity[severity] = by_severity.get(severity, 0) + 1
+        closed = [st for *_x, st in recent if st in CLOSED]
+        return {
+            "period_days": days,
+            "open": len(open_rows),
+            "open_by_severity": by_severity,
+            "unassigned": sum(1 for _sev, who in open_rows if not who),
+            "raised": len(recent),
+            "resolved": len(closed),
+            "false_positive_rate": round(closed.count("false_positive") / len(closed), 3) if closed else None,
+            "median_hours_to_acknowledge": median(to_ack) if to_ack else None,
+            "median_hours_to_resolve": median(to_resolve) if to_resolve else None,
+        }

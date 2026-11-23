@@ -10,6 +10,9 @@ import { handleScheduleAction, initSchedules, loadSchedules, schedulesCard } fro
 let root;
 let actions;
 let alerts = null;
+let alertFilter = "open"; // open | mine | unassigned | closed
+let alertStats = null;
+let assignees = { me: "", assignees: [] };
 let monitors = null;
 let fpWatches = []; // watched fingerprints (Shodan/Censys searches on a schedule)
 let brandWatches = []; // brands whose lookalike domains are looked for in Certificate Transparency
@@ -62,6 +65,12 @@ export function initMonitoring(el, appActions) {
         await api.post("/api/brand-watches", { domain, allow, web_check, reference_urls: login ? [home, login] : [] });
         brandForm = false;
         toast("Watching: existing lookalikes are recorded first; certificates from the last 14 days are reported", "success", 6000);
+      } else if (act === "alert-filter") {
+        alertFilter = id;
+        refresh();
+        return;
+      } else if (act === "alert") {
+        return openAlert(id);
       } else if (act === "brand-report") {
         toast("Preparing the brand-protection report…");
         await downloadPost("/api/brand-protection/report", { days: 90 });
@@ -102,8 +111,11 @@ export function initMonitoring(el, appActions) {
 
 export async function refresh() {
   try {
-    [alerts, monitors, fpWatches] = await Promise.all([api.get("/api/alerts?limit=50"), api.get("/api/monitors"),
+    const query = { open: "status=open,investigating", mine: "assignee=me&status=open,investigating",
+      unassigned: "assignee=none&status=open,investigating", closed: "status=resolved,false_positive" }[alertFilter];
+    [alerts, monitors, fpWatches] = await Promise.all([api.get(`/api/alerts?limit=100&${query}`), api.get("/api/monitors"),
       api.get("/api/fingerprint-watches").catch(() => []), loadNotifications(), loadSchedules()]);
+    alertStats = await api.get("/api/alerts/stats?days=30").catch(() => null);
     brandWatches = await api.get("/api/brand-watches").catch(() => []);
     routes = (await api.get("/api/opsec/routes").catch(() => ({ routes: [] }))).routes || [];
     campaigns = (await api.get("/api/campaigns").catch(() => ({ campaigns: [] }))).campaigns || [];
@@ -111,7 +123,7 @@ export async function refresh() {
   } catch {
     return;
   }
-  state.alertsOpen = alerts.filter((a) => !a.acknowledged_at).length;
+  state.alertsOpen = alertStats ? alertStats.open : alerts.filter((a) => !a.acknowledged_at).length;
   emit("alerts", state.alertsOpen);
   render();
 }
@@ -127,15 +139,18 @@ function render() {
     </div>
 
     <div class="card card-pad">
-      <div class="card-head"><h2>Alerts</h2><span class="muted small">${open.length} open</span></div>
+      <div class="card-head wrap"><h2>Alerts</h2>
+        <span class="muted small">${alertStats ? `${alertStats.open} open · ${alertStats.unassigned} unassigned${alertStats.median_hours_to_resolve != null ? ` · resolved in ${hoursText(alertStats.median_hours_to_resolve)} (median, 30 days)` : ""}` : ""}</span></div>
+      <div class="segmented" style="margin:6px 0 10px">${[["open", "Open"], ["mine", "Mine"], ["unassigned", "Unassigned"], ["closed", "Closed"]].map(([k, label]) =>
+        html`<button class="btn sm ${alertFilter === k ? "primary" : "ghost"}" data-act="alert-filter" data-id="${k}">${label}</button> `)}</div>
       ${alerts === null ? html`<p class="muted">Loading…</p>`
-        : !alerts.length ? empty("bell", "No alerts", "When a watched target changes materially — a new attack path, a newly exposed service, a fresh breach — it shows up here.")
-        : html`<div class="list">${[...open, ...done].map((a) => html`
-          <div class="list-row" style="${a.acknowledged_at ? "opacity:.6" : ""}">
+        : !alerts.length ? empty("bell", alertFilter === "closed" ? "Nothing closed yet" : "No open alerts", "When a watched target changes materially — a new attack path, a newly exposed service, a fresh breach — it shows up here.")
+        : html`<div class="list">${alerts.map((a) => html`
+          <div class="list-row" style="${["resolved", "false_positive"].includes(a.status) ? "opacity:.65" : ""}">
             ${severityPill(a.severity)}
-            <div class="list-main"><div class="list-title" style="white-space:normal">${a.headline}</div>
+            <div class="list-main"><div class="list-title" style="white-space:normal"><a data-act="alert" data-id="${a.id}" style="cursor:pointer">${a.headline}</a></div>
               ${a.summary?.brand_watch ? html`<div class="list-sub mono">${a.summary.brand_watch.findings.slice(0, 6).map((f) => f.display).join(" · ")}</div>` : ""}
-              <div class="list-sub">${timeAgo(a.created_at)}${a.acknowledged_at ? html` · acknowledged by ${a.acknowledged_by}` : ""}</div></div>
+              <div class="list-sub">${timeAgo(a.created_at)} · <span class="pill ${STATUS[a.status]?.[0] || ""}">${STATUS[a.status]?.[1] || a.status}</span> ${a.assignee ? html`· ${a.assignee}` : html`· <span class="muted">unassigned</span>`}${a.comments ? ` · ${a.comments} comment${a.comments === 1 ? "" : "s"}` : ""}</div></div>
             ${a.summary?.brand_watch ? ""
               : a.summary?.exposure ? html`<a class="btn sm" href="#/exposure">${ico("breach")}View exposure</a>`
               : a.summary?.fingerprint_watch ? html`<button class="btn sm" data-act="open" data-id="${a.investigation_id}" title="${(a.summary.fingerprint_watch.new_servers || []).map((h) => h.ip + (h.port ? ":" + h.port : "")).join(", ")}">${ico("eye")}Open investigation</button>`
@@ -371,4 +386,55 @@ function brandStrip() {
     ${cell(b.campaigns.count, "campaigns")}
     ${["analyst", "admin"].includes(state.workspace?.role) ? html`<div style="display:flex;align-items:center"><button class="btn sm" data-act="brand-report" title="A PDF for management, registered and verifiable like every Argus report">${ico("download")}Report (PDF)</button></div>` : ""}
   </div>`;
+}
+
+const STATUS = { open: ["high", "Open"], investigating: ["medium", "Investigating"], resolved: ["ok", "Resolved"], false_positive: ["", "False positive"] };
+
+function hoursText(h) {
+  return h < 1 ? `${Math.round(h * 60)} min` : h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} days`;
+}
+
+/** One alert: move it along, assign it, discuss it; everything is kept in its activity. */
+async function openAlert(alertId) {
+  let alert;
+  try {
+    [alert, assignees] = await Promise.all([api.get(`/api/alerts/${enc(alertId)}`), api.get("/api/alerts/assignees")]);
+  } catch (err) { toast(err.message, "error"); return; }
+  const canEdit = ["analyst", "admin"].includes(state.workspace?.role);
+  const describe = (e) => e.event === "comment" ? e.body
+    : e.event === "status" ? `${STATUS[e.from]?.[1] || e.from} → ${STATUS[e.to]?.[1] || e.to}${e.note ? `: ${e.note}` : ""}`
+    : e.event === "assigned" ? (e.to ? `Assigned to ${e.to}` : "Unassigned") + (e.note ? `: ${e.note}` : "")
+    : e.event === "acknowledged" ? "Acknowledged" : e.event;
+  setHTML($("#alert-title"), html`${alert.headline}`);
+  setHTML($("#alert-sub"), html`${severityPill(alert.severity)} raised ${timeAgo(alert.created_at)}${alert.resolved_at ? ` · closed ${timeAgo(alert.resolved_at)} by ${alert.resolved_by}` : ""}`);
+  setHTML($("#alert-body"), html`
+    ${canEdit ? html`<div class="grid two" style="gap:10px">
+      <label class="small">Status<select id="alert-status" class="select">${Object.entries(STATUS).map(([k, [, label]]) => html`<option value="${k}" ${k === alert.status ? "selected" : ""}>${label}</option>`)}</select></label>
+      <label class="small">Assigned to<select id="alert-assignee" class="select"><option value="">Unassigned</option>${assignees.assignees.map((n) => html`<option value="${n}" ${n === alert.assignee ? "selected" : ""}>${n}${n === assignees.me ? " (me)" : ""}</option>`)}</select></label></div>
+      <textarea id="alert-note" class="textarea" rows="2" style="width:100%;margin-top:8px" placeholder="Why (optional): kept with the change"></textarea>
+      <div style="margin-top:6px;text-align:right"><button class="btn sm primary" data-alert="save">Save</button></div>` : html`<p class="small">Status: <b>${STATUS[alert.status]?.[1]}</b> · ${alert.assignee || "unassigned"}</p>`}
+    <div class="section-title" style="margin-top:14px">Activity</div>
+    ${(alert.activity || []).length ? html`<div class="list">${[...alert.activity].reverse().map((e) => html`<div class="list-row" style="align-items:flex-start">
+      <div class="list-main"><div class="small" style="white-space:pre-wrap">${describe(e)}</div><div class="list-sub">${e.by} · ${timeAgo(e.at)}</div></div></div>`)}</div>`
+      : html`<p class="muted small">Nothing yet.</p>`}
+    ${canEdit ? html`<textarea id="alert-comment" class="textarea" rows="3" style="width:100%;margin-top:10px" placeholder="Add a comment for the team"></textarea>
+      <div style="margin-top:6px;text-align:right"><button class="btn sm" data-alert="comment">Comment</button></div>` : ""}`);
+  $("#alert-body").onclick = async (e) => {
+    const action = e.target.closest("[data-alert]")?.dataset.alert;
+    if (!action) return;
+    try {
+      if (action === "save") {
+        const body = { status: $("#alert-status").value, assignee: $("#alert-assignee").value, note: $("#alert-note").value.trim() };
+        await api.patch(`/api/alerts/${enc(alertId)}`, body);
+        toast("Alert updated", "success");
+      } else {
+        const text = $("#alert-comment").value.trim();
+        if (!text) return;
+        await api.post(`/api/alerts/${enc(alertId)}/comments`, { body: text });
+      }
+      await refresh();
+      openAlert(alertId);
+    } catch (err) { toast(err.message, "error"); }
+  };
+  openModal("alert-modal");
 }

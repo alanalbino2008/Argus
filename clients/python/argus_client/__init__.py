@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.80.0"
+__version__ = "1.81.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -265,7 +265,7 @@ class ArgusClient:
 
     def brand_protection(self, *, days: int = 90) -> dict[str, Any]:
         """Lookalikes, open threats, takedowns (median time to takedown), campaigns and weekly trend."""
-        return self.get("/api/brand-protection/summary", params={"days": days})
+        return self.get("/api/brand-protection/summary", days=days)
 
     def brand_protection_report(self, *, days: int = 90, prepared_for: str = "") -> bytes:
         """The brand-protection report as a PDF (registered and verifiable by its SHA-256)."""
@@ -562,6 +562,23 @@ class ArgusClient:
         """Monitor ``target`` continuously (you confirm you are authorised to)."""
         return self.post("/api/monitors", {"target": target, "purpose": purpose, "interval_hours": interval_hours,
                                            "authorized": True, **options})  # fmt: skip
+
+    def update_alert(self, alert_id: str, *, status: str | None = None, assignee: str | None = None,
+                     note: str = "") -> dict[str, Any]:  # fmt: skip
+        """Move an alert along (open, investigating, resolved, false_positive) and/or assign it ("me", "" unassigns)."""
+        body: dict[str, Any] = {"note": note}
+        if status is not None:
+            body["status"] = status
+        if assignee is not None:
+            body["assignee"] = assignee
+        return self.request("PATCH", f"/api/alerts/{alert_id}", json=body)
+
+    def comment_alert(self, alert_id: str, body: str) -> dict[str, Any]:
+        return self.post(f"/api/alerts/{alert_id}/comments", {"body": body})
+
+    def alert_stats(self, *, days: int = 30) -> dict[str, Any]:
+        """Open alerts by severity, unassigned, and the median hours to acknowledge and to resolve."""
+        return self.get("/api/alerts/stats", days=days)
 
     def alerts(self, **params: Any) -> list[dict[str, Any]]:
         return self.get("/api/alerts", **params)

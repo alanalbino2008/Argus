@@ -436,6 +436,12 @@ class AlertRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Workflow: open -> investigating -> resolved | false_positive; who owns it; what was said and done.
+    status: Mapped[str] = mapped_column(String(16), default="open", server_default="open", index=True)
+    assignee: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    activity: Mapped[list[dict[str, Any]] | None] = mapped_column(EncryptedJSON(label="alerts.activity"), nullable=True)
 
 
 class NotificationChannelRow(Base):

@@ -1,5 +1,7 @@
 """Schema migrations: fresh upgrade, model/migration drift, legacy adoption, downgrade."""
 
+from datetime import datetime, timezone
+
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -116,3 +118,23 @@ async def test_upgrade_moves_existing_data_into_the_default_workspace(db):
     assert keys == {"k_admin": None, "k_analyst": "ws_default"}
     assert [tuple(m) for m in members] == [("ws_default", "usr_1", "analyst")]
     assert (await AuditLog(db).verify())["valid"] is True  # old entries still verify after the change
+
+
+async def test_acknowledged_alerts_become_resolved(db):
+    """Before 1.81, acknowledging an alert was how it was dealt with: those alerts become 'resolved'."""
+    async with db.engine.begin() as conn:
+        await conn.run_sync(lambda c: command.upgrade(alembic_config(c), "0032"))
+        acknowledged_at = datetime(
+            2026, 11, 1, tzinfo=timezone.utc
+        )  # a datetime: PostgreSQL's driver will not take text
+        for alert_id, acknowledged, by in (("alert_done", acknowledged_at, "dana"), ("alert_new", None, None)):
+            await conn.execute(text(
+                "INSERT INTO alerts (id, workspace_id, investigation_id, previous_investigation_id, target, severity, "
+                "headline, summary, created_at, acknowledged_at, acknowledged_by) VALUES (:id, 'ws_default', '', '', "
+                "'t', 'high', 'h', '{}', '2026-10-30', :acknowledged, :by)"
+            ), {"id": alert_id, "acknowledged": acknowledged, "by": by})  # fmt: skip
+    assert await upgrade_database(db) == head_revision()
+    async with db.engine.connect() as conn:
+        rows = dict((await conn.execute(text("SELECT id, status FROM alerts"))).all())
+        resolved_by = (await conn.execute(text("SELECT resolved_by FROM alerts WHERE id = 'alert_done'"))).scalar_one()
+    assert rows == {"alert_done": "resolved", "alert_new": "open"} and resolved_by == "dana"
