@@ -282,6 +282,15 @@ class BrandWatchRepository:
                                                                  BrandLookalikeRow.name == name))  # fmt: skip
         return _item(row) if row else None
 
+    async def set_case(self, watch_id: str, workspace_id: str, name: str, case_id: str) -> None:
+        """Remember the case opened for a lookalike (shown with the finding)."""
+        async with self.db.session() as s, s.begin():
+            row = await s.scalar(select(BrandLookalikeRow).where(BrandLookalikeRow.watch_id == watch_id,
+                                                                 BrandLookalikeRow.workspace_id == workspace_id,
+                                                                 BrandLookalikeRow.name == name))  # fmt: skip
+            if row is not None:
+                row.finding = {**(row.finding or {}), "case_id": case_id}
+
     async def stale(self, watch_id: str, limit: int, exclude: Iterable[str] = ()) -> list[str]:
         """Known lookalikes checked longest ago (never-checked first)."""
         skip = set(exclude)

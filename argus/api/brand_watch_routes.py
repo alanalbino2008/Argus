@@ -8,6 +8,7 @@ alerts on new ones. Domains the organisation owns can be listed so they are neve
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -224,3 +225,103 @@ async def _takedown(request: Request, ws: WorkspaceContext, watch_id: str, domai
     if record is None:
         raise HTTPException(status_code=404, detail="No takedown for that domain")
     return dict(record)
+
+
+# ----------------------------------------------------------------------------- lookalike -> case
+class LookalikeCase(BaseModel):
+    case_id: str | None = Field(default=None, description="Add to this case instead of opening a new one")
+    capture: bool = Field(default=True, description="Capture the lookalike's website as evidence")
+    confirmed: bool = Field(default=False, description="Confirms a legitimate purpose (needed for a new case)")
+
+
+def _day(value: Any) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00")) if value else None
+    except ValueError:
+        return None
+    return moment.replace(tzinfo=timezone.utc) if moment and moment.tzinfo is None else moment
+
+
+@router.post("/brand-watches/{watch_id}/lookalikes/{domain}/case", status_code=201)
+async def lookalike_case(watch_id: str, domain: str, body: LookalikeCase, request: Request,
+                         ws: WorkspaceContext = ANALYST):  # fmt: skip
+    """Open a case for a lookalike (or add it to one): the domain, what it imitates and how, its timeline
+    (first certificate, found by Argus, takedown steps), the triage evidence, and a capture of its website
+    as preserved evidence (through the watch's route). Ready for a takedown escalation or legal action."""
+    from argus.api.case_routes import _case
+    from argus.api.opsec_routes import find_route, route_for
+    from argus.evidence.capture import CaptureError, capture_url
+
+    watch = await _repo(request).get(watch_id, ws.id)
+    item = await _repo(request).lookalike(watch_id, ws.id, domain.strip().lower()) if watch else None
+    if watch is None or item is None:
+        raise HTTPException(status_code=404, detail="This watch has not found that domain")
+    cases, settings, name = request.app.state.cases, request.app.state.settings, item["name"]
+    triage = item.get("triage") or {}
+    if body.case_id:
+        case = await _case(request, ws, body.case_id)
+    else:
+        if not body.confirmed:
+            raise HTTPException(status_code=422, detail="Confirm there is a legitimate purpose for this case")
+        mode = watch.get("web_check") or "off"
+        route = find_route(settings, mode) if mode not in ("off", "direct") else None
+        case = await cases.create(
+            workspace_id=ws.id, by=ws.principal.name, title=f"Lookalike {item.get('display') or name} imitating {watch['domain']}"[:200],
+            purpose=f"Brand protection: {name} imitates {watch['domain']}; preserve evidence for takedown and legal action",
+            summary="\n".join(f"- {r}" for r in triage.get("reasons") or []),
+            tags=["brand-protection", *([triage["verdict"]] if triage.get("verdict") else [])],
+            egress=route.name if route else "", opsec_mode="anonymous" if route and route.is_anonymous else "standard",
+        )  # fmt: skip
+        await audit(request, ws.principal, "case.create", case["id"],
+                    details={"title": case["title"], "from_lookalike": name, "route": case["egress"] or "direct"})  # fmt: skip
+
+    by = ws.principal.name
+    reg = ((item.get("takedown") or {}).get("contacts") or {}).get("registrar") or {}
+    attributes = {k: v for k, v in {
+        "imitates": watch["domain"], "technique": f"{item.get('technique') or ''}: {item.get('detail') or ''}".strip(": "),
+        "verdict": triage.get("label") or item.get("verdict") or "", "severity": item.get("severity") or "",
+        "addresses": ", ".join((triage.get("dns") or {}).get("ips") or []),
+        "mail servers": ", ".join((triage.get("dns") or {}).get("mx") or []),
+        "registrar": reg.get("registrar") or "", "takedown": (item.get("takedown") or {}).get("status") or "",
+    }.items() if v}  # fmt: skip
+    added = [await cases.add_item(case["id"], by=by, kind="entity", title=item.get("display") or name,
+                                  data={"type": "domain", "value": name, "attributes": attributes})]  # fmt: skip
+    ours = await cases.add_item(case["id"], by=by, kind="entity", title=watch["domain"],
+                                data={"type": "domain", "value": watch["domain"], "attributes": {"role": "our domain"}})  # fmt: skip
+    added.append(ours)
+    added.append(await cases.add_item(case["id"], by=by, kind="link", title="link", data={
+        "from": added[0]["id"], "to": ours["id"], "relation": "other", "label": "imitates", "confidence": "confirmed"}))  # fmt: skip
+    events = [("First certificate issued" + (f" ({item['issuer']})" if item.get("issuer") else ""), item.get("not_before")),
+              ("Found by the Argus brand watch", item.get("first_seen"))]  # fmt: skip
+    events.extend(
+        (f"Takedown {step['event']}" + (f" by {step['by']}" if step.get("by") else ""), step.get("at"))
+        for step in (item.get("takedown") or {}).get("history") or []
+        if step.get("event") in ("drafted", "reported", "down", "closed")
+    )
+    for title, when in events:
+        moment = _day(when)
+        if moment is not None:
+            added.append(await cases.add_item(case["id"], by=by, kind="event", title=title[:300], occurred_at=moment))
+    if triage.get("reasons"):
+        added.append(await cases.add_item(case["id"], by=by, kind="note", title=f"Why {name} is a threat",
+                                          body="\n".join(f"- {r}" for r in triage["reasons"])))  # fmt: skip
+
+    capture, warning = None, None
+    if body.capture:
+        try:
+            route = route_for(settings, case, None)  # an anonymous case never captures directly
+            evidence = await capture_url(f"https://{name}/", settings, route)
+            capture = await cases.add_capture(case["id"], ws.id, evidence, by=by,
+                                              note=f"Captured from the brand watch for {watch['domain']}")  # fmt: skip
+            await audit(request, ws.principal, "evidence.capture", capture["id"],
+                        details={"case": case["id"], "url": f"https://{name}/", "digest": capture["digest"],
+                                 "route": route.name if route else "direct"})  # fmt: skip
+        except HTTPException as exc:
+            warning = str(exc.detail)
+        except CaptureError as exc:
+            warning = f"The website could not be captured: {exc}"
+    await _repo(request).set_case(watch_id, ws.id, name, case["id"])
+    await audit(
+        request, ws.principal, "brand_watch.case", case["id"], details={"domain": name, "captured": bool(capture)}
+    )
+    return {"case": case, "items": len(added), "capture": capture, "warning": warning}

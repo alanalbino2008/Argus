@@ -49,3 +49,11 @@ POST /api/brand-watches/{id}/takedowns/{domain}/close     {"reason": "Handled by
 ```
 
 Takedowns (status, contacts, draft, history) are included in `GET /api/brand-watches`.
+
+## When a takedown is not enough (Phase 82)
+
+**Open case** on a lookalike gathers everything into a case: the domain and what it imitates, its
+timeline (first certificate, found by Argus, each takedown step), the triage evidence, and a capture
+of its website as preserved evidence with a chain of custody, for an escalation, a UDRP complaint
+(or Nominet's DRS for .uk) or a police report. A watch that visits websites through an anonymising
+route opens an anonymous case on that route, so the capture never comes from this server's address.

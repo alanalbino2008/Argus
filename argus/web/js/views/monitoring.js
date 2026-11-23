@@ -4,6 +4,7 @@ import { api, downloadPost, enc } from "../api.js";
 import { empty, ico, severityPill } from "../components.js";
 import { $, closeModal, confirmDialog, copyText, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, state } from "../state.js";
+import { showCase } from "./cases.js";
 import { handleNotificationAction, initNotifications, loadNotifications, notificationsCard } from "./notifications.js";
 import { handleScheduleAction, initSchedules, loadSchedules, schedulesCard } from "./schedules.js";
 
@@ -77,6 +78,18 @@ export function initMonitoring(el, appActions) {
         return;
       } else if (act === "campaign-takedown") {
         return openCampaignTakedown(id);
+      } else if (act === "lookalike-case") {
+        const ok = await confirmDialog({ title: `Open a case for ${btn.dataset.domain}?`, confirm: "Open case",
+          message: "The case gets the domain, what it imitates, its timeline and the triage evidence, and a capture of its website (through the watch's route) as preserved evidence. Confirm this is for brand protection: a legitimate purpose." });
+        if (!ok) return;
+        toast("Opening the case and capturing the website…", "info", 6000);
+        const r = await api.post(`/api/brand-watches/${enc(id)}/lookalikes/${enc(btn.dataset.domain)}/case`, { confirmed: true });
+        if (r.warning) toast(r.warning, "error", 8000);
+        await showCase(r.case.id);
+        return;
+      } else if (act === "show-case") {
+        await showCase(btn.dataset.case);
+        return;
       } else if (act === "takedown") {
         return openTakedown(id, btn.dataset.domain);
       } else if (act === "brand-run") {
@@ -250,10 +263,10 @@ function takedownPill(w, f) {
   if (t) {
     const [cls, label] = TAKEDOWN[t.status] || ["", t.status];
     const when = t.status === "down" && t.reported_at ? ` after ${timeAgo(t.reported_at).replace(" ago", "")}` : "";
-    return html`<button class="pill ${cls}" style="cursor:pointer;border:0" data-act="takedown" data-id="${w.id}" data-domain="${f.name}" title="Open the takedown request">${label}${when}</button> `;
+    return html`<button class="pill ${cls}" style="cursor:pointer;border:0" data-act="takedown" data-id="${w.id}" data-domain="${f.name}" title="Open the takedown request">${label}${when}</button> ${caseButton(w, f)}`;
   }
-  if (!["analyst", "admin"].includes(state.workspace?.role) || ["yours", "dormant"].includes(f.triage?.verdict)) return "";
-  return html`<button class="btn sm ghost" style="padding:0 6px" data-act="takedown" data-id="${w.id}" data-domain="${f.name}">Report abuse</button> `;
+  if (!["analyst", "admin"].includes(state.workspace?.role) || ["yours", "dormant"].includes(f.triage?.verdict)) return caseButton(w, f);
+  return html`<button class="btn sm ghost" style="padding:0 6px" data-act="takedown" data-id="${w.id}" data-domain="${f.name}">Report abuse</button> ${caseButton(w, f)}`;
 }
 
 async function openTakedown(watchId, domain) {
@@ -437,4 +450,11 @@ async function openAlert(alertId) {
     } catch (err) { toast(err.message, "error"); }
   };
   openModal("alert-modal");
+}
+
+/** The lookalike's case, or (for analysts) a button to open one with the evidence. */
+function caseButton(w, f) {
+  if (f.case_id) return html`<button class="btn sm ghost" style="padding:0 6px" data-act="show-case" data-case="${f.case_id}">${ico("report")}Case</button> `;
+  if (!["analyst", "admin"].includes(state.workspace?.role) || f.triage?.verdict === "yours") return "";
+  return html`<button class="btn sm ghost" style="padding:0 6px" data-act="lookalike-case" data-id="${w.id}" data-domain="${f.name}" title="A case with the evidence, and a capture of the website">Open case</button> `;
 }

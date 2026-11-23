@@ -206,6 +206,9 @@ code, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
 .page-head p { color: var(--text-2); margin-top: 4px; }
 .page-head > div:first-child { min-width: 0; }
+/* Pages with many actions (a case): the title keeps the full width, the actions wrap below it. */
+.page-head.stacked { flex-direction: column; align-items: stretch; }
+.page-head.stacked .page-actions { flex-wrap: wrap; justify-content: flex-start; }
 .page-actions { display: flex; gap: 8px; flex-wrap: nowrap; flex: none; }
 
 /* ---------------------------------------------------------------- controls */

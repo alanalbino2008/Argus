@@ -313,11 +313,14 @@ class BrandWatcher:
         self._running: set[asyncio.Task[Any]] = set()
 
     def _web_client(self, route_name: str) -> Any:
+        from fastapi import HTTPException
+
         from argus.api.opsec_routes import find_route
 
-        route = None if route_name == "direct" else find_route(self.settings, route_name)
-        if route_name != "direct" and route is None:
-            raise SourceFailed(f"The route '{route_name}' is not configured any more")
+        try:  # find_route answers an unknown name with an HTTP error, meant for API callers
+            route = None if route_name == "direct" else find_route(self.settings, route_name)
+        except HTTPException as exc:
+            raise SourceFailed(f"The route '{route_name}' is not configured any more") from exc
         return outbound_client(self.settings, route)
 
     async def _screenshot(self, url: str, mode: str) -> bytes | None:
@@ -329,7 +332,12 @@ class BrandWatcher:
         browser = find_browser(self.settings)
         if browser is None:
             return None
-        route = None if mode == "direct" else find_route(self.settings, mode)
+        from fastapi import HTTPException
+
+        try:
+            route = None if mode == "direct" else find_route(self.settings, mode)
+        except HTTPException:  # the watch's route was removed from the settings: no render
+            return None
         async with GuardProxy(allow_private=self.settings.allow_private_targets, upstream=route) as proxy:
             shot: bytes | None = (await render(url, browser, self.settings, proxy))["screenshot"]
         return shot

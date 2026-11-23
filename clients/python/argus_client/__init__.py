@@ -36,7 +36,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.81.0"
+__version__ = "1.82.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 USER_AGENT = f"argus-client-python/{__version__}"
@@ -271,6 +271,14 @@ class ArgusClient:
         """The brand-protection report as a PDF (registered and verifiable by its SHA-256)."""
         return self.request("POST", "/api/brand-protection/report", json={"days": days, "prepared_for": prepared_for},
                             raw=True).content  # fmt: skip
+
+    def lookalike_case(self, watch_id: str, domain: str, *, case_id: str | None = None,
+                       capture: bool = True) -> dict[str, Any]:  # fmt: skip
+        """Open a case for a lookalike (or add it to ``case_id``), with its evidence and a capture of its website."""
+        body: dict[str, Any] = {"capture": capture, "confirmed": True}
+        if case_id:
+            body["case_id"] = case_id
+        return self.post(f"/api/brand-watches/{watch_id}/lookalikes/{domain}/case", body)
 
     def take_down_campaign(self, campaign_id: str, *, organisation: str = "") -> dict[str, Any]:
         """Draft one abuse report per registrar and host for a campaign (each domain tracked on its own)."""

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.82.0] — Phase 82: From lookalike to case
+
+### Added
+- **Open case** on any lookalike in Monitoring → Brand watch (or add it to an existing case). The case
+  gets the lookalike and your domain, linked ("imitates"), with what it is (technique, verdict,
+  severity, addresses, mail servers, registrar, takedown status); a timeline (first certificate, found
+  by Argus, each takedown step); a note with the triage reasons; and a **capture of its website** as
+  preserved evidence (response, screenshot, text, fingerprints, chain of custody), ready for a takedown
+  escalation, a UDRP complaint or the police.
+- **The watch's safety carries over.** A watch that visits websites through an anonymising route
+  opens an *anonymous* case on that route, so the capture never comes from this server's address.
+  A capture that fails (the site is down, or refuses) is reported; the case is still opened.
+- The lookalike shows its case, one click away. API:
+  `POST /api/brand-watches/{id}/lookalikes/{domain}/case`; Python client: `lookalike_case()`.
+
+### Fixed
+- A brand watch whose website route was later removed from the settings failed every run; it now
+  records that the route is missing and carries on with DNS triage.
+- A case's header squeezed long titles to a word per line beside its many actions; the actions now
+  wrap below the title.
+
 ## [1.81.0] — Phase 81: Alert workflow
 
 ### Added

@@ -141,7 +141,7 @@ function renderCase() {
   const notes = c.items.filter((i) => i.kind === "note");
   const scans = c.items.filter((i) => i.kind === "scan");
   setHTML(root, html`<div class="page">
-    <div class="page-head">
+    <div class="page-head stacked">
       <div><a href="#" data-act="back" class="muted small">← All cases</a>
         <h1 style="margin-top:4px">${c.title} ${c.restricted ? html`<span class="pill" style="vertical-align:middle">${ico("shield")}Restricted</span>` : ""}</h1>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">${safetyPills(c)}</div>
@@ -203,6 +203,11 @@ async function loadCase(id) {
   const [c, w] = await Promise.all([api.get(`/api/cases/${enc(id)}`), api.get(`/api/cases/${enc(id)}/watches`).catch(() => [])]);
   watches = w;
   return c;
+}
+
+/** Open a case from another page (e.g. a lookalike's case from Monitoring). */
+export function showCase(id) {
+  return openCase(id);
 }
 
 async function openCase(id) {
