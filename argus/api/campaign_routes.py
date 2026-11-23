@@ -27,7 +27,7 @@ async def gather(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     state = request.app.state
     lookalikes = []
-    for watch, first_seen, details in await state.brand_watches.first_seen(workspace_id):
+    for watch, first_seen, details in await state.brand_watches.first_seen(workspace_id, takedowns=False):
         triage = watch.get("triage") or {}
         takedowns = watch.get("takedowns") or {}
         for name, when in first_seen.items():
@@ -85,29 +85,37 @@ async def campaign_takedown(campaign_id: str, body: CampaignTakedown, request: R
     campaign = next((c for c in await campaigns_of(request, ws.id) if c["id"] == campaign_id), None)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found (its membership may have changed)")
-    watches = {w["id"]: w for w, _seen, _details in await request.app.state.brand_watches.first_seen(ws.id)}
-    lookalikes = [m for m in campaign["members"] if m["kind"] == "lookalike" and m.get("watch_id") in watches]
+    repo = request.app.state.brand_watches
+    lookalikes = [m for m in campaign["members"] if m["kind"] == "lookalike" and m.get("watch_id")]
+    rows: dict[tuple[str, str], dict[str, Any]] = {}  # (watch, domain) -> finding, triage and takedown
+    brands: dict[str, str] = {}
+    for watch_id in {m["watch_id"] for m in lookalikes}:
+        watch = await repo.get(watch_id, ws.id)
+        if watch is None:
+            continue
+        brands[watch_id] = watch["domain"]
+        names = [m["value"] for m in lookalikes if m["watch_id"] == watch_id]
+        rows.update({(watch_id, n): row for n, row in (await repo.lookalikes(watch_id, names)).items()})
+    lookalikes = [m for m in lookalikes if (m["watch_id"], m["value"]) in rows]
     if not lookalikes:
         raise HTTPException(status_code=422, detail="This campaign has no lookalike domains to report")
     pending: list[dict[str, Any]] = []
     existing: list[dict[str, Any]] = []
     for member in lookalikes:
-        record = (watches[member["watch_id"]].get("takedowns") or {}).get(member["value"]) or {}
+        record = rows[(member["watch_id"], member["value"])].get("takedown") or {}
         (existing if record.get("status") in ("drafted", "reported", "down") else pending).append(member)
     pending = pending[:MAX_CAMPAIGN_TAKEDOWN]
     contacts = request.app.state.brand_watcher.takedown_contacts
     items = []
     for member in pending:
-        watch = watches[member["watch_id"]]
         name = member["value"]
-        triage = (watch.get("triage") or {}).get(name) or {}
-        finding = next((f for f in watch.get("recent") or [] if f.get("name") == name), None) or {
-            "name": name, **((watch.get("details") or {}).get(name) or {})}  # fmt: skip
+        row = rows[(member["watch_id"], name)]
+        triage = row.get("triage") or {}
+        finding = {k: v for k, v in row.items() if k not in ("triage", "takedown")}
         found = await contacts(name, (triage.get("dns") or {}).get("ips") or [])
-        items.append({"domain": name, "display": member["display"], "brand": watch["domain"], "finding": finding,
-                      "triage": triage, "found": found, "watch_id": watch["id"]})  # fmt: skip
+        items.append({"domain": name, "display": member["display"], "brand": brands[member["watch_id"]],
+                      "finding": finding, "triage": triage, "found": found, "watch_id": member["watch_id"]})  # fmt: skip
     letters = takedown.campaign_letters(campaign=campaign, domains=items, organisation=body.organisation.strip())
-    repo = request.app.state.brand_watches
     for item in items:
         own = takedown.draft(domain=item["domain"], display=item["display"], brand=item["brand"], finding=item["finding"],
                              triage=item["triage"], found=item["found"], organisation=body.organisation.strip())  # fmt: skip
@@ -121,7 +129,7 @@ async def campaign_takedown(campaign_id: str, body: CampaignTakedown, request: R
     if not letters:  # nothing new to draft: show the reports drafted before
         seen: dict[str, dict[str, Any]] = {}
         for member in existing:
-            record = (watches[member["watch_id"]].get("takedowns") or {}).get(member["value"]) or {}
+            record = rows[(member["watch_id"], member["value"])].get("takedown") or {}
             for letter in record.get("campaign_letters") or []:
                 seen.setdefault(letter["to"][0], letter)
         letters = list(seen.values())
@@ -144,7 +152,7 @@ async def brand_protection_summary(request: Request, ws: WorkspaceContext = VIEW
     from argus.intel.brand_metrics import summarise
 
     days = max(7, min(days, 365))
-    watches = await request.app.state.brand_watches.first_seen(ws.id)
+    watches = await request.app.state.brand_watches.first_seen(ws.id, triage=False)
     return summarise(watches, await campaigns_of(request, ws.id), days=days)
 
 
@@ -167,7 +175,7 @@ async def issue_brand_report(
         def __init__(self, application: Any) -> None:
             self.app = application
 
-    watches = await app.state.brand_watches.first_seen(workspace["id"])
+    watches = await app.state.brand_watches.first_seen(workspace["id"], triage=False)
     summary = summarise(watches, await campaigns_of(_Request(app), workspace["id"]), days=days)  # type: ignore[arg-type]
     branding = await app.state.reports.branding(workspace["id"], default_org=default_issuer(workspace))
     base = app.state.settings.public_url

@@ -416,6 +416,7 @@ class BrandWatcher:
         tracked: list[str],
         triaged: dict[str, dict[str, Any]],
         to_check: dict[str, Finding],
+        records: dict[str, dict[str, Any]],
     ) -> list[Finding]:
         """Mark open takedowns whose domain went down; returns them (for a low-severity alert)."""
         from argus.intel import takedown
@@ -423,7 +424,7 @@ class BrandWatcher:
         down = []
         web_checked = (watch.get("web_check") or "off") != "off"
         for name in tracked:
-            record = (watch.get("takedowns") or {}).get(name) or {}
+            record = records.get(name) or {}
             gone, misses = takedown.went_down(triaged[name], web_checked, int(record.get("misses") or 0))
             if gone:
                 stamp = datetime.now(timezone.utc).isoformat()
@@ -519,31 +520,25 @@ class BrandWatcher:
             await self.repo.record(watch["id"], status=status, sources=sources, message=problems, retry_in=RETRY)
             return {"watch_id": watch["id"], "status": status, "new": 0, "alert": None}
 
-        known = await self.repo.known(watch["id"])
-        seen = set(known)
         baseline = not watch.get("baselined")
         now = datetime.now(timezone.utc)
-        fresh: list[Finding] = []
-        for finding in findings_from(certs, domain, watch.get("allow") or [], candidates):
-            if finding.name in seen:
-                continue
-            seen.add(finding.name)
-            known.append(finding.name)
-            fresh.append(finding)
-        # Triage the new lookalikes and re-check the known ones checked longest ago.
-        previous = watch.get("triage") or {}
-        details = watch.get("details") or {}
+        lookalike_findings = findings_from(certs, domain, watch.get("allow") or [], candidates)
+        already = await self.repo.known_names(watch["id"], [f.name for f in lookalike_findings])
+        fresh: list[Finding] = [f for f in lookalike_findings if f.name not in already]
+        # Triage the new lookalikes, those with an open takedown, and the known ones checked longest ago.
         fresh_names = {f.name for f in fresh}
-        takedowns = watch.get("takedowns") or {}
-        tracked = [n for n, t in takedowns.items() if t.get("status") in ("drafted", "reported") and n in known]
-        stale = tracked + sorted((n for n in known if n not in fresh_names and n not in tracked),
-                                 key=lambda n: (previous.get(n) or {}).get("checked_at", ""))[:RETRIAGE_PER_RUN]  # fmt: skip
+        tracked = [n for n in await self.repo.open_takedowns(watch["id"]) if n not in fresh_names]
+        stale = tracked + await self.repo.stale(watch["id"], RETRIAGE_PER_RUN, exclude={*fresh_names, *tracked})
+        rows = await self.repo.lookalikes(watch["id"], stale)
+        previous = {name: row.get("triage") or {} for name, row in rows.items()}
         to_check: dict[str, Finding] = {f.name: f for f in fresh}
         for name in stale:
-            info = details.get(name) or {}
-            base = (previous.get(name) or {}).get("base_severity") or info.get("severity") or "medium"
+            info = rows.get(name) or {}
+            base = previous.get(name, {}).get("base_severity") or info.get("severity") or "medium"
             to_check[name] = Finding(name, str(info.get("display") or name), name, str(info.get("technique") or ""),
-                                     str(info.get("detail") or ""), base, "", "", "", "")  # fmt: skip
+                                     str(info.get("detail") or ""), base, str(info.get("issuer") or ""),
+                                     str(info.get("not_before") or ""), str(info.get("link") or ""),
+                                     str(info.get("source") or ""))  # fmt: skip
         verdicts, web_problem, new_refs = await self.triage(watch, to_check)
         stamp = now.isoformat()
         triaged = {name: {**t.as_dict(stamp), "base_severity": to_check[name].severity} for name, t in verdicts.items()}
@@ -558,7 +553,9 @@ class BrandWatcher:
                 news.append(replace(to_check[name], severity=after.severity, verdict=after.verdict,
                                     reasons=tuple(after.reasons), escalated_from=str(before.get("verdict"))))  # fmt: skip
         news.sort(key=lambda f: -SEVERITY_ORDER[f.severity])
-        taken_down = await self._follow_takedowns(watch, tracked, triaged, to_check)
+        taken_down = await self._follow_takedowns(
+            watch, tracked, triaged, to_check, {n: rows.get(n, {}).get("takedown") or {} for n in tracked}
+        )
         if taken_down and not news:
             news = taken_down
         if web_problem:
@@ -574,8 +571,7 @@ class BrandWatcher:
         if problems:
             message += f" ({problems})"
         await self.repo.record(
-            watch["id"], status=status, sources=sources, message=message, known=known,
-            new=[asdict(f) for f in fresh], cursor=cursor, alerted=alert is not None,
+            watch["id"], status=status, sources=sources, message=message, new=[asdict(f) for f in fresh], cursor=cursor, alerted=alert is not None,
             retry_in=RETRY if failed else None, triage=triaged, visual_refs=new_refs,
         )  # fmt: skip
         logger.info("Brand watch %s (%s): %s", watch["id"], domain, message)

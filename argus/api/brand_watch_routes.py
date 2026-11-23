@@ -155,10 +155,6 @@ class TakedownClose(BaseModel):
     reason: str = Field(default="", max_length=300)
 
 
-def _finding(watch: dict[str, Any], name: str) -> dict[str, Any] | None:
-    return next((f for f in watch.get("recent") or [] if f.get("name") == name), None)
-
-
 @router.post("/brand-watches/{watch_id}/takedowns", status_code=201)
 async def draft_takedown(watch_id: str, body: TakedownRequest, request: Request, ws: WorkspaceContext = ANALYST):
     """Draft an abuse report for a lookalike: its registrar's and host's abuse contacts (from RDAP) and
@@ -169,10 +165,10 @@ async def draft_takedown(watch_id: str, body: TakedownRequest, request: Request,
     if watch is None:
         raise HTTPException(status_code=404, detail="Brand watch not found")
     name = body.domain.strip().lower()
-    finding = _finding(watch, name)
+    finding = await _repo(request).lookalike(watch_id, ws.id, name)
     if finding is None:
         raise HTTPException(status_code=404, detail="This watch has not found that domain")
-    current = (watch.get("takedowns") or {}).get(name)
+    current = finding.get("takedown")
     if current and current.get("status") in ("drafted", "reported"):
         raise HTTPException(status_code=409, detail="A takedown is already open for this domain")
     triage = finding.get("triage") or {}
@@ -223,8 +219,8 @@ async def takedown_close(
 
 
 async def _takedown(request: Request, ws: WorkspaceContext, watch_id: str, domain: str) -> dict[str, Any]:
-    watch = await _repo(request).get(watch_id, ws.id)
-    record = (watch or {}).get("takedowns", {}).get(domain.strip().lower())
+    item = await _repo(request).lookalike(watch_id, ws.id, domain.strip().lower())
+    record = (item or {}).get("takedown")
     if record is None:
         raise HTTPException(status_code=404, detail="No takedown for that domain")
     return dict(record)

@@ -25,6 +25,7 @@ import hashlib
 import ipaddress
 import re
 from collections import defaultdict
+from functools import lru_cache
 from typing import Any
 
 from argus.intel.lookalike_triage import SEVERITY_ORDER, parent_domain, shared_provider
@@ -54,6 +55,7 @@ LINK_LABELS = {"ip": "IP address", "ns": "Name servers", "mx": "Mail host", "fav
 LINK_STRENGTH = {"favicon": 3, "fingerprint": 3, "ip": 2, "ns": 2, "mx": 2, "title": 1}
 
 
+@lru_cache(maxsize=65536)  # the same addresses recur across thousands of lookalikes
 def distinctive_ip(value: str) -> bool:
     try:
         ip = ipaddress.ip_address(value)
@@ -164,16 +166,17 @@ def cluster(
     groups: dict[str, list[str]] = defaultdict(list)
     for node in members:
         groups[union.find(node)].append(node)
+    # Every node sharing a key is in the same group: give each key to its group once, not every key to every group.
+    keys_of: dict[str, list[tuple[tuple[str, str], set[str]]]] = defaultdict(list)
+    for key, linked in keys.items():
+        if len(linked) >= 2:
+            keys_of[union.find(next(iter(linked)))].append((key, linked))
     campaigns = []
-    for nodes in groups.values():
+    for root, nodes in groups.items():
         if len(nodes) < 2:
             continue
-        in_group = set(nodes)
         links: list[dict[str, Any]] = []
-        for (kind, value), linked in keys.items():
-            shared = linked & in_group
-            if len(shared) < 2:
-                continue
+        for (kind, value), shared in keys_of[root]:
             shown = value
             if kind == "fingerprint":  # name the fingerprint, not the watch's id
                 shown = next((w for n in sorted(shared) for w in members[n].get("watches") or [] if w), value)

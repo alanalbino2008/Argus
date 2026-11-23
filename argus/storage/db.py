@@ -861,6 +861,38 @@ class BrandWatchRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class BrandLookalikeRow(Base):
+    """One lookalike domain a brand watch found: what it is, its triage, and its takedown, if any."""
+
+    __tablename__ = "brand_lookalikes"
+    __table_args__ = (
+        Index("ux_brand_lookalikes", "watch_id", "name", unique=True),
+        Index("ix_brand_lookalikes_recent", "watch_id", "first_seen_at"),
+        Index("ix_brand_lookalikes_checked", "watch_id", "checked_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    watch_id: Mapped[str] = mapped_column(String(32), ForeignKey("brand_watches.id", ondelete="CASCADE"))
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(253))  # the registrable domain (punycode for IDN)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # last triage
+    severity: Mapped[str] = mapped_column(String(16))
+    verdict: Mapped[str] = mapped_column(String(16), default="")
+    technique: Mapped[str] = mapped_column(String(16), default="")  # how the name imitates the brand
+    display: Mapped[str] = mapped_column(String(253), default="")  # as a person sees it (Unicode for IDN)
+    detail: Mapped[str] = mapped_column(String(160), default="")  # e.g. "brand + 'login'"
+    takedown_status: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # The attacker's infrastructure (addresses, name servers, mail hosts, favicon hash, page title), in the clear so
+    # campaigns can group thousands of lookalikes without decrypting every triage. It describes servers, not people.
+    infra: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    finding: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="brand_lookalikes.finding"))
+    triage: Mapped[dict[str, Any] | None] = mapped_column(EncryptedJSON(label="brand_lookalikes.triage"), nullable=True)
+    takedown: Mapped[dict[str, Any] | None] = mapped_column(
+        EncryptedJSON(label="brand_lookalikes.takedown"), nullable=True
+    )
+
+
 class FingerprintWatchRow(Base):
     """A fingerprint whose internet-wide search is re-run on a schedule; new servers raise an alert."""
 

@@ -81,3 +81,11 @@ client.watch_brand("acme.com", allow=["acme.co.uk"])
 Every lookalike is then **triaged** (see [74 — Lookalike triage](74-lookalike-triage.md)): whether it
 resolves, can send email, is parked or is a defensive registration of yours, and, if you allow it,
 whether its website copies yours with a login form. The verdict sets the severity.
+
+## Storage (Phase 80)
+
+Each lookalike is a row of its own (`brand_lookalikes`): its finding, latest triage and takedown are
+encrypted; its verdict, severity, technique and infrastructure (addresses, name servers, mail hosts,
+favicon hash, page title) are plain columns so campaigns, TAXII and the metrics read thousands of
+lookalikes without decrypting them. A run reads and writes only the lookalikes it checks. Up to 5,000
+per watch; beyond that the oldest are forgotten, except those with a takedown.

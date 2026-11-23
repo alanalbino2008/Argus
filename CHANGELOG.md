@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.80.0] — Phase 80: Lookalikes in their own table
+
+### Changed
+- **Brand watches scale.** Each lookalike a brand watch finds is now a row of its own (with its
+  finding, triage and takedown) instead of an entry in one encrypted document per watch, which grew to
+  about 3.4 MB at 5,000 lookalikes and was decrypted, parsed and rewritten whole on every run, every
+  takedown change and every page view. Measured with 3 brands × 5,000 lookalikes:
+
+  | | Before | After |
+  | --- | --- | --- |
+  | Poll for due watches (every 5 minutes) | 80 ms | 2 ms |
+  | Brand-watch page | 104 ms | 34 ms |
+  | Campaigns | 566 ms | 459 ms |
+  | Brand-protection summary | 629 ms | 494 ms |
+  | TAXII lookalikes | 387 ms | 331 ms |
+  | Written per run or takedown change | ~3.4 MB | only the rows touched (~0.9 KB each) |
+
+- Each view reads only what it needs: verdict, severity, technique and the infrastructure campaigns
+  group on (addresses, name servers, mail hosts, favicon hash, page title: the attacker's servers, not
+  people) are plain columns; findings, full triage and takedown records stay encrypted. Runs fetch just
+  the lookalikes they re-check (indexed: newest first, longest unchecked, open takedowns).
+- Campaign grouping is linear in the number of links (it was quadratic in the number of groups) and
+  caches address classification.
+- **Automatic conversion.** Watches saved before are converted the first time they are read, in one
+  transaction per watch; nothing to do. Migration 0032.
+
 ## [1.79.0] — Phase 79: The brand-protection report
 
 ### Added
