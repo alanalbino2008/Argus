@@ -10,16 +10,18 @@ import anyio
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 
 from argus.api.case_routes import _case, _repo
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, in_workspace, throttle
 from argus.api.map_routes import _scans, _timeline
 from argus.intel.relationships import analyse, entity_nodes, link_edges
 from argus.reports import signing
 from argus.reports.case_html import case_report_html
 from argus.security.auth import Role
+from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api", tags=["cases"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
-MAX_VERIFY_BYTES = 64 * 1024 * 1024
+MAX_VERIFY_BYTES = 16 * 1024 * 1024  # a case report with thousands of entries is a few MB
+_verify_limiter = SlidingWindowLimiter(limit=30, window=60)
 
 
 async def report_signer(request: Request) -> signing.ReportSigner:
@@ -87,6 +89,7 @@ async def report_signing_key(request: Request):
 @router.post("/reports/verify")
 async def verify_signed_report(request: Request, file: UploadFile = File(...), ws: WorkspaceContext = VIEWER):
     """Check a case report: unaltered since it was signed (``valid``), and signed by this server (``trusted``)."""
+    throttle(_verify_limiter, ws.principal.key_id, "Too many verifications; wait a minute")
     data = await file.read(MAX_VERIFY_BYTES + 1)
     if len(data) > MAX_VERIFY_BYTES:
         raise HTTPException(status_code=413, detail="That file is larger than any Argus report")

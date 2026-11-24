@@ -12,14 +12,18 @@ import anyio
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, in_workspace, throttle
 from argus.intel.campaigns import cluster
 from argus.security.auth import Role
+from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api", tags=["monitoring"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
 MAX_CAMPAIGN_TAKEDOWN = 30  # domains looked up in RDAP for one campaign report
+_read_limiter = SlidingWindowLimiter(limit=60, window=60)  # campaigns and metrics read every lookalike
+_campaign_takedown_limiter = SlidingWindowLimiter(limit=3, window=60)  # up to 30 RDAP look-ups each
+_report_limiter = SlidingWindowLimiter(limit=10, window=60)  # PDF rendering costs CPU
 
 
 async def gather(
@@ -59,6 +63,7 @@ async def campaigns_of(request: Request, workspace_id: str) -> list[dict[str, An
 async def list_campaigns(request: Request, ws: WorkspaceContext = VIEWER):
     """Groups of lookalike domains, watched servers and tagged indicators that share infrastructure
     (addresses, name servers, mail hosts, favicons, page titles, fingerprints), worst first."""
+    throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
     lookalikes, servers, tagged = await gather(request, ws.id)
     campaigns = await anyio.to_thread.run_sync(cluster, lookalikes, servers, tagged)
     takedown = {item["name"]: item["takedown"] for item in lookalikes if item.get("takedown")}
@@ -82,6 +87,7 @@ async def campaign_takedown(campaign_id: str, body: CampaignTakedown, request: R
     Calling it again re-shows the reports, and drafts only domains that have no open takedown yet."""
     from argus.intel import takedown
 
+    throttle(_campaign_takedown_limiter, ws.principal.key_id, "Too many campaign takedowns; wait a minute")
     campaign = next((c for c in await campaigns_of(request, ws.id) if c["id"] == campaign_id), None)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found (its membership may have changed)")
@@ -151,6 +157,7 @@ async def brand_protection_summary(request: Request, ws: WorkspaceContext = VIEW
     """Lookalikes found, open threats, takedowns (with median time to takedown), campaigns and weekly trend."""
     from argus.intel.brand_metrics import summarise
 
+    throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
     days = max(7, min(days, 365))
     watches = await request.app.state.brand_watches.first_seen(ws.id, triage=False)
     return summarise(watches, await campaigns_of(request, ws.id), days=days)
@@ -210,6 +217,7 @@ async def brand_protection_report(body: BrandReportRequest, request: Request, ws
     """The brand-protection report as a PDF, registered like every Argus report (verifiable by SHA-256)."""
     from fastapi import Response
 
+    throttle(_report_limiter, ws.principal.key_id, "Too many reports; wait a minute")
     issued = await issue_brand_report(request.app, ws.workspace, days=body.days, tlp=body.tlp,
                                       prepared_for=body.prepared_for.strip(), issued_by=ws.principal.name)  # fmt: skip
     await audit(request, ws.principal, "report.brand", issued["record"]["id"], details={"sha256": issued["sha256"]})

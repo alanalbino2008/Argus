@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.core.models import EntityType
 from argus.security.auth import Role
-from argus.storage.annotation_repo import MAX_NOTE_LENGTH, MAX_TAGS
+from argus.storage.annotation_repo import MAX_NOTE_LENGTH, MAX_TAGS, AnnotationLimit
 
 router = APIRouter(prefix="/api", tags=["query"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -52,10 +52,13 @@ async def put_annotation(entity_id: str, body: AnnotationBody, request: Request,
     """Set an entity's tags and note (both empty removes them). Applies in every investigation."""
     if not ENTITY_ID.match(entity_id) or not entity_id.startswith(f"{body.entity_type.value}_"):
         raise HTTPException(status_code=422, detail="Not an entity id of that type")
-    saved = await _repo(request).put(
-        ws.id, entity_id, entity_type=body.entity_type.value, value=body.value.strip(), tags=body.tags,
-        note=body.note, by=ws.principal.name,
-    )  # fmt: skip
+    try:
+        saved = await _repo(request).put(
+            ws.id, entity_id, entity_type=body.entity_type.value, value=body.value.strip(), tags=body.tags,
+            note=body.note, by=ws.principal.name,
+        )  # fmt: skip
+    except AnnotationLimit as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     await audit(
         request, ws.principal, "entity.annotate", entity_id,
         details={"tags": len(saved["tags"]) if saved else 0, "note": bool(saved and saved["note"])},

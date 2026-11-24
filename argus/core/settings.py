@@ -381,6 +381,9 @@ class Settings(BaseSettings):
         default=None,
         description="Base64 Ed25519 private key that signs case reports; unset: one is created and kept sealed",
     )
+    watch_run_cooldown_seconds: float = Field(
+        default=600.0, ge=0, description="Minimum time between runs of one brand or fingerprint watch started by hand"
+    )
     brand_watch_enabled: bool = Field(
         default=True, description="Look for lookalike domains of watched brands in Certificate Transparency"
     )

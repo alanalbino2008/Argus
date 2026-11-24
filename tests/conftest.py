@@ -32,10 +32,15 @@ def _no_live_username_catalog(monkeypatch):
     monkeypatch.setenv("ARGUS_SANCTIONS_SDN_URL", "")  # nor the sanctions lists
     monkeypatch.setenv("ARGUS_UK_SANCTIONS_URL", "")
     monkeypatch.setenv("ARGUS_UN_SANCTIONS_URL", "")
+    # "Run now" cooldowns would stop tests that run a watch several times; tests of the cooldown set it.
+    monkeypatch.setenv("ARGUS_WATCH_RUN_COOLDOWN_SECONDS", "0")
     get_settings.cache_clear()
     catalog.reset()
     maigret_catalog.reset()
     from argus.intel import watchlists
+    from argus.security.ratelimit import reset_all
+
+    reset_all()  # rate limiters are per process: each test starts with none of the others' requests
 
     sanctions.reset()
     watchlists.reset()

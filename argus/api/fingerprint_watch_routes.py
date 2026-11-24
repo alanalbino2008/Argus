@@ -11,7 +11,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, cooldown, in_workspace
 from argus.intel.fingerprint_watch import ENGINE_NAMES, engine_keys
 from argus.security.auth import Role
 from argus.storage.fingerprint_watch_repo import MAX_WATCHES
@@ -74,7 +74,11 @@ async def create_fingerprint_watch(body: WatchRequest, request: Request, ws: Wor
 
 @router.post("/fingerprint-watches/{watch_id}/run", status_code=202)
 async def run_fingerprint_watch(watch_id: str, request: Request, ws: WorkspaceContext = ANALYST):
-    """Run a watch now (it spends a search credit) instead of waiting for its schedule."""
+    """Run a watch now (it spends a search credit) instead of waiting for its schedule; not more often
+    than every 10 minutes."""
+    current = await _repo(request).get(watch_id, ws.id)
+    if current is not None:
+        cooldown(current.get("last_run_at"), request.app.state.settings.watch_run_cooldown_seconds, "fingerprint watch")
     if not await _repo(request).make_due(watch_id, ws.id):
         raise HTTPException(status_code=404, detail="Fingerprint watch not found")
     await audit(request, ws.principal, "fingerprint_watch.run", watch_id)

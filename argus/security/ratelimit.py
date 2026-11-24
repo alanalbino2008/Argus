@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 import time
+import weakref
 from collections import defaultdict, deque
+
+_ALL: weakref.WeakSet[SlidingWindowLimiter] = weakref.WeakSet()
+
+
+def reset_all() -> None:
+    """Forget every limiter's history (tests start each case from a clean slate)."""
+    for limiter in list(_ALL):
+        limiter.reset()
 
 
 class SlidingWindowLimiter:
@@ -16,6 +25,10 @@ class SlidingWindowLimiter:
         self.limit = limit
         self.window = window
         self._events: dict[str, deque[float]] = defaultdict(deque)
+        _ALL.add(self)
+
+    def reset(self) -> None:
+        self._events.clear()
 
     def hit(self, key: str) -> bool:
         """Record an attempt. Returns False (and records nothing) if over the limit."""

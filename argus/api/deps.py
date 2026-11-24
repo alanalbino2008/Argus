@@ -144,6 +144,32 @@ def _rate_limit(request: Request, key_id: str) -> None:
         )
 
 
+def throttle(limiter: Any, key: str, message: str) -> None:
+    """Refuse with 429 and Retry-After when ``key`` has used up ``limiter``."""
+    if not limiter.hit(key):
+        wait = limiter.retry_after(key)
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message,
+                            headers={"Retry-After": str(wait)})  # fmt: skip
+
+
+def cooldown(last_run_at: str | None, seconds: float, what: str) -> None:
+    """Refuse a manual run that comes too soon after the last one (it spends third-party credits)."""
+    if not last_run_at or seconds <= 0:
+        return
+    from datetime import datetime, timezone
+
+    try:
+        last = datetime.fromisoformat(last_run_at)
+    except ValueError:
+        return
+    waited = (datetime.now(timezone.utc) - (last if last.tzinfo else last.replace(tzinfo=timezone.utc))).total_seconds()
+    if waited < seconds:
+        wait = int(seconds - waited) + 1
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                            detail=f"This {what} ran {int(waited // 60)} minute(s) ago; run it again in {wait // 60 + 1} minute(s)",
+                            headers={"Retry-After": str(wait)})  # fmt: skip
+
+
 def rate_limit_headers(limit: int, remaining: int, reset: int) -> dict[str, str]:
     return {"RateLimit-Limit": str(limit), "RateLimit-Remaining": str(max(0, remaining)), "RateLimit-Reset": str(reset)}
 

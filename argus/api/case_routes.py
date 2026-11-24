@@ -16,7 +16,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, in_workspace, throttle
 from argus.api.opsec_routes import find_route, route_for
 from argus.evidence.bundle import build_bundle
 from argus.evidence.capture import CaptureError, capture_upload, capture_url
@@ -269,8 +269,7 @@ async def delete_item(case_id: str, item_id: str, request: Request, ws: Workspac
 
 # ---------------------------------------------------------------------------- evidence
 def _limit(ws: WorkspaceContext) -> None:
-    if not _capture_limiter.hit(ws.principal.key_id):
-        raise HTTPException(status_code=429, detail="Too many captures; wait a minute")
+    throttle(_capture_limiter, ws.principal.key_id, "Too many captures; wait a minute")
 
 
 @router.post("/cases/{case_id}/captures", status_code=201)

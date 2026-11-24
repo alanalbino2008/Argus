@@ -7,13 +7,20 @@ import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from argus.storage.db import Database, EntityAnnotationRow
 
 MAX_TAGS = 20
 MAX_TAG_LENGTH = 40
 MAX_NOTE_LENGTH = 4000
+MAX_ANNOTATIONS = 20000  # per workspace
+
+
+class AnnotationLimit(ValueError):
+    pass
+
+
 _TAG_RE = re.compile(r"[^\w .:/@+-]", re.UNICODE)
 
 
@@ -75,6 +82,11 @@ class AnnotationRepository:
             data = {"value": value[:2000], "tags": tags, "note": note}
             now = datetime.now(timezone.utc)
             if row is None:
+                count = int(
+                    await s.scalar(select(func.count()).where(EntityAnnotationRow.workspace_id == workspace_id)) or 0
+                )
+                if count >= MAX_ANNOTATIONS:  # every query, hunt and feed reads them all
+                    raise AnnotationLimit(f"A workspace can annotate up to {MAX_ANNOTATIONS:,} entities")
                 row = EntityAnnotationRow(id=f"ann_{secrets.token_hex(8)}", workspace_id=workspace_id,
                                           entity_id=entity_id, entity_type=entity_type, data=data,
                                           updated_by=by, updated_at=now)  # fmt: skip

@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.83.0] — Phase 83: Hardening the recent features
+
+A review of everything added in phases 68 to 82 for what one caller could do to the server, a
+workspace's third-party credits, or memory. Each refusal is a `429` with `Retry-After`.
+
+### Security
+- **Run now** on a brand or fingerprint watch waits 10 minutes after the last run
+  (`ARGUS_WATCH_RUN_COOLDOWN_SECONDS`): each run spends Shodan, Censys or Cert Spotter queries, so a
+  script, or a stolen analyst key, could otherwise drain an account.
+- **Opening a case from a lookalike** now counts against the same capture limit as *Capture a page*
+  (20 a minute; each capture runs a browser), checked before anything is created.
+- **Rate limits** where one request does a lot of work: takedown drafts (10 a minute; each asks RDAP
+  for a registrar and up to three networks), campaign takedowns (3 a minute; up to 30 domains each),
+  campaigns and brand-protection metrics (60 a minute; they read every lookalike), the
+  brand-protection PDF (10 a minute), report verification (30 a minute) and TAXII (120 a minute per
+  key; every page recomputes campaigns).
+- **Bounds:** report verification reads at most 16 MB (was 64 MB); a workspace annotates at most
+  20,000 entities (every query, hunt and feed reads them all), while changing an existing annotation
+  is always allowed.
+- Captures' `429` now carries `Retry-After` like the rest.
+
 ## [1.82.0] — Phase 82: From lookalike to case
 
 ### Added

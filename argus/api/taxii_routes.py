@@ -15,10 +15,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from argus.api.deps import WorkspaceContext, audit, get_principal, resolve_workspace
+from argus.api.deps import WorkspaceContext, audit, get_principal, resolve_workspace, throttle
 from argus.intel import taxii
 from argus.intel.stix import ARGUS_IDENTITY
 from argus.security.auth import Principal
+from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/taxii2", tags=["threat intelligence"])
 MAX_PAGE = 1000
@@ -39,9 +40,13 @@ def _acceptable(request: Request) -> bool:
     return not accept or any(a in accept for a in ACCEPTABLE)
 
 
+_limiter = SlidingWindowLimiter(limit=120, window=60)  # per key: plenty for scheduled pulls, not for a flood
+
+
 async def _workspace(
     workspace: str, request: Request, principal: Principal = Depends(get_principal)
 ) -> WorkspaceContext:
+    throttle(_limiter, principal.key_id, "Too many TAXII requests; wait a minute")
     return await resolve_workspace(request, principal, ref=workspace)
 
 

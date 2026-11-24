@@ -14,16 +14,19 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, cooldown, in_workspace, throttle
 from argus.intel.brand_watch import HOSTNAME
 from argus.intel.lookalikes import registrable
 from argus.security.auth import Role
+from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage.brand_watch_repo import MAX_WATCHES
 
 router = APIRouter(prefix="/api", tags=["monitoring"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
 MAX_ALLOW = 50
+# Each draft asks RDAP (registrar and up to three networks); campaign drafts up to 30 domains.
+_rdap_limiter = SlidingWindowLimiter(limit=10, window=60)
 
 
 class BrandWatchRequest(BaseModel):
@@ -131,6 +134,10 @@ async def update_brand_watch(watch_id: str, body: BrandWatchUpdate, request: Req
 
 @router.post("/brand-watches/{watch_id}/run", status_code=202)
 async def run_brand_watch(watch_id: str, request: Request, ws: WorkspaceContext = ANALYST):
+    """Run a watch now. Not more often than every 10 minutes (each run spends Cert Spotter queries)."""
+    current = await _repo(request).get(watch_id, ws.id)
+    if current is not None:
+        cooldown(current.get("last_run_at"), request.app.state.settings.watch_run_cooldown_seconds, "brand watch")
     if not await _repo(request).make_due(watch_id, ws.id):
         raise HTTPException(status_code=404, detail="Brand watch not found")
     await audit(request, ws.principal, "brand_watch.run", watch_id)
@@ -173,6 +180,7 @@ async def draft_takedown(watch_id: str, body: TakedownRequest, request: Request,
     if current and current.get("status") in ("drafted", "reported"):
         raise HTTPException(status_code=409, detail="A takedown is already open for this domain")
     triage = finding.get("triage") or {}
+    throttle(_rdap_limiter, ws.principal.key_id, "Too many takedown look-ups; wait a minute")
     found = await request.app.state.brand_watcher.takedown_contacts(name, (triage.get("dns") or {}).get("ips") or [])
     letter = takedown.draft(domain=name, display=finding.get("display") or name, brand=watch["domain"],
                             finding=finding, triage=triage, found=found, organisation=body.organisation.strip())  # fmt: skip
@@ -256,6 +264,10 @@ async def lookalike_case(watch_id: str, domain: str, body: LookalikeCase, reques
     item = await _repo(request).lookalike(watch_id, ws.id, domain.strip().lower()) if watch else None
     if watch is None or item is None:
         raise HTTPException(status_code=404, detail="This watch has not found that domain")
+    if body.capture:  # the same limit as "Capture a page" (each runs a browser), checked before anything is created
+        from argus.api.case_routes import _limit as capture_limit
+
+        capture_limit(ws)
     cases, settings, name = request.app.state.cases, request.app.state.settings, item["name"]
     triage = item.get("triage") or {}
     if body.case_id:
