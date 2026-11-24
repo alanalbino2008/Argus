@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import func, select, update
 
+from argus.storage.data_version import bump
 from argus.storage.db import Database, FingerprintWatchRow
 
 MAX_WATCHES = 50  # per workspace: each check can spend a search credit
@@ -84,6 +85,7 @@ class FingerprintWatchRepository:
         )  # fmt: skip
         async with self.db.session() as s, s.begin():
             s.add(row)
+            await bump(s, workspace_id)
         return _view(row)
 
     async def list_watches(self, workspace_id: str) -> list[dict[str, Any]]:
@@ -103,6 +105,7 @@ class FingerprintWatchRepository:
             if row is None or row.workspace_id != workspace_id:
                 return False
             await s.delete(row)
+            await bump(s, workspace_id)
             return True
 
     async def make_due(self, watch_id: str, workspace_id: str) -> bool:
@@ -179,6 +182,7 @@ class FingerprintWatchRepository:
                 data["baselined"] = True  # the first successful run records today's servers
             row.data = data
             row.last_run_at, row.last_status = _now(), status
+            await bump(s, row.workspace_id)
             if total is not None:
                 row.last_total = total
             if alerted:

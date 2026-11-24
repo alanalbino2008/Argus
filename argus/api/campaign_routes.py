@@ -9,13 +9,15 @@ from __future__ import annotations
 from typing import Any, Literal
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from argus.api.deps import WorkspaceContext, audit, in_workspace, throttle
 from argus.intel.campaigns import cluster
+from argus.observability import metrics
 from argus.security.auth import Role
 from argus.security.ratelimit import SlidingWindowLimiter
+from argus.storage import data_version
 
 router = APIRouter(prefix="/api", tags=["monitoring"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -30,8 +32,16 @@ _campaign_takedown_limiter = SlidingWindowLimiter(
 _report_limiter = SlidingWindowLimiter(limit=10, window=60, name="brand_report")  # PDF rendering costs CPU
 
 
+def derived_cache(app: Any) -> data_version.VersionedCache:
+    """The application's cache of results computed from a workspace's data (one per process)."""
+    cache = getattr(app.state, "derived_cache", None)
+    if cache is None:
+        cache = app.state.derived_cache = data_version.VersionedCache(maxsize=128)
+    return cache
+
+
 async def gather(
-    request: Request, workspace_id: str
+    request: Any, workspace_id: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     state = request.app.state
     lookalikes = []
@@ -58,24 +68,57 @@ async def gather(
     return lookalikes, servers, tagged
 
 
-async def campaigns_of(request: Request, workspace_id: str) -> list[dict[str, Any]]:
+async def computed(request: Any, workspace_id: str, version: int | None = None) -> dict[str, Any]:
+    """The workspace's campaigns and indicator count, recomputed only when its data changed.
+
+    Shared, read-only: callers must not change what they get."""
+    if version is None:
+        version = await data_version.current(request.app.state.db, workspace_id)
+    cache = derived_cache(request.app)
+    hit = cache.get(("campaigns", workspace_id), version)
+    if hit is not None:
+        metrics.DERIVED_CACHE.labels("campaigns", "hit").inc()
+        return hit
+    metrics.DERIVED_CACHE.labels("campaigns", "miss").inc()
     lookalikes, servers, tagged = await gather(request, workspace_id)
-    return await anyio.to_thread.run_sync(cluster, lookalikes, servers, tagged)
-
-
-@router.get("/campaigns")
-async def list_campaigns(request: Request, ws: WorkspaceContext = VIEWER):
-    """Groups of lookalike domains, watched servers and tagged indicators that share infrastructure
-    (addresses, name servers, mail hosts, favicons, page titles, fingerprints), worst first."""
-    throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
-    lookalikes, servers, tagged = await gather(request, ws.id)
     campaigns = await anyio.to_thread.run_sync(cluster, lookalikes, servers, tagged)
     takedown = {item["name"]: item["takedown"] for item in lookalikes if item.get("takedown")}
     for campaign in campaigns:
         for member in campaign["members"]:
             if member["value"] in takedown:
                 member["takedown"] = takedown[member["value"]]
-    return {"campaigns": campaigns, "indicators": len(lookalikes) + len(servers) + len(tagged)}
+    result = {"campaigns": campaigns, "indicators": len(lookalikes) + len(servers) + len(tagged)}
+    cache.put(("campaigns", workspace_id), version, result)
+    return result
+
+
+async def campaigns_of(request: Any, workspace_id: str) -> list[dict[str, Any]]:
+    return list((await computed(request, workspace_id))["campaigns"])
+
+
+def _conditional(request: Request, version: int, cache: str) -> tuple[str, Response | None]:
+    """The response's ETag, and a 304 when the client already holds it."""
+    tag = data_version.etag(version, request.url.path, sorted(request.query_params.multi_items()))
+    if data_version.not_modified(request.headers.get("if-none-match"), tag):
+        metrics.DERIVED_CACHE.labels(cache, "not_modified").inc()
+        return tag, Response(status_code=304, headers={"ETag": tag, "Cache-Control": "private, no-cache"})
+    return tag, None
+
+
+@router.get("/campaigns")
+async def list_campaigns(request: Request, response: Response, ws: WorkspaceContext = VIEWER):
+    """Groups of lookalike domains, watched servers and tagged indicators that share infrastructure
+    (addresses, name servers, mail hosts, favicons, page titles, fingerprints), worst first.
+
+    Answers ``304 Not Modified`` to ``If-None-Match`` with the ETag of the last answer while nothing
+    the campaigns are made from has changed."""
+    version = await data_version.current(request.app.state.db, ws.id)
+    tag, unchanged = _conditional(request, version, "campaigns")
+    if unchanged is not None:
+        return unchanged
+    throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
+    response.headers["ETag"], response.headers["Cache-Control"] = tag, "private, no-cache"
+    return await computed(request, ws.id, version)
 
 
 class CampaignTakedown(BaseModel):
@@ -187,7 +230,7 @@ async def issue_brand_report(
             self.app = application
 
     watches = await app.state.brand_watches.first_seen(workspace["id"], triage=False)
-    summary = summarise(watches, await campaigns_of(_Request(app), workspace["id"]), days=days)  # type: ignore[arg-type]
+    summary = summarise(watches, await campaigns_of(_Request(app), workspace["id"]), days=days)
     branding = await app.state.reports.branding(workspace["id"], default_org=default_issuer(workspace))
     base = app.state.settings.public_url
     verify_url = f"{base.rstrip('/')}/api/reports/verify/<sha256>" if base else None

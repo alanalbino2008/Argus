@@ -97,7 +97,23 @@ async def get_collection(collection: str, request: Request, ws: WorkspaceContext
     return _reply(next(c for c in taxii.collections(ws.id) if c["alias"] == kind))
 
 
-async def _objects(request: Request, ws: WorkspaceContext, kind: str) -> list[tuple[str, dict[str, Any]]]:
+async def _objects(request: Request, ws: WorkspaceContext, kind: str, version: int) -> list[tuple[str, dict[str, Any]]]:
+    """The collection's objects, recomputed only when the workspace's data changed (shared: read only)."""
+    from argus.api.campaign_routes import derived_cache
+    from argus.observability import metrics
+
+    cache = derived_cache(request.app)
+    hit = cache.get(("taxii", ws.id, kind), version)
+    if hit is not None:
+        metrics.DERIVED_CACHE.labels("taxii", "hit").inc()
+        return hit
+    metrics.DERIVED_CACHE.labels("taxii", "miss").inc()
+    found = await _compute(request, ws, kind, version)
+    cache.put(("taxii", ws.id, kind), version, found)
+    return found
+
+
+async def _compute(request: Request, ws: WorkspaceContext, kind: str, version: int) -> list[tuple[str, dict[str, Any]]]:
     state = request.app.state
     if kind == "tagged":
         found = taxii.tagged(ws.id, await state.annotations.all(ws.id))
@@ -106,12 +122,13 @@ async def _objects(request: Request, ws: WorkspaceContext, kind: str) -> list[tu
     elif kind == "fingerprint-servers":
         found = taxii.fingerprint_servers(ws.id, await state.fingerprint_watches.first_seen(ws.id))
     else:
-        from argus.api.campaign_routes import campaigns_of
+        from argus.api.campaign_routes import computed
 
         every = [*taxii.tagged(ws.id, await state.annotations.all(ws.id)),
                  *taxii.lookalikes(ws.id, await state.brand_watches.first_seen(ws.id, triage=False, takedowns=False)),
                  *taxii.fingerprint_servers(ws.id, await state.fingerprint_watches.first_seen(ws.id))]  # fmt: skip
-        found = taxii.campaign_objects(ws.id, await campaigns_of(request, ws.id), {o["id"]: (a, o) for a, o in every})
+        campaigns = (await computed(request, ws.id, version))["campaigns"]
+        found = taxii.campaign_objects(ws.id, campaigns, {o["id"]: (a, o) for a, o in every})
     if found:  # the identity the indicators' created_by_ref points to, as a member of the collection
         identity = json.loads(ARGUS_IDENTITY.serialize())
         found.append((identity["created"], identity))
@@ -141,15 +158,23 @@ async def _page(collection: str, request: Request, ws: WorkspaceContext, *, adde
     start = _cursor(next_)
     if start < 0:
         return _error(400, "Bad next", "The 'next' value is not one this server gave"), None
+    from argus.api.campaign_routes import _conditional
+    from argus.storage import data_version
+
+    version = await data_version.current(request.app.state.db, ws.id)
+    tag, unchanged = _conditional(request, version, "taxii")
+    if unchanged is not None:
+        await audit(request, ws.principal, "taxii.read", kind, details={"objects": 0, "not_modified": True})
+        return unchanged, None
     params = request.query_params
     ids = {object_id} if object_id else set(filter(None, params.get("match[id]", "").split(",")))
     types = set(filter(None, params.get("match[type]", "").split(",")))
-    objects = await _objects(request, ws, kind)
+    objects = await _objects(request, ws, kind, version)
     window, following = taxii.page(objects, added_after=added_after, limit=limit, start=start,
                                    match_ids=ids or None, match_types=types or None)  # fmt: skip
-    headers = {}
+    headers = {"ETag": tag, "Cache-Control": "private, no-cache"}
     if window:
-        headers = {"X-TAXII-Date-Added-First": window[0][0], "X-TAXII-Date-Added-Last": window[-1][0]}
+        headers |= {"X-TAXII-Date-Added-First": window[0][0], "X-TAXII-Date-Added-Last": window[-1][0]}
     await audit(request, ws.principal, "taxii.read", kind, details={"objects": len(window)})
     return None, (window, following, headers)
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.85.0] — Phase 85: Caching campaigns and TAXII
+
+### Performance
+- **Campaigns and TAXII collections are computed once per change**, not on every request. Each
+  workspace has a data version, raised in the same transaction as every write to lookalikes, watches
+  and annotations; results are cached in memory under it. It is stored in the database, so every
+  replica sees a change at once (migration 0034).
+- **Conditional requests:** `GET /api/campaigns` and the TAXII `objects/` and `manifest/` endpoints
+  send an `ETag`; `If-None-Match` gets `304 Not Modified` without reading or computing anything while
+  nothing changed. TAXII clients polling every few minutes now cost one database lookup per poll.
+- `argus_derived_cache_total` counts cache hits, misses and 304s.
+
 ## [1.84.0] — Phase 84: Watching the watchers
 
 Brand and fingerprint watches run unattended; when they stop working, the only symptom is silence.

@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -845,6 +846,18 @@ class EntityAnnotationRow(Base):
     data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="entity_annotations.data"))  # value, tags, note
     updated_by: Mapped[str] = mapped_column(String(128))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DataVersionRow(Base):
+    """A counter per workspace, raised by every write that changes what campaigns and TAXII serve
+    (lookalikes, brand and fingerprint watches, annotations). Results computed from that data are
+    cached under it, and it is the base of their ETags; it lives in the database so every replica
+    sees the same value."""
+
+    __tablename__ = "data_versions"
+
+    workspace_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    version: Mapped[int] = mapped_column(BigInteger, default=0)
 
 
 class BrandWatchRow(Base):

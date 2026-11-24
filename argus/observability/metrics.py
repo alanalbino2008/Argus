@@ -43,6 +43,12 @@ HTTP_DURATION = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10),
     registry=REGISTRY,
 )
+DERIVED_CACHE = Counter(
+    "argus_derived_cache_total",
+    "Campaigns and TAXII collections served from the in-memory cache (hit), recomputed (miss) or not sent (not_modified)",
+    ["cache", "result"],
+    registry=REGISTRY,
+)
 GRAPH_CACHE = Counter(
     "argus_graph_cache_total", "Stored graphs served from the read-only cache (hit) or rebuilt from the database (miss)",
     ["result"], registry=REGISTRY,

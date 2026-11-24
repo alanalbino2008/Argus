@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.intel.lookalike_triage import VERDICT_LABELS
 from argus.observability import metrics
+from argus.storage.data_version import bump
 from argus.storage.db import BrandLookalikeRow, BrandWatchRow, Database
 
 MAX_WATCHES = 20  # per workspace
@@ -140,6 +141,7 @@ class BrandWatchRepository:
                         takedown=record,
                     ))  # fmt: skip
                 row.data = {k: v for k, v in data.items() if k not in LEGACY_KEYS}
+                await bump(s, row.workspace_id)
         return True
 
     async def _watches(self, s: AsyncSession, *criteria: Any) -> list[BrandWatchRow]:
@@ -189,6 +191,7 @@ class BrandWatchRepository:
         )  # fmt: skip
         async with self.db.session() as s, s.begin():
             s.add(row)
+            await bump(s, workspace_id)
         return _view(row)
 
     async def list_watches(self, workspace_id: str) -> list[dict[str, Any]]:
@@ -213,6 +216,7 @@ class BrandWatchRepository:
                 return None
             row.data = {**(row.data or {}),
                         **{k: v for k, v in changes.items() if k in ("allow", "web_check", "reference_urls")}}  # fmt: skip
+            await bump(s, workspace_id)
         return await self.get(watch_id, workspace_id)
 
     async def delete(self, watch_id: str, workspace_id: str) -> bool:
@@ -222,6 +226,7 @@ class BrandWatchRepository:
                 return False
             await s.execute(delete(BrandLookalikeRow).where(BrandLookalikeRow.watch_id == watch_id))
             await s.delete(row)
+            await bump(s, workspace_id)
             return True
 
     async def make_due(self, watch_id: str, workspace_id: str) -> bool:
@@ -321,6 +326,7 @@ class BrandWatchRepository:
             record = {**(row.takedown or {"history": []}), **changes}
             record["history"] = [*record.get("history", []), {"at": _now().isoformat(), **event}][-50:]
             row.takedown, row.takedown_status = record, record.get("status")
+            await bump(s, row.workspace_id)
         if event.get("event") in metrics.TAKEDOWN_STEPS:
             metrics.TAKEDOWN_EVENTS.labels(event["event"]).inc()
         return record
@@ -428,6 +434,7 @@ class BrandWatchRepository:
                 data["visual_refs"] = visual_refs
             row.data = data
             row.last_run_at, row.last_status = now, status
+            await bump(s, row.workspace_id)
             if alerted:
                 row.alerts_raised = (row.alerts_raised or 0) + 1
             if retry_in is not None:  # every source failed: try again soon rather than in a day

@@ -9,6 +9,7 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from argus.storage.data_version import bump
 from argus.storage.db import Database, EntityAnnotationRow
 
 MAX_TAGS = 20
@@ -78,6 +79,7 @@ class AnnotationRepository:
             if not tags and not note:
                 if row is not None:
                     await s.delete(row)
+                    await bump(s, workspace_id)
                 return None
             data = {"value": value[:2000], "tags": tags, "note": note}
             now = datetime.now(timezone.utc)
@@ -93,6 +95,7 @@ class AnnotationRepository:
                 s.add(row)
             else:
                 row.data, row.entity_type, row.updated_by, row.updated_at = data, entity_type, by, now
+            await bump(s, workspace_id)
             return _view(row)
 
     async def tags(self, workspace_id: str) -> list[dict[str, Any]]:

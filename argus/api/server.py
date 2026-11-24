@@ -276,6 +276,9 @@ async def lifespan(app: FastAPI):
         await recover_scans()
 
     app.state.settings, app.state.db, app.state.repo = settings, db, repo
+    from argus.storage.data_version import VersionedCache
+
+    app.state.derived_cache = VersionedCache(maxsize=128)  # campaigns and TAXII, per data version (Phase 85)
     app.state.keys = ApiKeyRepository(db)
     app.state.users = UserRepository(db)
     app.state.workspaces = WorkspaceRepository(db)
