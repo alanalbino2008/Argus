@@ -40,7 +40,9 @@ def _acceptable(request: Request) -> bool:
     return not accept or any(a in accept for a in ACCEPTABLE)
 
 
-_limiter = SlidingWindowLimiter(limit=120, window=60)  # per key: plenty for scheduled pulls, not for a flood
+_limiter = SlidingWindowLimiter(
+    limit=120, window=60, name="taxii"
+)  # per key: plenty for scheduled pulls, not for a flood
 
 
 async def _workspace(

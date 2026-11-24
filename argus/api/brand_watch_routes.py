@@ -26,7 +26,7 @@ VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
 MAX_ALLOW = 50
 # Each draft asks RDAP (registrar and up to three networks); campaign drafts up to 30 domains.
-_rdap_limiter = SlidingWindowLimiter(limit=10, window=60)
+_rdap_limiter = SlidingWindowLimiter(limit=10, window=60, name="takedown_lookup")
 
 
 class BrandWatchRequest(BaseModel):

@@ -21,7 +21,8 @@ class SlidingWindowLimiter:
     Single-process only; a multi-replica deployment would back this with Redis.
     """
 
-    def __init__(self, limit: int, window: float):
+    def __init__(self, limit: int, window: float, name: str = ""):
+        self.name = name  # the label on argus_rate_limited_total
         self.limit = limit
         self.window = window
         self._events: dict[str, deque[float]] = defaultdict(deque)

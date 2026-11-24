@@ -178,6 +178,53 @@ EXPOSURE_SOURCE_ERRORS = Counter(
     "argus_exposure_source_errors_total", "Exposure source failures by source", ["source"], registry=REGISTRY
 )
 
+# ------------------------------------------------------------------ brand and fingerprint watches
+WATCH_RUNS = Counter(
+    "argus_watch_runs_total",
+    "Watch runs by kind (brand, fingerprint) and status (ok, partial, error)",
+    ["kind", "status"],
+    registry=REGISTRY,
+)
+WATCH_RUN_DURATION = Histogram(
+    "argus_watch_run_duration_seconds",
+    "How long one watch run took",
+    ["kind"],
+    buckets=(1, 5, 15, 30, 60, 120, 300, 600, 1800),
+    registry=REGISTRY,
+)
+WATCH_LAST_SUCCESS = Gauge(
+    "argus_watch_last_success_timestamp_seconds",
+    "Unix time of this replica's last watch run that succeeded (ok or partial)",
+    ["kind"],
+    registry=REGISTRY,
+)
+WATCH_SOURCE_ERRORS = Counter(
+    "argus_watch_source_errors_total",
+    "Watch source failures (crt.sh, Cert Spotter, Shodan, Censys)",
+    ["source"],
+    registry=REGISTRY,
+)
+LOOKALIKES_FOUND = Counter(
+    "argus_lookalikes_found_total", "New lookalike domains recorded, by severity", ["severity"], registry=REGISTRY
+)
+TAKEDOWN_EVENTS = Counter(
+    "argus_takedown_events_total",
+    "Takedown steps (drafted, reported, down, closed)",
+    ["event"],
+    registry=REGISTRY,
+)
+TAKEDOWN_STEPS = ("drafted", "reported", "down", "closed")
+
+
+def watch_run(kind: str, status: str, seconds: float) -> None:
+    """Record one finished watch run (status ok, partial or error)."""
+    import time
+
+    WATCH_RUNS.labels(kind, status).inc()
+    WATCH_RUN_DURATION.labels(kind).observe(seconds)
+    if status in ("ok", "partial"):
+        WATCH_LAST_SUCCESS.labels(kind).set(time.time())
+
 
 def init(instance: str, scan_capacity: int = 0) -> None:
     BUILD_INFO.labels(version=__version__, replica=instance).set(1)

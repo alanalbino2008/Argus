@@ -126,3 +126,88 @@ tests:
               summary: Notifications are piling up
               description: "80 deliveries are waiting - a destination is down or the dispatcher is not running."
               runbook: Check the delivery log for the failing destination and that ARGUS_NOTIFICATIONS_ENABLED is true on at least one replica.
+
+  - name: watches that only fail alert; a kind with any success does not
+    interval: 30m
+    input_series:
+      - series: 'argus_watch_runs_total{kind="brand",status="error"}'
+        values: '0+1x16'
+      - series: 'argus_watch_runs_total{kind="fingerprint",status="error"}'
+        values: '0+1x16'
+      - series: 'argus_watch_runs_total{kind="fingerprint",status="ok"}'
+        values: '0+1x16'
+    alert_rule_test:
+      - {eval_time: 30m, alertname: ArgusWatchesFailing, exp_alerts: []}
+      - eval_time: 6h
+        alertname: ArgusWatchesFailing
+        exp_alerts:
+          - exp_labels: {severity: warning, kind: brand}
+            exp_annotations:
+              summary: Every brand watch run failed for 6 hours
+              description: brand watch runs keep failing and none succeeded - new lookalike domains or attacker servers are not being found.
+              runbook: Open Monitoring > Brand watches (or Fingerprint watches); each watch shows its last error. Check the Shodan/Censys/Cert Spotter keys and that Argus can reach the source through its egress.
+
+  - name: a watcher with no success for 2 days is stalled
+    interval: 1m  # the "for" clause needs a sample every evaluation
+    input_series:
+      - series: 'argus_watch_last_success_timestamp_seconds{kind="brand",instance="a"}'
+        values: '0x3100'
+      - series: 'argus_watch_last_success_timestamp_seconds{kind="fingerprint",instance="a"}'
+        values: '0+60x3100'
+    alert_rule_test:
+      - {eval_time: 47h, alertname: ArgusWatchesStalled, exp_alerts: []}
+      - eval_time: 50h
+        alertname: ArgusWatchesStalled
+        exp_alerts:
+          - exp_labels: {severity: warning, kind: brand}
+            exp_annotations:
+              summary: No brand watch has succeeded for 2 days
+              description: No replica has finished a brand watch run successfully for 2 days - the watcher may have stopped.
+              runbook: Check that monitoring is enabled for the plan and that the watcher loop is running (look for "watch tick failed" in the JSON logs).
+
+  - name: a Certificate Transparency source failing repeatedly is reported
+    interval: 30m
+    input_series:
+      - series: 'argus_watch_source_errors_total{source="crt.sh"}'
+        values: '0+1x12'
+      - series: 'argus_watch_source_errors_total{source="Cert Spotter"}'
+        values: '0x12'
+      - series: 'argus_watch_source_errors_total{source="Shodan"}'
+        values: '0+1x12'
+    alert_rule_test:
+      - eval_time: 6h
+        alertname: ArgusCertificateTransparencyDegraded
+        exp_alerts:
+          - exp_labels: {severity: info, source: crt.sh}
+            exp_annotations:
+              summary: crt.sh keeps failing for brand watches
+              description: 5 or more failed look-ups in 6 hours. Brand watches carry on with the other source, but new lookalikes may be found late.
+              runbook: crt.sh is often overloaded and usually recovers by itself; for Cert Spotter, a 429 means the free quota is used up - add ARGUS_CERTSPOTTER_API_KEY.
+
+  - name: takedowns reported much faster than they are resolved build a backlog
+    interval: 1d
+    input_series:
+      - series: 'argus_takedown_events_total{event="reported"}'
+        values: '0+5x10'
+      - series: 'argus_takedown_events_total{event="down"}'
+        values: '0+1x10'
+    alert_rule_test:
+      - {eval_time: 2d, alertname: ArgusTakedownBacklog, exp_alerts: []}
+      - eval_time: 9d
+        alertname: ArgusTakedownBacklog
+        exp_alerts:
+          - exp_labels: {severity: info}
+            exp_annotations:
+              summary: Takedown requests are piling up
+              description: More than 20 more takedowns were reported than resolved this week - registrars or hosts are not acting on the abuse reports.
+              runbook: Open the brand-protection report; the takedowns waiting longest are listed. Escalate to the registry, or report the domains to Google Safe Browsing and Microsoft SmartScreen.
+
+  - name: balanced takedowns raise no backlog alert
+    interval: 1d
+    input_series:
+      - series: 'argus_takedown_events_total{event="reported"}'
+        values: '0+5x10'
+      - series: 'argus_takedown_events_total{event="closed"}'
+        values: '0+5x10'
+    alert_rule_test:
+      - {eval_time: 9d, alertname: ArgusTakedownBacklog, exp_alerts: []}

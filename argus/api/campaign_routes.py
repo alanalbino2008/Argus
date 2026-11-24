@@ -21,9 +21,13 @@ router = APIRouter(prefix="/api", tags=["monitoring"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
 MAX_CAMPAIGN_TAKEDOWN = 30  # domains looked up in RDAP for one campaign report
-_read_limiter = SlidingWindowLimiter(limit=60, window=60)  # campaigns and metrics read every lookalike
-_campaign_takedown_limiter = SlidingWindowLimiter(limit=3, window=60)  # up to 30 RDAP look-ups each
-_report_limiter = SlidingWindowLimiter(limit=10, window=60)  # PDF rendering costs CPU
+_read_limiter = SlidingWindowLimiter(
+    limit=60, window=60, name="campaign_read"
+)  # campaigns and metrics read every lookalike
+_campaign_takedown_limiter = SlidingWindowLimiter(
+    limit=3, window=60, name="campaign_takedown"
+)  # up to 30 RDAP look-ups each
+_report_limiter = SlidingWindowLimiter(limit=10, window=60, name="brand_report")  # PDF rendering costs CPU
 
 
 async def gather(

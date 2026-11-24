@@ -147,6 +147,9 @@ def _rate_limit(request: Request, key_id: str) -> None:
 def throttle(limiter: Any, key: str, message: str) -> None:
     """Refuse with 429 and Retry-After when ``key`` has used up ``limiter``."""
     if not limiter.hit(key):
+        from argus.observability import metrics
+
+        metrics.RATE_LIMITED.labels(getattr(limiter, "name", None) or "endpoint").inc()
         wait = limiter.retry_after(key)
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message,
                             headers={"Retry-After": str(wait)})  # fmt: skip
@@ -164,6 +167,9 @@ def cooldown(last_run_at: str | None, seconds: float, what: str) -> None:
         return
     waited = (datetime.now(timezone.utc) - (last if last.tzinfo else last.replace(tzinfo=timezone.utc))).total_seconds()
     if waited < seconds:
+        from argus.observability import metrics
+
+        metrics.RATE_LIMITED.labels(f"{what.replace(' ', '_')}_cooldown").inc()
         wait = int(seconds - waited) + 1
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                             detail=f"This {what} ran {int(waited // 60)} minute(s) ago; run it again in {wait // 60 + 1} minute(s)",

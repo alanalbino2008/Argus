@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from argus.intel.lookalike_triage import VERDICT_LABELS
+from argus.observability import metrics
 from argus.storage.db import BrandLookalikeRow, BrandWatchRow, Database
 
 MAX_WATCHES = 20  # per workspace
@@ -320,7 +321,9 @@ class BrandWatchRepository:
             record = {**(row.takedown or {"history": []}), **changes}
             record["history"] = [*record.get("history", []), {"at": _now().isoformat(), **event}][-50:]
             row.takedown, row.takedown_status = record, record.get("status")
-            return record
+        if event.get("event") in metrics.TAKEDOWN_STEPS:
+            metrics.TAKEDOWN_EVENTS.labels(event["event"]).inc()
+        return record
 
     async def first_seen(
         self, workspace_id: str, *, triage: bool = True, takedowns: bool = True

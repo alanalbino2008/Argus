@@ -99,6 +99,45 @@ groups:
           summary: OSINT sources are rate-limiting Argus
           description: Scans slow down while Argus backs off; add API keys or lower concurrency.
 
+  - name: argus.watches
+    rules:
+      - alert: ArgusWatchesFailing
+        expr: |
+          sum by (kind) (increase(argus_watch_runs_total{status="error"}[6h])) >= 3
+            unless sum by (kind) (increase(argus_watch_runs_total{status=~"ok|partial"}[6h])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "Every {{ $labels.kind }} watch run failed for 6 hours"
+          description: "{{ $labels.kind }} watch runs keep failing and none succeeded - new lookalike domains or attacker servers are not being found."
+          runbook: Open Monitoring > Brand watches (or Fingerprint watches); each watch shows its last error. Check the Shodan/Censys/Cert Spotter keys and that Argus can reach the source through its egress.
+
+      - alert: ArgusWatchesStalled
+        expr: time() - max by (kind) (argus_watch_last_success_timestamp_seconds) > 2 * 86400
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "No {{ $labels.kind }} watch has succeeded for 2 days"
+          description: "No replica has finished a {{ $labels.kind }} watch run successfully for 2 days - the watcher may have stopped."
+          runbook: Check that monitoring is enabled for the plan and that the watcher loop is running (look for "watch tick failed" in the JSON logs).
+
+      - alert: ArgusCertificateTransparencyDegraded
+        expr: sum by (source) (increase(argus_watch_source_errors_total{source=~"crt.sh|Cert Spotter"}[6h])) >= 5
+        labels: {severity: info}
+        annotations:
+          summary: "{{ $labels.source }} keeps failing for brand watches"
+          description: "5 or more failed look-ups in 6 hours. Brand watches carry on with the other source, but new lookalikes may be found late."
+          runbook: crt.sh is often overloaded and usually recovers by itself; for Cert Spotter, a 429 means the free quota is used up - add ARGUS_CERTSPOTTER_API_KEY.
+
+      - alert: ArgusTakedownBacklog
+        expr: |
+          (sum(increase(argus_takedown_events_total{event="reported"}[7d])) or vector(0))
+            - (sum(increase(argus_takedown_events_total{event=~"down|closed"}[7d])) or vector(0)) > 20
+        labels: {severity: info}
+        annotations:
+          summary: Takedown requests are piling up
+          description: More than 20 more takedowns were reported than resolved this week - registrars or hosts are not acting on the abuse reports.
+          runbook: Open the brand-protection report; the takedowns waiting longest are listed. Escalate to the registry, or report the domains to Google Safe Browsing and Microsoft SmartScreen.
+
   - name: argus.notifications
     rules:
       - alert: ArgusNotificationsFailing

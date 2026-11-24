@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -22,6 +23,7 @@ from argus.accounts import features
 from argus.core.settings import Settings
 from argus.intel import internet_search
 from argus.intel.account_watch import client as outbound_client
+from argus.observability import metrics
 from argus.storage.fingerprint_watch_repo import FingerprintWatchRepository
 
 logger = logging.getLogger("argus.fingerprint_watch")
@@ -129,13 +131,25 @@ class FingerprintWatcher:
 
     # ------------------------------------------------------------------ one run
     async def check(self, watch: dict[str, Any]) -> dict[str, Any]:
+        started = time.monotonic()
+        status = "error"
+        try:
+            outcome = await self._check(watch)
+            status = outcome["status"]
+            return outcome
+        finally:
+            metrics.watch_run("fingerprint", status, time.monotonic() - started)
+
+    async def _check(self, watch: dict[str, Any]) -> dict[str, Any]:
         name = ENGINE_NAMES[watch["engine"]]
         try:
             result = await self.search(watch["engine"], watch["query"])
         except internet_search.SearchError as exc:
+            metrics.WATCH_SOURCE_ERRORS.labels(name).inc()
             await self.repo.record(watch["id"], status="error", message=str(exc.detail))
             return {"watch_id": watch["id"], "status": "error", "new": 0, "alert": None}
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+            metrics.WATCH_SOURCE_ERRORS.labels(name).inc()
             await self.repo.record(watch["id"], status="error", message=f"{name} could not be reached")
             return {"watch_id": watch["id"], "status": "error", "new": 0, "alert": None}
         known = await self.repo.known(watch["id"])

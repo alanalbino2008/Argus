@@ -21,7 +21,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api", tags=["cases"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 MAX_VERIFY_BYTES = 16 * 1024 * 1024  # a case report with thousands of entries is a few MB
-_verify_limiter = SlidingWindowLimiter(limit=30, window=60)
+_verify_limiter = SlidingWindowLimiter(limit=30, window=60, name="case_report_verify")
 
 
 async def report_signer(request: Request) -> signing.ReportSigner:

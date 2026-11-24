@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.84.0] — Phase 84: Watching the watchers
+
+Brand and fingerprint watches run unattended; when they stop working, the only symptom is silence.
+Operators now see it in Prometheus, Grafana and Alertmanager.
+
+### Added
+- **Metrics** for watch runs by kind and outcome (`argus_watch_runs_total`), run time, the last
+  successful run, source failures (crt.sh, Cert Spotter, Shodan, Censys), new lookalikes by severity
+  and takedown steps (drafted, reported, down, closed).
+- **Alerts:** `ArgusWatchesFailing` (every run of a kind failed for 6 hours), `ArgusWatchesStalled`
+  (no success for 2 days), `ArgusCertificateTransparencyDegraded` and `ArgusTakedownBacklog`, each
+  with a `promtool` unit test.
+- A **Brand protection & watches** row on the Grafana dashboard.
+- The Phase 83 limits and run-now cooldowns are counted in `argus_rate_limited_total` under their own
+  names.
+
 ## [1.83.0] — Phase 83: Hardening the recent features
 
 A review of everything added in phases 68 to 82 for what one caller could do to the server, a

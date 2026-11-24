@@ -177,6 +177,28 @@ series([
                   "{{channel_type}}")]},
 ])  # fmt: skip
 
+# ------------------------------------------------------------------------------ brand protection & watches
+row("Brand protection & watches")
+series([
+    {"title": "Watch runs by outcome (per hour)", "stack": True,
+     "description": "Brand (Certificate Transparency) and fingerprint (Shodan/Censys) watch runs: ok, partial (one source failed), error",
+     "queries": [("sum by (kind, status) (increase(argus_watch_runs_total[1h]))", "{{kind}} {{status}}")]},
+    {"title": "Hours since a watch last succeeded", "unit": "h", "fill": 0,
+     "description": "Over 48 h raises ArgusWatchesStalled",
+     "queries": [("(time() - max by (kind) (argus_watch_last_success_timestamp_seconds)) / 3600", "{{kind}}")]},
+    {"title": "Watch run time (p95)", "unit": "s", "fill": 0,
+     "queries": [("histogram_quantile(0.95, sum by (le, kind) (rate(argus_watch_run_duration_seconds_bucket[1h])))", "{{kind}}")]},
+])  # fmt: skip
+series([
+    {"title": "Source failures (per hour)", "stack": True,
+     "queries": [("sum by (source) (increase(argus_watch_source_errors_total[1h]))", "{{source}}")]},
+    {"title": "New lookalike domains (per day)", "stack": True,
+     "queries": [("sum by (severity) (increase(argus_lookalikes_found_total[1d]))", "{{severity}}")]},
+    {"title": "Takedowns (per day)", "stack": True,
+     "description": "drafted, reported to registrar or host, seen down, closed",
+     "queries": [("sum by (event) (increase(argus_takedown_events_total[1d]))", "{{event}}")]},
+])  # fmt: skip
+
 # ------------------------------------------------------------------------------ platform & security
 row("Platform & security")
 series([

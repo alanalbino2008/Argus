@@ -30,7 +30,7 @@ ANALYST = Depends(in_workspace(Role.ANALYST))
 INLINE_IMAGES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 ENTITY_TYPES = ("person", "organisation", "username", "account", "email", "phone", "domain", "ip", "address",
                 "location", "vehicle", "document", "wallet", "other")  # fmt: skip
-_capture_limiter = SlidingWindowLimiter(limit=20, window=60)
+_capture_limiter = SlidingWindowLimiter(limit=20, window=60, name="case_capture")
 
 ItemKind = Literal["note", "entity", "link", "scan", "event"]
 OpsecMode = Literal["standard", "anonymous"]

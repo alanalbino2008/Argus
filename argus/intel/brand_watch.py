@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,7 @@ from argus.intel import lookalike_triage, visual
 from argus.intel.account_watch import client as outbound_client
 from argus.intel.lookalike_triage import Triage, judge
 from argus.intel.lookalikes import SENSITIVE_WORDS, Candidate, generate, registrable, split_domain
+from argus.observability import metrics
 from argus.storage.brand_watch_repo import BrandWatchRepository
 
 logger = logging.getLogger("argus.brand_watch")
@@ -483,6 +485,16 @@ class BrandWatcher:
             await asyncio.sleep(self.poll_seconds)
 
     async def check(self, watch: dict[str, Any]) -> dict[str, Any]:
+        started = time.monotonic()
+        status = "error"
+        try:
+            outcome = await self._check(watch)
+            status = outcome["status"]
+            return outcome
+        finally:
+            metrics.watch_run("brand", status, time.monotonic() - started)
+
+    async def _check(self, watch: dict[str, Any]) -> dict[str, Any]:
         domain = watch["domain"]
         brand = split_domain(domain)[0]
         candidates = candidate_map(domain)
@@ -524,6 +536,9 @@ class BrandWatcher:
         failed = [s for s in sources.values() if s["status"] == "error"]
         status = "error" if not ran else "partial" if failed else "ok"
         problems = "; ".join(s["message"] for s in failed)
+        for source, outcome in sources.items():
+            if outcome["status"] in ("error", "partial"):
+                metrics.WATCH_SOURCE_ERRORS.labels(source).inc()
         if status == "error":
             await self.repo.record(watch["id"], status=status, sources=sources, message=problems, retry_in=RETRY)
             return {"watch_id": watch["id"], "status": status, "new": 0, "alert": None}
@@ -553,6 +568,8 @@ class BrandWatcher:
         fresh = [replace(f, severity=verdicts[f.name].severity, verdict=verdicts[f.name].verdict,
                          reasons=tuple(verdicts[f.name].reasons)) for f in fresh]  # fmt: skip
         reportable = [f for f in fresh if f.verdict != "yours"]
+        for f in reportable:
+            metrics.LOOKALIKES_FOUND.labels(f.severity).inc()
         news = [f for f in reportable if not baseline or _recent(f.not_before, now) or f.verdict == "phishing"]
         for name in stale:
             before, after = previous.get(name) or {}, verdicts[name]
