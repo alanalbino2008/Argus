@@ -73,6 +73,7 @@ from argus.api.case_report_routes import router as case_report_router
 from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
 from argus.api.connect_routes import router as connect_router
+from argus.api.csp_routes import router as csp_router
 from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
 from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
@@ -727,6 +728,7 @@ app.include_router(audit_router)
 app.include_router(session_router)
 app.include_router(scim_router)
 app.include_router(integrity_router)
+app.include_router(csp_router)
 register_scim_errors(app)
 
 

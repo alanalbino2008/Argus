@@ -251,6 +251,14 @@ BACKUP_DRILL_LAST_SUCCESS = Gauge(
 )  # fmt: skip
 
 
+CSP_VIOLATIONS = Counter(
+    "argus_csp_violations_total",
+    "Content-Security-Policy violations reported by browsers (blocked scripts, styles, connections…)",
+    ["directive"],
+    registry=REGISTRY,
+)
+
+
 def watch_run(kind: str, status: str, seconds: float) -> None:
     """Record one finished watch run (status ok, partial or error)."""
     import time

@@ -289,3 +289,21 @@ tests:
               summary: The newest backup could not be restored
               description: The weekly restore drill decrypted the newest backup into a scratch folder and it failed its checks. Until a backup restores, a lost disk means lost cases.
               runbook: Settings > Backups shows the drill's error. Make a new backup and run the drill again (Test a restore); check the backup folder's disk.
+
+  - name: a burst of blocked scripts raises a warning; blocked styles do not
+    interval: 1m
+    input_series:
+      - series: 'argus_csp_violations_total{directive="script-src-elem"}'
+        values: '0 0 2 4 6 8'
+      - series: 'argus_csp_violations_total{directive="style-src-elem"}'
+        values: '0+10x5'
+    alert_rule_test:
+      - {eval_time: 2m, alertname: ArgusBlockedScriptsInBrowsers, exp_alerts: []}
+      - eval_time: 5m
+        alertname: ArgusBlockedScriptsInBrowsers
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: Browsers are blocking scripts on Argus pages
+              description: The Content-Security-Policy refused several scripts in 15 minutes. Usually a browser extension; it can also be an attempt to inject a script into a page.
+              runbook: The warning log (argus.csp) names the blocked host and the page. Look for case or entity data that renders on that page and contains markup.

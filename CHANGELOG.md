@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.99.0] — Phase 99: No third-party requests from the browser
+
+### Security
+- **Fonts are served by Argus** (Inter and JetBrains Mono, vendored with their licences): an
+  investigator's browser no longer contacts Google Fonts.
+- **The Content-Security-Policy allows Argus's own origin only.** A test fails if a page loads anything
+  from elsewhere.
+- **CSP violation reports** go to `/api/csp-report` (rate-limited, bounded, never stored), counted as
+  `argus_csp_violations_total`, with the `ArgusBlockedScriptsInBrowsers` alert (promtool-tested).
+
 ## [1.98.0] — Phase 98: Supply-chain security
 
 ### Added

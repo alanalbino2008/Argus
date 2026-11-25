@@ -5,10 +5,16 @@ from __future__ import annotations
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-# Every script is served by Argus itself (Cytoscape is vendored), so scripts are locked
-# to 'self': even if an XSS bug slipped through, injected <script> or inline handlers
-# would be refused by the browser. Inline *styles* remain allowed (used by the UI markup).
-CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+# Everything is served by Argus itself (Cytoscape and the fonts are vendored), so every directive is
+# locked to 'self': an investigator's browser contacts no third party at all, and even if an XSS bug
+# slipped through, injected <script> or inline handlers would be refused. Inline *styles* remain
+# allowed (used by the UI markup). Violations are reported to /api/csp-report (Phase 99).
+CSP_REPORT_PATH = "/api/csp-report"
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; "
+    "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+    f"frame-ancestors 'none'; report-uri {CSP_REPORT_PATH}; report-to csp"
+)
 
 # Swagger/ReDoc pages load their own CDN assets and contain no investigation data.
 CSP_EXEMPT_PREFIXES = ("/docs", "/redoc")
@@ -25,6 +31,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         h.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         if not request.url.path.startswith(CSP_EXEMPT_PREFIXES):
             h.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+            h.setdefault("Reporting-Endpoints", f'csp="{CSP_REPORT_PATH}"')
         if request.url.path.startswith("/api/"):
             h.setdefault("Cache-Control", "no-store")  # investigation data must not be cached
         rate = getattr(request.state, "rate_limit", None)

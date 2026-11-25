@@ -203,6 +203,14 @@ groups:
           description: The weekly restore drill decrypted the newest backup into a scratch folder and it failed its checks. Until a backup restores, a lost disk means lost cases.
           runbook: Settings > Backups shows the drill's error. Make a new backup and run the drill again (Test a restore); check the backup folder's disk.
 
+      - alert: ArgusBlockedScriptsInBrowsers
+        expr: sum(increase(argus_csp_violations_total{directive=~"script-src.*"}[15m])) >= 5
+        labels: {severity: warning}
+        annotations:
+          summary: Browsers are blocking scripts on Argus pages
+          description: The Content-Security-Policy refused several scripts in 15 minutes. Usually a browser extension; it can also be an attempt to inject a script into a page.
+          runbook: The warning log (argus.csp) names the blocked host and the page. Look for case or entity data that renders on that page and contains markup.
+
       - alert: ArgusEgressBlocked
         expr: sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) > 0
         labels: {severity: info}
