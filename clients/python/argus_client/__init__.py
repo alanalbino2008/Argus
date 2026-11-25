@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.90.0"
+__version__ = "1.91.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -386,6 +386,21 @@ class ArgusClient:
     def key_report(self) -> dict[str, Any]:
         """Keys expiring soon, unused for 90 days, that never expire, or usable from anywhere."""
         return self.get("/api/keys/report")
+
+    def retention(self) -> dict[str, Any]:
+        """The workspace's retention periods, and what a purge would delete now."""
+        return self.get("/api/retention")
+
+    def set_retention(
+        self, *, investigations_days: int = 0, alerts_days: int = 0, cases_days: int = 0
+    ) -> dict[str, Any]:
+        """Days to keep finished investigations, resolved alerts and closed cases (0 keeps them forever)."""
+        return self.request("PUT", "/api/retention", json={"investigations_days": investigations_days,
+                                                           "alerts_days": alerts_days, "cases_days": cases_days})  # fmt: skip
+
+    def legal_hold(self, case_id: str, *, hold: bool = True, note: str = "") -> dict[str, Any]:
+        """Put a case on legal hold (never deleted, by hand or by retention), or release it."""
+        return self.request("PUT", f"/api/cases/{case_id}/legal-hold", json={"hold": hold, "note": note})
 
     def approvals(self, *, status: str = "pending") -> list[dict[str, Any]]:
         """Requests for protected actions in this workspace (pending, approved, rejected, used, expired, all)."""

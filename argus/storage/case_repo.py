@@ -44,6 +44,7 @@ def _case(row: CaseRow) -> dict[str, Any]:
         "members": list(row.members or []), "tags": list(row.tags or []), "egress": row.egress or "",
         "opsec_mode": row.opsec_mode or "standard", "created_by": row.created_by,
         "created_at": _iso(row.created_at), "updated_at": _iso(row.updated_at),
+        "legal_hold": bool(row.legal_hold), "legal_hold_note": row.legal_hold_note, "legal_hold_by": row.legal_hold_by,
     }  # fmt: skip
 
 
@@ -137,6 +138,18 @@ class CaseRepository:
                 return False
             await s.delete(row)
         return True
+
+    async def set_legal_hold(
+        self, case_id: str, *, workspace_id: str, hold: bool, note: str, by: str
+    ) -> dict[str, Any] | None:
+        async with self.db.session() as s, s.begin():
+            row = await s.get(CaseRow, case_id)
+            if row is None or row.workspace_id != workspace_id:
+                return None
+            row.legal_hold = hold
+            row.legal_hold_note, row.legal_hold_by = (note[:200] or None, by) if hold else (None, None)
+            row.updated_at = _now()
+            return _case(row)
 
     async def touch(self, case_id: str) -> None:
         async with self.db.session() as s, s.begin():

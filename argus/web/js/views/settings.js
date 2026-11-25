@@ -221,6 +221,11 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "retention-run") {
+        const w = data.retention.would_delete;
+        if (!(await confirmDialog({ title: "Purge now?", message: `This permanently deletes ${w.investigations} investigation(s), ${w.alerts} alert(s) and ${w.cases} case(s).`, confirm: "Purge", danger: true }))) return;
+        const result = await api.post("/api/retention/run");
+        toast(`Deleted ${result.investigations} investigation(s), ${result.alerts} alert(s), ${result.cases} case(s)`, "success");
       } else if (act === "approval-approve" || act === "approval-reject") {
         const approving = act === "approval-approve";
         if (!(await confirmDialog({ title: approving ? "Approve this request?" : "Reject this request?", message: approving ? "They can then do it once, within 24 hours of asking." : "They will have to ask again.", confirm: approving ? "Approve" : "Reject", danger: !approving }))) return;
@@ -322,6 +327,16 @@ export function initSettings(el) {
       } catch (err) { toast(err.message, "error"); }
       return;
     }
+    if (e.target.id === "retention-form") {
+      e.preventDefault();
+      const days = (id) => Number($(id).value || 0);
+      try {
+        await api.put("/api/retention", { investigations_days: days("#ret-inv"), alerts_days: days("#ret-alerts"), cases_days: days("#ret-cases") });
+        toast("Retention saved", "success");
+      } catch (err) { toast(err.message, err.status === 202 ? "info" : "error", 6000); }
+      await refresh();
+      return;
+    }
     if (e.target.id === "approval-policy-form") {
       e.preventDefault();
       const actions = [...e.target.querySelectorAll("[name=approval-action]:checked")].map((i) => i.value);
@@ -371,15 +386,16 @@ export async function refresh() {
     platform ? api.get("/api/backups").catch(() => null) : null,
     wsAdmin ? api.get("/api/approval-policy").catch(() => null) : null,
     wsAdmin ? api.get("/api/approvals?status=all").catch(() => null) : null,
+    wsAdmin ? api.get("/api/retention").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -392,6 +408,27 @@ function themeChooser() {
   const choice = window.argusTheme.choice();
   return html`<div class="segmented">${[["light", "Light"], ["dark", "Dark"], ["system", "System"]].map(([v, l]) =>
     html`<button class="${choice === v ? "active" : ""}" data-theme-choice="${v}">${l}</button>`)}</div>`;
+}
+
+// Phase 91: how long this workspace keeps old data. Legal hold (on the case page) always wins.
+function retentionCard() {
+  const r = data.retention;
+  if (!r) return "";
+  const field = (id, label, value, hint) => html`<label class="small" style="display:flex;flex-direction:column;gap:4px">${label}
+    <input id="${id}" class="input" type="number" min="0" max="3650" value="${value}" style="max-width:140px" title="${hint}"></label>`;
+  const w = r.would_delete;
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Data retention</h2><p class="muted small">Days to keep old data; 0 keeps it forever. Kept regardless: open alerts and cases, cases on legal hold, the latest scan of each target, and scans a case, monitor or watch uses. The audit log is never purged.</p></div></div>
+    <form id="retention-form" class="filters" style="align-items:flex-end;gap:14px;flex-wrap:wrap">
+      ${field("ret-inv", "Finished investigations", r.investigations_days, "By when the scan finished")}
+      ${field("ret-alerts", "Resolved alerts", r.alerts_days, "By when the alert was closed")}
+      ${field("ret-cases", "Closed cases", r.cases_days, "By when the case was last changed")}
+      <button class="btn sm" type="submit">Save</button>
+      <button class="btn sm ghost" type="button" data-act="retention-run" ${w.investigations + w.alerts + w.cases ? "" : "disabled"}>Purge now</button>
+    </form>
+    <p class="muted small" style="margin-top:10px">Would delete now: ${w.investigations} investigation(s), ${w.alerts} alert(s), ${w.cases} case(s)${r.kept?.cases_on_legal_hold ? ` · ${r.kept.cases_on_legal_hold} case(s) kept by legal hold` : ""}.
+      ${r.last_run_at ? html`Last purge ${timeAgo(r.last_run_at)}.` : ""}</p>
+  </div>`;
 }
 
 // Phase 90: actions that need a second administrator, and the requests waiting for one.
@@ -932,7 +969,7 @@ function render() {
     ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}
-    ${admin ? html`${platform ? usersCard() : ""}${approvalsCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
+    ${admin ? html`${platform ? usersCard() : ""}${approvalsCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
 }

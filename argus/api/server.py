@@ -102,6 +102,7 @@ from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
 from argus.api.report_routes import router as report_router
 from argus.api.research_routes import router as research_router
+from argus.api.retention_routes import router as retention_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
 from argus.api.supplier_routes import router as supplier_router
@@ -433,8 +434,13 @@ async def lifespan(app: FastAPI):
         if settings.edition != "personal"
         else None
     )
+    from argus.intel.retention import Retention
     from argus.security import key_expiry
 
+    app.state.retention = Retention(app)
+    retention_task = (
+        asyncio.create_task(app.state.retention.run_forever(), name="retention") if settings.monitors_enabled else None
+    )
     key_expiry_task = (
         asyncio.create_task(key_expiry.run_forever(app), name="key-expiry") if settings.monitors_enabled else None
     )
@@ -478,6 +484,7 @@ async def lifespan(app: FastAPI):
                 alerts_task,
                 privacy_task,
                 key_expiry_task,
+                retention_task,
             )
             if t
         ]
@@ -690,6 +697,7 @@ app.include_router(brand_watch_router)
 app.include_router(taxii_router)
 app.include_router(campaign_router)
 app.include_router(approval_router)
+app.include_router(retention_router)
 
 
 @app.exception_handler(ApprovalRequired)

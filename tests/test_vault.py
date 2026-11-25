@@ -77,7 +77,7 @@ def fill(c) -> dict:
 
 def test_every_sensitive_table_is_covered():
     covered = {model.__tablename__: set(cols) for model, cols in encrypted_columns()}
-    assert covered["cases"] == {"title", "purpose", "summary"}
+    assert covered["cases"] == {"title", "purpose", "summary", "legal_hold_note"}
     assert covered["case_items"] == {"title", "body", "data"}
     assert covered["evidence_files"] == {"data"} and "manifest" in covered["evidence_captures"]
     assert covered["entities"] == {"value", "label", "data"} and covered["investigations"] == {"target", "data"}

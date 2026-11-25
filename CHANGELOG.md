@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.91.0] — Phase 91: Retention policies and legal hold
+
+### Added
+- **Retention** per workspace: days to keep finished investigations, resolved alerts and closed
+  cases (0 = forever, the default). Purged every 6 hours on one replica, or on demand, with a dry
+  run first. The latest scan of each target, scans in use, open alerts and open cases are always kept.
+- **Legal hold** on cases: a held case cannot be deleted by hand or by retention. The note is
+  encrypted.
+- With two-person approval protecting `case.delete`, shortening case retention and releasing a hold
+  need approval.
+- The audit log is never purged; each purge is audited.
+- Migration 0038. Settings → **Data retention**; **Legal hold** on the case page; Python client
+  `retention()`, `set_retention()`, `legal_hold()`.
+
 ## [1.90.0] — Phase 90: Two-person approval
 
 ### Security

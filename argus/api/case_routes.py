@@ -223,6 +223,8 @@ async def delete_case(case_id: str, request: Request, ws: WorkspaceContext = ANA
     case = await _case(request, ws, case_id)
     if ws.principal.name != case["created_by"] and ws.role.rank < Role.ADMIN.rank:
         raise HTTPException(status_code=403, detail="Only the case owner or a workspace admin can delete a case")
+    if case.get("legal_hold"):
+        raise HTTPException(status_code=409, detail="This case is on legal hold: release the hold before deleting it")
     await require_approval(request, ws, "case.delete", case_id, f"Delete case \u201c{case['title']}\u201d")
     await _repo(request).delete(case_id, workspace_id=ws.id, who=ws.principal.name)
     await audit(request, ws.principal, "case.delete", case_id, details={"title": case["title"]})

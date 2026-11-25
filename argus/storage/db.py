@@ -751,6 +751,12 @@ class CaseRow(Base):
     created_by: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    # Phase 91: a case under legal hold is never deleted, by hand or by retention.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    legal_hold_note: Mapped[str | None] = mapped_column(
+        EncryptedText(500, label="cases.legal_hold_note"), nullable=True
+    )
+    legal_hold_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
 
 class AccountWatchRow(Base):
@@ -851,6 +857,21 @@ class EntityAnnotationRow(Base):
     data: Mapped[dict[str, Any]] = mapped_column(EncryptedJSON(label="entity_annotations.data"))  # value, tags, note
     updated_by: Mapped[str] = mapped_column(String(128))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class RetentionPolicyRow(Base):
+    """How long a workspace keeps old investigations, resolved alerts and closed cases (Phase 91). 0 = forever."""
+
+    __tablename__ = "retention_policies"
+
+    workspace_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    investigations_days: Mapped[int] = mapped_column(Integer, default=0)
+    alerts_days: Mapped[int] = mapped_column(Integer, default=0)
+    cases_days: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str] = mapped_column(String(128))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class ApprovalPolicyRow(Base):

@@ -143,7 +143,8 @@ function renderCase() {
   setHTML(root, html`<div class="page">
     <div class="page-head stacked">
       <div><a href="#" data-act="back" class="muted small">← All cases</a>
-        <h1 style="margin-top:4px">${c.title} ${c.restricted ? html`<span class="pill" style="vertical-align:middle">${ico("shield")}Restricted</span>` : ""}</h1>
+        <h1 style="margin-top:4px">${c.title} ${c.restricted ? html`<span class="pill" style="vertical-align:middle">${ico("shield")}Restricted</span>` : ""}
+          ${c.legal_hold ? html`<span class="pill high" style="vertical-align:middle" title="${c.legal_hold_note || "On legal hold"}${c.legal_hold_by ? ` (by ${c.legal_hold_by})` : ""}">Legal hold</span>` : ""}</h1>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">${safetyPills(c)}</div>
         <p>${c.purpose}</p>
         <p class="muted small">Opened by ${c.created_by} ${timeAgo(c.created_at)}${c.restricted ? ` · visible to ${[c.created_by, ...c.members].join(", ")}` : ""}${c.tags.length ? ` · ${c.tags.join(", ")}` : ""}</p></div>
@@ -156,6 +157,7 @@ function renderCase() {
           <button class="btn sm" data-act="safety">${ico("shield")}Safety</button>
           <button class="btn sm" data-act="case-report" title="The whole case in one HTML file that opens offline in any browser">${ico("report")}Case report</button>
           <button class="btn sm" data-act="export">${ico("download")}Evidence bundle</button>
+          ${state.workspace?.role === "admin" ? html`<button class="btn sm" data-act="legal-hold" title="${c.legal_hold ? "Allow this case to be deleted again" : "Protect this case from deletion, by hand or by retention"}">${ico("shield")}${c.legal_hold ? "Release hold" : "Legal hold"}</button>` : ""}
           <select class="select" data-act-select="status" aria-label="Case status" style="max-width:130px">${["open", "closed", "archived"].map((s) => html`<option value="${s}" ${c.status === s ? "selected" : ""}>${s}</option>`)}</select>` : ""}
       </div>
     </div>
@@ -541,6 +543,18 @@ export function initCases(el, actions) {
       if (act === "case-scan") return actionsRef.newInvestigation({ caseId: current.id, caseTitle: current.title, egress: current.egress, anonymous: anonymous(current) });
       if (act === "verify-report") return verifyReport();
       if (act === "case-report") return download(`/api/cases/${enc(current.id)}/report.html`, `argus-case-${current.id}-report.html`);
+      if (act === "legal-hold") {
+        const holding = !current.legal_hold;
+        const ok = await confirmDialog(holding
+          ? { title: "Put this case on legal hold?", message: "It can then not be deleted, by anyone or by the retention policy, until the hold is released.", confirm: "Hold" }
+          : { title: "Release the legal hold?", message: "The case can then be deleted again, including by the retention policy.", confirm: "Release", danger: true });
+        if (!ok) return;
+        try {
+          await api.put(`/api/cases/${enc(current.id)}/legal-hold`, { hold: holding });
+          toast(holding ? "Case on legal hold" : "Legal hold released", "success");
+        } catch (err) { toast(err.message, err.status === 202 ? "info" : "error", 6000); }
+        return refresh();
+      }
       if (act === "export") return download(`/api/cases/${enc(current.id)}/export`, `argus-case-${current.id}.zip`);
       if (act === "file") return download(`/api/evidence/${enc(id)}/files/${enc(btn.dataset.file)}?download=true`, btn.dataset.file);
       if (act === "tsr") return download(`/api/evidence/${enc(id)}/timestamp.tsr`, `${id}.tsr`);
