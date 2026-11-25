@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.94.0] — Phase 94: SCIM provisioning
+
+### Added
+- **SCIM 2.0** at `/scim/v2` (`ARGUS_SCIM_TOKEN`) for Okta, Microsoft Entra ID and other identity
+  providers. They create, update, deactivate and delete users, and manage groups.
+- **Deactivation signs out everywhere at once.** Provisioned users link to their first single
+  sign-on by email (no duplicates), and existing SSO users are adopted.
+- **Groups give workspace roles** (Settings → Provisioning, or `PUT /api/scim/group-roles`). With
+  several groups the highest role wins. SCIM only changes memberships it created.
+- Migration 0041. Python client: `scim_group_roles()`, `map_scim_group()`.
+
+### Fixed
+- Changing a member's role by hand now takes ownership of that membership, so an automated source
+  (SCIM, group sync at sign-in) no longer removes it later.
+
 ## [1.93.1] — Fix: SQLite upgrades could delete data
 
 ### Fixed

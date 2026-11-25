@@ -221,6 +221,9 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "scim-unmap") {
+        await api.put("/api/scim/group-roles", { group: btn.dataset.group, workspace_id: btn.dataset.ws, role: null });
+        toast("Mapping removed: its members lose that access", "success");
       } else if (act === "session-end") {
         await api.del(`/api/auth/sessions/${enc(id)}`);
         toast("Signed out of that browser", "success");
@@ -345,6 +348,15 @@ export function initSettings(el) {
       } catch (err) { toast(err.message, "error"); }
       return;
     }
+    if (e.target.id === "scim-form") {
+      e.preventDefault();
+      try {
+        await api.put("/api/scim/group-roles", { group: $("#scim-group").value.trim(), workspace_id: $("#scim-ws").value, role: $("#scim-role").value });
+        toast("Group mapped: its members now have that role", "success");
+      } catch (err) { toast(err.message, "error"); }
+      await refresh();
+      return;
+    }
     if (e.target.id === "access-form") {
       e.preventDefault();
       const networks = $("#access-networks").value.split(/[\s,]+/).map((n) => n.trim()).filter(Boolean);
@@ -428,15 +440,16 @@ export async function refresh() {
     state.me?.auth === "session" ? api.get("/api/auth/sessions").catch(() => null) : null,
     wsAdmin ? api.get("/api/access-policy").catch(() => null) : null,
     wsAdmin ? api.get("/api/notifications/channels").catch(() => null) : null,
+    platform ? api.get("/api/scim/group-roles").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels, scim] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy, scim };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -449,6 +462,29 @@ function themeChooser() {
   const choice = window.argusTheme.choice();
   return html`<div class="segmented">${[["light", "Light"], ["dark", "Dark"], ["system", "System"]].map(([v, l]) =>
     html`<button class="${choice === v ? "active" : ""}" data-theme-choice="${v}">${l}</button>`)}</div>`;
+}
+
+// Phase 94: users and groups provisioned by the identity provider, and what the groups give.
+function scimCard() {
+  const scim = data.scim;
+  if (!scim) return "";
+  const workspaces = (state.me?.workspaces || []).map((w) => [w.id, w.name]);
+  const wsName = (id) => (workspaces.find(([wid]) => wid === id) || [id, id])[1];
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Provisioning (SCIM)</h2><p class="muted small">Your identity provider (Okta, Entra ID…) creates and deactivates people here, and its groups decide workspace roles. Deactivating someone there signs them out here at once.</p></div>
+      <span class="pill ${scim.enabled ? "ok" : ""}">${scim.enabled ? "On" : "Off"}</span></div>
+    <p class="small">SCIM endpoint: <span class="mono">${scim.endpoint}</span>${scim.enabled ? "" : html` · set <span class="mono">ARGUS_SCIM_TOKEN</span> on the server to switch it on`}</p>
+    ${scim.mappings.length ? html`<table class="table"><thead><tr><th>Group</th><th>Workspace</th><th>Role</th><th></th></tr></thead><tbody>${scim.mappings.map((m) => html`<tr>
+      <td class="mono">${m.group}</td><td>${wsName(m.workspace_id)}</td><td>${m.role}</td>
+      <td class="actions"><button class="btn sm ghost danger" data-act="scim-unmap" data-group="${m.group}" data-ws="${m.workspace_id}">Remove</button></td></tr>`)}</tbody></table>`
+      : html`<p class="muted small">No group gives access yet.</p>`}
+    <form id="scim-form" class="filters" style="margin-top:8px">
+      <input id="scim-group" class="input" placeholder="Group name in your identity provider" style="max-width:260px" required>
+      <select id="scim-ws" class="select" style="max-width:200px">${workspaces.map(([id, name]) => html`<option value="${id}">${name}</option>`)}</select>
+      <select id="scim-role" class="select" style="max-width:140px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+      <button class="btn sm" type="submit">Map group</button>
+    </form>
+  </div>`;
 }
 
 // Phase 93: where this person is signed in.
@@ -1067,7 +1103,7 @@ function render() {
     ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}
-    ${admin ? html`${platform ? usersCard() : ""}${approvalsCard()}${accessCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
+    ${admin ? html`${platform ? usersCard() : ""}${platform ? scimCard() : ""}${approvalsCard()}${accessCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
 }

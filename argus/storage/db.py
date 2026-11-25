@@ -357,6 +357,37 @@ class UserRow(Base):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase 94: provisioned by the identity provider over SCIM (issuer "scim" until the first sign-in links it).
+    scim_managed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_name: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+
+
+class ScimGroupRow(Base):
+    """A group pushed by the identity provider, with its members (user ids)."""
+
+    __tablename__ = "scim_groups"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(255), index=True)
+    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    members: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ScimGroupRoleRow(Base):
+    """Members of the identity provider's group ``group_name`` get ``role`` in ``workspace_id``."""
+
+    __tablename__ = "scim_group_roles"
+
+    group_name: Mapped[str] = mapped_column(String(255), primary_key=True)  # lower-cased display name
+    workspace_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    updated_by: Mapped[str] = mapped_column(String(128))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class SessionRow(Base):

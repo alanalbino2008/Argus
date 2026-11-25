@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import CursorResult
 
 from argus.storage.db import Database, OidcLoginRow, SessionRow, UserRow
@@ -59,6 +59,14 @@ class UserRepository:
             row = (
                 await s.execute(select(UserRow).where(UserRow.issuer == issuer, UserRow.subject == subject))
             ).scalar_one_or_none()
+            if row is None and email:
+                # Provisioned over SCIM and never signed in: this first sign-in is that person (Phase 94).
+                # Only such records are linked by email, so no existing account can be taken over this way.
+                row = (await s.execute(select(UserRow).where(
+                    UserRow.issuer == "scim", UserRow.scim_managed.is_(True), UserRow.last_login_at.is_(None),
+                    func.lower(UserRow.email) == email.lower()))).scalars().first()  # fmt: skip
+                if row is not None:
+                    row.issuer, row.subject = issuer, subject
             if row is None:
                 row = UserRow(
                     id=f"usr_{secrets.token_hex(8)}", issuer=issuer, subject=subject, email=email, name=name,

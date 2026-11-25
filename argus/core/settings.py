@@ -391,6 +391,10 @@ class Settings(BaseSettings):
     api_key_expiry_warning_days: int = Field(
         default=14, ge=1, le=90, description="Warn the key's workspace this many days before it expires"
     )
+    scim_token: SecretStr | None = Field(
+        default=None,
+        description="Bearer token the identity provider uses for SCIM provisioning (/scim/v2); unset: SCIM is off",
+    )
     shared_rate_limits: bool = Field(
         default=True,
         description="Count sign-in, unlock and other named rate limits in the database, so they hold across every replica",

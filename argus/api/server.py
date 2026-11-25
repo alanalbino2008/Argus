@@ -105,6 +105,8 @@ from argus.api.report_routes import router as report_router
 from argus.api.research_routes import router as research_router
 from argus.api.retention_routes import router as retention_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
+from argus.api.scim_routes import register_errors as register_scim_errors
+from argus.api.scim_routes import router as scim_router
 from argus.api.security_routes import router as security_router
 from argus.api.session_routes import router as session_router
 from argus.api.supplier_routes import router as supplier_router
@@ -714,6 +716,8 @@ app.include_router(approval_router)
 app.include_router(retention_router)
 app.include_router(audit_router)
 app.include_router(session_router)
+app.include_router(scim_router)
+register_scim_errors(app)
 
 
 @app.exception_handler(ApprovalRequired)

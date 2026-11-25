@@ -151,6 +151,8 @@ class WorkspaceRepository:
                                          added_by=added_by))  # fmt: skip
             else:
                 row.role = role
+                if added_by:  # whoever sets it now owns it: SCIM then leaves a membership an admin changed alone
+                    row.added_by = added_by
 
     async def remove_member(self, workspace_id: str, user_id: str) -> bool:
         async with self.db.session() as s, s.begin():

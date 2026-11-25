@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.93.1"
+__version__ = "1.94.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -398,6 +398,16 @@ class ArgusClient:
     def stream_audit(self, channel_id: str, *, start: str = "now", platform: bool = False) -> dict[str, Any]:
         """Forward the audit log to a Splunk, Sentinel or webhook destination (``start``: now or beginning)."""
         return self.post("/api/audit/streams", {"channel_id": channel_id, "start": start, "platform": platform})
+
+    def scim_group_roles(self) -> dict[str, Any]:
+        """Whether SCIM provisioning is on, its endpoint, and which groups give which workspace roles."""
+        return self.get("/api/scim/group-roles")
+
+    def map_scim_group(self, group: str, workspace_id: str, role: str | None) -> dict[str, Any]:
+        """Members of the identity provider's ``group`` get ``role`` in the workspace (None removes it)."""
+        return self.request(
+            "PUT", "/api/scim/group-roles", json={"group": group, "workspace_id": workspace_id, "role": role}
+        )
 
     def access_policy(self) -> dict[str, Any]:
         """The networks this workspace may be used from (empty: anywhere)."""
