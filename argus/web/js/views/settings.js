@@ -221,6 +221,13 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "key-rotate") {
+        const ok = await confirmDialog({ title: "Rotate this API key?", message: "You get a new key with the same name, role and networks. The old one keeps working for 24 hours so you can switch whatever uses it.", confirm: "Rotate" });
+        if (!ok) return;
+        const created = await api.post(`/api/keys/${enc(id)}/rotate`, { overlap_hours: 24 });
+        $("#key-value").textContent = created.key;
+        $("#key-copy").onclick = () => copyText(created.key);
+        openModal("key-modal");
       } else if (act === "revoke") {
         const ok = await confirmDialog({ title: "Revoke this API key?", message: "Anything using it will lose access immediately.", confirm: "Revoke", danger: true });
         if (!ok) return;
@@ -317,7 +324,10 @@ export function initSettings(el) {
     const platform = $("#key-platform")?.checked || false;
     if (!name) return toast("Give the key a name", "error");
     try {
-      const created = await api.post("/api/keys", { name, role: platform ? "admin" : role, platform });
+      const expiry = $("#key-expiry").value;
+      const networks = $("#key-networks").value.split(/[\s,]+/).map((n) => n.trim()).filter(Boolean);
+      const created = await api.post("/api/keys", { name, role: platform ? "admin" : role, platform,
+        expires_in_days: expiry ? Number(expiry) : null, allowed_networks: networks });
       $("#key-value").textContent = created.key;
       $("#key-copy").onclick = () => copyText(created.key);
       openModal("key-modal");
@@ -367,6 +377,14 @@ function themeChooser() {
     html`<button class="${choice === v ? "active" : ""}" data-theme-choice="${v}">${l}</button>`)}</div>`;
 }
 
+// Phase 89: when a key stops working (replaced keys show their overlap end).
+function keyExpiry(k) {
+  if (!k.expires_at) return html`<span class="muted">never</span>`;
+  if (k.expired) return html`<span class="muted">${formatDate(k.expires_at)}</span>`;
+  const soon = k.expires_in_days !== null && k.expires_in_days <= 14;
+  return html`<span class="${soon ? "pill high" : ""}" title="${formatDate(k.expires_at)}">${k.replaced_by ? "replaced, ends " : ""}in ${k.expires_in_days} d</span>`;
+}
+
 function keysCard() {
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><div><h2>API keys</h2><p class="muted small">Keys are stored only as SHA-256 hashes. Viewer: read · Analyst: + scan · Admin: + delete, keys, audit.</p></div></div>
@@ -374,16 +392,24 @@ function keysCard() {
     <form id="key-form" class="filters" style="margin-bottom:12px">
       <input id="key-name" class="input" placeholder="Key name, e.g. alice-laptop" maxlength="128" style="max-width:260px">
       <select id="key-role" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+      <select id="key-expiry" class="select" style="max-width:170px" title="When the key stops working">
+        <option value="30">Expires in 30 days</option><option value="90" selected>Expires in 90 days</option>
+        <option value="365">Expires in a year</option><option value="">Never expires</option></select>
+      <input id="key-networks" class="input" placeholder="Allowed networks, e.g. 203.0.113.0/24 (optional)" style="max-width:300px"
+        title="Comma-separated addresses or CIDRs the key may be used from; empty: anywhere">
       ${state.me?.platform_admin ? html`<label class="check small"><input type="checkbox" id="key-platform"> Platform-wide admin key</label>` : ""}
       <button class="btn primary" type="submit">${ico("plus")}Create key</button>
     </form>
-    ${data.keys ? html`<table class="table"><thead><tr><th>Name</th><th>Role</th><th>Key</th><th>Last used</th><th>Created</th><th></th></tr></thead><tbody>
+    ${data.keys ? html`<table class="table"><thead><tr><th>Name</th><th>Role</th><th>Key</th><th>Last used</th><th>Expires</th><th>Networks</th><th></th></tr></thead><tbody>
       ${data.keys.map((k) => html`<tr style="${k.revoked ? "opacity:.5" : ""}">
         <td><b>${k.name}</b>${k.id === state.me?.key_id ? html` <span class="pill accent">you</span>` : ""}</td>
         <td>${k.role}</td><td class="mono">${k.prefix}…</td>
-        <td>${k.last_used_at ? timeAgo(k.last_used_at) : "never"}</td>
-        <td>${formatDate(k.created_at)}</td>
-        <td class="actions">${k.revoked ? html`<span class="pill">revoked</span>` : html`<button class="btn sm ghost danger" data-act="revoke" data-id="${k.id}">Revoke</button>`}</td>
+        <td>${k.last_used_at ? timeAgo(k.last_used_at) : "never"}${k.stale ? html` <span class="pill medium" title="Not used for 90 days: revoke it if nothing needs it">unused</span>` : ""}</td>
+        <td>${keyExpiry(k)}</td>
+        <td class="small">${k.allowed_networks?.length ? k.allowed_networks.join(", ") : html`<span class="muted">anywhere</span>`}</td>
+        <td class="actions">${k.revoked ? html`<span class="pill">revoked</span>` : k.expired ? html`<span class="pill">expired</span>` : html`
+          ${k.replaced_by ? "" : html`<button class="btn sm ghost" data-act="key-rotate" data-id="${k.id}" title="A new key; this one keeps working for 24 hours">Rotate</button>`}
+          <button class="btn sm ghost danger" data-act="revoke" data-id="${k.id}">Revoke</button>`}</td>
       </tr>`)}</tbody></table>` : html`<p class="muted">Loading…</p>`}
   </div>`;
 }

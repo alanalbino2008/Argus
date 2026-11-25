@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import builtins
 import hashlib
+import ipaddress
 import json
 import secrets
 from collections.abc import Iterable
@@ -23,6 +24,40 @@ AUDIT_CHAIN_LOCK = 0x4152_4755_5341_5544  # "ARGUSAUD"
 
 GENESIS_HASH = "0" * 64
 LAST_USED_RESOLUTION = timedelta(seconds=60)
+STALE_AFTER = timedelta(days=90)  # a key nobody used for this long is reported
+MAX_NETWORKS = 20
+
+
+def clean_networks(values: Iterable[str]) -> builtins.list[str]:
+    """Validated, de-duplicated CIDRs (a bare address is one host). Raises ValueError on a bad entry."""
+    out: builtins.list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text:
+            continue
+        network = str(ipaddress.ip_network(text, strict=False))
+        if network not in out:
+            out.append(network)
+    if len(out) > MAX_NETWORKS:
+        raise ValueError(f"At most {MAX_NETWORKS} networks per key")
+    return out
+
+
+def allowed_from(networks: builtins.list[str] | None, client_ip: str | None) -> bool:
+    """Whether ``client_ip`` may use a key restricted to ``networks`` (no restriction: always)."""
+    if not networks:
+        return True
+    try:
+        address = ipaddress.ip_address((client_ip or "").strip())
+    except ValueError:
+        return False  # an unknown origin never satisfies a restriction
+    if address.version == 6 and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return any(address in ipaddress.ip_network(n, strict=False) for n in networks)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    return value if value is None or value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
 def _now() -> datetime:
@@ -46,6 +81,8 @@ class ApiKeyRepository:
         created_by: str | None = None,
         plaintext: str | None = None,
         workspace_id: str | None = None,
+        expires_at: datetime | None = None,
+        allowed_networks: builtins.list[str] | None = None,
     ) -> tuple[dict[str, Any], str]:
         """Create a key. Returns (public record, plaintext key) - the plaintext is never stored."""
         key = plaintext or generate_api_key()
@@ -58,14 +95,20 @@ class ApiKeyRepository:
             created_at=_now(),
             created_by=created_by,
             workspace_id=workspace_id,
+            expires_at=expires_at,
+            allowed_networks=clean_networks(allowed_networks or []) or None,
         )
         async with self.db.session() as s, s.begin():
             s.add(row)
         return self._public(row), key
 
-    async def authenticate(self, key: str) -> Principal | None:
+    async def authenticate(self, key: str, client_ip: str | None = None) -> Principal | None:
+        return (await self.check(key, client_ip))[0]
+
+    async def check(self, key: str, client_ip: str | None = None) -> tuple[Principal | None, str | None]:
+        """The key's principal, or None and why: ``invalid`` (unknown or revoked), ``expired``, ``network``."""
         if not key:
-            return None
+            return None, "invalid"
         async with self.db.session() as s:
             row = (
                 await s.execute(
@@ -73,14 +116,64 @@ class ApiKeyRepository:
                 )
             ).scalar_one_or_none()
             if row is None:
-                return None
+                return None, "invalid"
+            expires = _aware(row.expires_at)
+            if expires is not None and expires <= _now():
+                return None, "expired"
+            if not allowed_from(row.allowed_networks, client_ip):
+                return None, "network"
             last = row.last_used_at
             if last is not None and last.tzinfo is None:
                 last = last.replace(tzinfo=timezone.utc)
             if last is None or _now() - last > LAST_USED_RESOLUTION:  # avoid a write per request
                 await s.execute(update(ApiKeyRow).where(ApiKeyRow.id == row.id).values(last_used_at=_now()))
                 await s.commit()
-        return Principal(key_id=row.id, name=row.name, role=Role(row.role), workspace_id=row.workspace_id)
+        return Principal(key_id=row.id, name=row.name, role=Role(row.role), workspace_id=row.workspace_id), None
+
+    async def rotate(self, key_id: str, *, overlap: timedelta, by: str | None) -> tuple[dict[str, Any], str] | None:
+        """A new key with the same name, role, workspace, networks and lifetime; the old one keeps working
+        for ``overlap`` (so integrations can switch without downtime), then expires."""
+        now = _now()
+        async with self.db.session() as s, s.begin():
+            old = await s.get(ApiKeyRow, key_id)
+            if old is None or old.revoked_at is not None or old.replaced_by:
+                return None
+            old_expiry = _aware(old.expires_at)
+            if old_expiry is not None and old_expiry <= now:
+                return None
+            lifetime = old_expiry - _aware(old.created_at) if old_expiry and old.created_at else None  # type: ignore[operator]
+            key = generate_api_key()
+            new = ApiKeyRow(
+                id=f"key_{secrets.token_hex(6)}", name=old.name, prefix=key_display_prefix(key),
+                key_hash=hash_api_key(key), role=old.role, created_at=now, created_by=by,
+                workspace_id=old.workspace_id, expires_at=now + lifetime if lifetime else None,
+                allowed_networks=old.allowed_networks,
+            )  # fmt: skip
+            s.add(new)
+            end = now + overlap
+            old.expires_at = min(old_expiry, end) if old_expiry else end
+            old.replaced_by = new.id
+        return self._public(new), key
+
+    async def set_networks(self, key_id: str, networks: builtins.list[str]) -> None:
+        async with self.db.session() as s, s.begin():
+            await s.execute(update(ApiKeyRow).where(ApiKeyRow.id == key_id).values(allowed_networks=networks or None))
+
+    async def expiring(self, within: timedelta) -> builtins.list[dict[str, Any]]:
+        """Active keys that expire within ``within`` and have not been warned about yet."""
+        now = _now()
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(ApiKeyRow).where(
+                ApiKeyRow.revoked_at.is_(None), ApiKeyRow.expires_at.is_not(None),
+                ApiKeyRow.expiry_warned_at.is_(None), ApiKeyRow.replaced_by.is_(None)))).all()  # fmt: skip
+        return [self._public(r) for r in rows if now < (_aware(r.expires_at) or now) <= now + within]
+
+    async def mark_warned(self, key_id: str) -> bool:
+        """Claim the expiry warning for a key (only one replica sends it)."""
+        stmt = update(ApiKeyRow).where(ApiKeyRow.id == key_id, ApiKeyRow.expiry_warned_at.is_(None))
+        async with self.db.session() as s, s.begin():
+            result = await s.execute(stmt.values(expiry_warned_at=_now()).execution_options(synchronize_session=False))
+        return (cast("CursorResult[Any]", result).rowcount or 0) > 0
 
     async def list(self, workspace_id: str | None = None) -> builtins.list[dict[str, Any]]:
         """Keys of one workspace, or every key (platform administrators) when ``workspace_id`` is None."""
@@ -124,7 +217,23 @@ class ApiKeyRepository:
             "last_used_at": _iso(row.last_used_at),
             "revoked": row.revoked_at is not None,
             "workspace_id": row.workspace_id,
+            **_policy(row),
         }
+
+
+def _policy(row: ApiKeyRow) -> dict[str, Any]:
+    """Expiry, networks, rotation and staleness, as the API shows them."""
+    now = _now()
+    expires = _aware(row.expires_at)
+    used = _aware(row.last_used_at) or _aware(row.created_at)
+    return {
+        "expires_at": _iso(expires),
+        "expired": bool(expires and expires <= now),
+        "expires_in_days": round((expires - now).total_seconds() / 86400, 1) if expires and expires > now else None,
+        "allowed_networks": row.allowed_networks or [],
+        "replaced_by": row.replaced_by,
+        "stale": row.revoked_at is None and bool(used and now - used > STALE_AFTER),
+    }
 
 
 class AuditLog:

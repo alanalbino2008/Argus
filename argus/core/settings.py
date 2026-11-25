@@ -384,6 +384,13 @@ class Settings(BaseSettings):
     watch_run_cooldown_seconds: float = Field(
         default=600.0, ge=0, description="Minimum time between runs of one brand or fingerprint watch started by hand"
     )
+    api_key_max_lifetime_days: int = Field(
+        default=0, ge=0, le=3650,
+        description="Longest lifetime of a new API key in days; 0 allows keys that never expire",
+    )  # fmt: skip
+    api_key_expiry_warning_days: int = Field(
+        default=14, ge=1, le=90, description="Warn the key's workspace this many days before it expires"
+    )
     shared_rate_limits: bool = Field(
         default=True,
         description="Count sign-in, unlock and other named rate limits in the database, so they hold across every replica",

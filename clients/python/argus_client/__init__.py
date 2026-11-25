@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.88.0"
+__version__ = "1.89.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -370,6 +370,20 @@ class ArgusClient:
     def case_report(self, case_id: str) -> bytes:
         """The whole case as one self-contained HTML file (opens offline; loads nothing, runs no scripts)."""
         return self.request("GET", f"/api/cases/{case_id}/report.html", raw=True).content
+
+    def create_key(self, name: str, *, role: str = "analyst", expires_in_days: int | None = 90,
+                   allowed_networks: list[str] | None = None) -> dict[str, Any]:  # fmt: skip
+        """A new API key for this workspace (``key`` in the answer is shown only once)."""
+        return self.post("/api/keys", {"name": name, "role": role, "expires_in_days": expires_in_days,
+                                       "allowed_networks": allowed_networks or []})  # fmt: skip
+
+    def rotate_key(self, key_id: str, *, overlap_hours: int = 24) -> dict[str, Any]:
+        """Replace a key; the old one keeps working for ``overlap_hours``. Returns the new key (shown once)."""
+        return self.post(f"/api/keys/{key_id}/rotate", {"overlap_hours": overlap_hours})
+
+    def key_report(self) -> dict[str, Any]:
+        """Keys expiring soon, unused for 90 days, that never expire, or usable from anywhere."""
+        return self.get("/api/keys/report")
 
     def report_signing_key(self) -> dict[str, Any]:
         """The public key that signs this server's case reports (compare its ``key_id`` with a report's)."""

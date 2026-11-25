@@ -168,6 +168,14 @@ groups:
           description: "{{ $value | humanize }} rejected credentials per second. Invalid-key attempts are also in the audit log (auth.failed)."
           runbook: Review `/api/audit?action=auth.failed`, block the source at the ingress, rotate any leaked key.
 
+      - alert: ArgusApiKeyUsedOutsideItsNetworks
+        expr: sum(increase(argus_auth_failures_total{reason="key_network"}[15m])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: An API key was presented from outside the networks it is allowed from
+          description: A valid key restricted to certain networks was refused because the request came from elsewhere - the key may have leaked.
+          runbook: Find the key and the address in the audit log (auth.failed, "outside its networks"); rotate the key if the address is not yours.
+
       - alert: ArgusEgressBlocked
         expr: sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) > 0
         labels: {severity: info}

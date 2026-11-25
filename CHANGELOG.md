@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.89.0] — Phase 89: API key expiry, allowed networks and rotation
+
+### Security
+- **Expiry:** keys can expire (`expires_in_days`; Settings offers 30 days, 90 days, a year or never).
+  `ARGUS_API_KEY_MAX_LIFETIME_DAYS` makes expiry mandatory. The workspace is warned
+  `ARGUS_API_KEY_EXPIRY_WARNING_DAYS` (14) days before.
+- **Allowed networks:** a key can be limited to addresses or CIDRs. Used from elsewhere, it is refused
+  like a wrong key, audited with the address, and `ArgusApiKeyUsedOutsideItsNetworks` fires.
+- **Rotation without downtime:** `POST /api/keys/{id}/rotate` issues a replacement with the same
+  name, role, networks and lifetime; the old key keeps working for an overlap (24 hours by default).
+- `GET /api/keys/report`: keys expiring soon, unused for 90 days, never expiring or unrestricted.
+- Migration 0036; existing keys keep working unchanged.
+- Python client: `create_key()`, `rotate_key()`, `key_report()`.
+
 ## [1.88.0] — Phase 88: The Python client polls cheaply
 
 ### Added (Python client)

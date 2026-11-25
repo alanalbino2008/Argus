@@ -101,22 +101,22 @@ async def get_principal(request: Request) -> Principal:
     if not key and cookie:
         return await _session_principal(request, cookie)
     keys: ApiKeyRepository = request.app.state.keys
-    principal = await keys.authenticate(key) if key else None
+    ip = client_ip(request)
+    principal, why = await keys.check(key, ip) if key else (None, None)
     if principal is None:
-        metrics.AUTH_FAILURES.labels("invalid_key" if key else "missing_key").inc()
-        ip = client_ip(request) or "unknown"
+        # An expired key, or a key used from outside its networks, is refused like a wrong one:
+        # the caller learns nothing; the audit log and the metric say why.
+        reason = {"expired": "expired_key", "network": "key_network"}.get(why or "", "invalid_key")
+        metrics.AUTH_FAILURES.labels(reason if key else "missing_key").inc()
         # Only a *presented but invalid* key is a security signal (guessing, leaked or
         # revoked credentials). A visitor who has not signed in yet is just noise.
-        if key and _auth_failure_audit.hit(ip):
+        if key and _auth_failure_audit.hit(ip or "unknown"):
             anon = Principal(key_id="unauthenticated", name="unauthenticated", role=Role.VIEWER)
-            await audit(
-                request,
-                anon,
-                "auth.failed",
-                request.url.path,
-                "denied",
-                {"reason": "invalid or revoked key", "key_prefix": key[:10]},
+            detail = {"expired": "expired key", "network": f"key used from outside its networks ({ip})"}.get(
+                why or "", "invalid or revoked key"
             )
+            await audit(request, anon, "auth.failed", request.url.path, "denied",
+                        {"reason": detail, "key_prefix": key[:10]})  # fmt: skip
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Valid API key required (Authorization: Bearer <key> or X-API-Key header)",

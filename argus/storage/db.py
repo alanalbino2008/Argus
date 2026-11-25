@@ -111,6 +111,11 @@ class ApiKeyRow(Base):
     created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase 89: an expiry, the networks the key may be used from, and rotation.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    allowed_networks: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    replaced_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    expiry_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class WsTicketRow(Base):

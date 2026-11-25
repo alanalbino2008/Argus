@@ -430,6 +430,11 @@ async def lifespan(app: FastAPI):
         if settings.edition != "personal"
         else None
     )
+    from argus.security import key_expiry
+
+    key_expiry_task = (
+        asyncio.create_task(key_expiry.run_forever(app), name="key-expiry") if settings.monitors_enabled else None
+    )
     config_task = (
         asyncio.create_task(_config_sync(app), name="owner-config-sync") if settings.edition != "personal" else None
     )
@@ -469,6 +474,7 @@ async def lifespan(app: FastAPI):
                 backup_task,
                 alerts_task,
                 privacy_task,
+                key_expiry_task,
             )
             if t
         ]

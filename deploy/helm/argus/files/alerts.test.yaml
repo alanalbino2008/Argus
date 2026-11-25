@@ -211,3 +211,21 @@ tests:
         values: '0+5x10'
     alert_rule_test:
       - {eval_time: 9d, alertname: ArgusTakedownBacklog, exp_alerts: []}
+
+  - name: a restricted key used from another network raises an alert; an expired key does not
+    interval: 1m
+    input_series:
+      - series: 'argus_auth_failures_total{reason="key_network"}'
+        values: '0 0 0 1 1 1'
+      - series: 'argus_auth_failures_total{reason="expired_key"}'
+        values: '0 5 10 15 20 25'
+    alert_rule_test:
+      - {eval_time: 2m, alertname: ArgusApiKeyUsedOutsideItsNetworks, exp_alerts: []}
+      - eval_time: 5m
+        alertname: ArgusApiKeyUsedOutsideItsNetworks
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: An API key was presented from outside the networks it is allowed from
+              description: A valid key restricted to certain networks was refused because the request came from elsewhere - the key may have leaked.
+              runbook: Find the key and the address in the audit log (auth.failed, "outside its networks"); rotate the key if the address is not yours.
