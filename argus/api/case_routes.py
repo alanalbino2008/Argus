@@ -16,7 +16,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 
-from argus.api.deps import WorkspaceContext, audit, in_workspace, throttle
+from argus.api.deps import WorkspaceContext, audit, in_workspace, require_approval, throttle
 from argus.api.opsec_routes import find_route, route_for
 from argus.evidence.bundle import build_bundle
 from argus.evidence.capture import CaptureError, capture_upload, capture_url
@@ -223,6 +223,7 @@ async def delete_case(case_id: str, request: Request, ws: WorkspaceContext = ANA
     case = await _case(request, ws, case_id)
     if ws.principal.name != case["created_by"] and ws.role.rank < Role.ADMIN.rank:
         raise HTTPException(status_code=403, detail="Only the case owner or a workspace admin can delete a case")
+    await require_approval(request, ws, "case.delete", case_id, f"Delete case \u201c{case['title']}\u201d")
     await _repo(request).delete(case_id, workspace_id=ws.id, who=ws.principal.name)
     await audit(request, ws.principal, "case.delete", case_id, details={"title": case["title"]})
     return Response(status_code=204)
@@ -367,6 +368,9 @@ async def verify_capture(capture_id: str, request: Request, ws: WorkspaceContext
 async def export_bundle(case_id: str, request: Request, ws: WorkspaceContext = ANALYST):
     """The whole case as a self-verifying evidence bundle (ZIP)."""
     case = await _case(request, ws, case_id)
+    await require_approval(
+        request, ws, "case.export", case_id, f"Export the evidence bundle of \u201c{case['title']}\u201d"
+    )
     repo = _repo(request)
     captures = []
     for c in await repo.captures(case_id):

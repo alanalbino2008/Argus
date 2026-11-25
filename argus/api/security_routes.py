@@ -8,7 +8,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
-from argus.api.deps import WorkspaceContext, audit, get_principal, in_workspace, require_platform_admin
+from argus.api.deps import (
+    WorkspaceContext,
+    audit,
+    get_principal,
+    in_workspace,
+    require_approval,
+    require_platform_admin,
+)
 from argus.security.auth import Principal, Role
 
 router = APIRouter(prefix="/api", tags=["security"])
@@ -111,6 +118,9 @@ async def create_key(
     if body.platform and not (principal.platform_admin and body.role == Role.ADMIN):
         raise HTTPException(status_code=403, detail="Only platform administrators can create platform admin keys")
     workspace_id = None if body.platform else ws.id
+    if body.role == Role.ADMIN:
+        await require_approval(request, ws, "key.create_admin", body.name,
+                               f"Create the admin API key \u201c{body.name}\u201d" + (" (platform-wide)" if body.platform else ""))  # fmt: skip
     record, key = await request.app.state.keys.create(
         body.name, body.role, created_by=principal.name, workspace_id=workspace_id,
         expires_at=_expiry(request, body.expires_in_days), allowed_networks=_networks(body.allowed_networks),

@@ -48,8 +48,24 @@ function describe(body, status) {
   return status === 429 ? "Too many requests — try again shortly" : `Request failed (${status})`;
 }
 
+// Phase 90: an action waiting for a second administrator's approval. The request is remembered per
+// exact action, and sent again with its approval once someone else has approved it.
+const APPROVALS = "argus_approvals";
+function approvalStore() {
+  try { return JSON.parse(sessionStorage.getItem(APPROVALS) || "{}"); } catch { return {}; }
+}
+function setApproval(key, id) {
+  const all = approvalStore();
+  if (id) all[key] = id; else delete all[key];
+  try { sessionStorage.setItem(APPROVALS, JSON.stringify(all)); } catch { /* private mode: asked again next time */ }
+}
+
 export async function request(path, { method = "GET", body, raw = false } = {}) {
   const headers = {};
+  const isFormBody = typeof FormData !== "undefined" && body instanceof FormData;
+  const approvalKey = `${activeWorkspace() || ""} ${method} ${path} ${isFormBody || body === undefined ? "" : JSON.stringify(body)}`;
+  const approval = approvalStore()[approvalKey];
+  if (approval) headers["X-Argus-Approval"] = approval;
   if (currentKey()) headers.Authorization = `Bearer ${currentKey()}`;
   if (activeWorkspace()) headers["X-Argus-Workspace"] = activeWorkspace(); // every call is scoped to one team
   const isForm = typeof FormData !== "undefined" && body instanceof FormData; // file uploads
@@ -68,6 +84,15 @@ export async function request(path, { method = "GET", body, raw = false } = {}) 
     const info = await res.json().catch(() => null);
     if (info?.vault_locked) window.dispatchEvent(new CustomEvent("argus:vault-locked"));
     throw new ApiError(423, info?.detail || "The case vault is locked");
+  }
+  if (approval && (res.ok && res.status !== 202 || res.status === 403)) setApproval(approvalKey, null); // spent or refused
+  if (res.status === 202 && res.headers.get("X-Argus-Approval-Request")) {
+    const info = await res.json().catch(() => null);
+    setApproval(approvalKey, info?.approval?.id);
+    const error = new ApiError(202, "Sent for approval: another administrator must approve this. Do it again once they have.");
+    error.approval = info?.approval;
+    window.dispatchEvent(new CustomEvent("argus:approval-requested", { detail: info?.approval }));
+    throw error;
   }
   if (raw) {
     if (!res.ok) throw new ApiError(res.status, describe(await res.json().catch(() => null), res.status));

@@ -221,6 +221,11 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "approval-approve" || act === "approval-reject") {
+        const approving = act === "approval-approve";
+        if (!(await confirmDialog({ title: approving ? "Approve this request?" : "Reject this request?", message: approving ? "They can then do it once, within 24 hours of asking." : "They will have to ask again.", confirm: approving ? "Approve" : "Reject", danger: !approving }))) return;
+        await api.post(`/api/approvals/${enc(id)}/${approving ? "approve" : "reject"}`, {});
+        toast(approving ? "Approved" : "Rejected", "success");
       } else if (act === "key-rotate") {
         const ok = await confirmDialog({ title: "Rotate this API key?", message: "You get a new key with the same name, role and networks. The old one keeps working for 24 hours so you can switch whatever uses it.", confirm: "Rotate" });
         if (!ok) return;
@@ -317,6 +322,16 @@ export function initSettings(el) {
       } catch (err) { toast(err.message, "error"); }
       return;
     }
+    if (e.target.id === "approval-policy-form") {
+      e.preventDefault();
+      const actions = [...e.target.querySelectorAll("[name=approval-action]:checked")].map((i) => i.value);
+      try {
+        await api.put("/api/approval-policy", { actions });
+        toast("Approval policy saved", "success");
+      } catch (err) { toast(err.message, err.status === 202 ? "info" : "error", 6000); }
+      await refresh();
+      return;
+    }
     if (e.target.id !== "key-form") return;
     e.preventDefault();
     const name = $("#key-name").value.trim();
@@ -354,15 +369,17 @@ export async function refresh() {
     fetch("/api/personal/status").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     platform ? api.get("/api/vault/status").catch(() => null) : null,
     platform ? api.get("/api/backups").catch(() => null) : null,
+    wsAdmin ? api.get("/api/approval-policy").catch(() => null) : null,
+    wsAdmin ? api.get("/api/approvals?status=all").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -375,6 +392,31 @@ function themeChooser() {
   const choice = window.argusTheme.choice();
   return html`<div class="segmented">${[["light", "Light"], ["dark", "Dark"], ["system", "System"]].map(([v, l]) =>
     html`<button class="${choice === v ? "active" : ""}" data-theme-choice="${v}">${l}</button>`)}</div>`;
+}
+
+// Phase 90: actions that need a second administrator, and the requests waiting for one.
+function approvalsCard() {
+  const policy = data.approvalPolicy;
+  if (!policy) return "";
+  const pending = (data.approvals || []).filter((a) => a.status === "pending");
+  const recent = (data.approvals || []).filter((a) => a.status !== "pending").slice(0, 5);
+  const row = (a) => html`<tr>
+    <td><b>${a.label}</b><div class="muted small">${a.summary}${a.reason ? html` · “${a.reason}”` : ""}</div></td>
+    <td>${a.requested_by}<div class="muted small">${timeAgo(a.requested_at)}</div></td>
+    <td>${a.status === "pending" ? html`
+      <button class="btn sm primary" data-act="approval-approve" data-id="${a.id}">Approve</button>
+      <button class="btn sm ghost danger" data-act="approval-reject" data-id="${a.id}">Reject</button>`
+      : html`<span class="pill ${a.status === "approved" || a.status === "used" ? "ok" : ""}">${a.status}</span>${a.decided_by ? html` <span class="muted small">by ${a.decided_by}</span>` : ""}`}</td>
+  </tr>`;
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Two-person approval</h2><p class="muted small">Ticked actions need a second administrator's approval before they happen. Nobody can approve their own request; an approval works once and lapses after 24 hours. Unticking an action needs an approval too.</p></div></div>
+    <form id="approval-policy-form" class="filters" style="flex-wrap:wrap;gap:14px;margin-bottom:12px">
+      ${Object.entries(policy.available).map(([action, label]) => html`<label class="check small"><input type="checkbox" name="approval-action" value="${action}" ${policy.actions.includes(action) ? "checked" : ""}> ${label}</label>`)}
+      <button class="btn sm" type="submit">Save</button>
+    </form>
+    ${pending.length ? html`<h3 class="small" style="margin:6px 0">Waiting for approval</h3><table class="table"><tbody>${pending.map(row)}</tbody></table>` : html`<p class="muted small">No request is waiting.</p>`}
+    ${recent.length ? html`<h3 class="small" style="margin:12px 0 6px">Recent decisions</h3><table class="table"><tbody>${recent.map(row)}</tbody></table>` : ""}
+  </div>`;
 }
 
 // Phase 89: when a key stops working (replaced keys show their overlap end).
@@ -890,7 +932,7 @@ function render() {
     ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}
-    ${admin ? html`${platform ? usersCard() : ""}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
+    ${admin ? html`${platform ? usersCard() : ""}${approvalsCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
 }

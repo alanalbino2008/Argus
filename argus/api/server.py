@@ -60,6 +60,7 @@ from argus.api import remediation_hooks
 from argus.api.account_routes import router as account_router
 from argus.api.analyst_routes import router as analyst_router
 from argus.api.annotation_routes import router as annotation_router
+from argus.api.approval_routes import router as approval_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
@@ -148,6 +149,7 @@ from argus.reports.data import ReportOptions
 from argus.reports.scheduler import ReportScheduler
 from argus.reports.service import issue_report
 from argus.security import vault
+from argus.security.approvals import ApprovalRepository, ApprovalRequired
 from argus.security.auth import SYSTEM, Principal, Role
 from argus.security.crypto import secret_box_from_settings
 from argus.security.headers import SecurityHeadersMiddleware
@@ -286,6 +288,7 @@ async def lifespan(app: FastAPI):
     else:
         ratelimit.use_memory()
     app.state.keys = ApiKeyRepository(db)
+    app.state.approvals = ApprovalRepository(db)
     app.state.users = UserRepository(db)
     app.state.workspaces = WorkspaceRepository(db)
     app.state.oidc = OidcProvider(settings) if settings.oidc_issuer and settings.oidc_client_id else None
@@ -686,6 +689,16 @@ app.include_router(fingerprint_watch_router)
 app.include_router(brand_watch_router)
 app.include_router(taxii_router)
 app.include_router(campaign_router)
+app.include_router(approval_router)
+
+
+@app.exception_handler(ApprovalRequired)
+async def _approval_required(request: Request, exc: ApprovalRequired) -> JSONResponse:
+    """A protected action without an approval: 202 with the request a second administrator must approve."""
+    return JSONResponse({"approval_required": True, "detail": exc.message, "approval": exc.approval},
+                        status_code=202, headers={"X-Argus-Approval-Request": exc.approval["id"]})  # fmt: skip
+
+
 app.include_router(case_report_router)
 app.include_router(playbook_router)
 app.include_router(vault_router)

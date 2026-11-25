@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from argus.api import remediation_hooks
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, in_workspace, require_approval
 from argus.core.models import EntityType
 from argus.intel.exposure import KIND_LABEL, SEVERITY_ORDER, summarise
 from argus.intel.suppliers import normalise_domain
@@ -73,6 +73,8 @@ async def exposure_overview(
     """Watched domains, what the sources can do here, and the findings (staff addresses masked)."""
     if reveal and ws.role.rank < Role.ANALYST.rank:
         raise HTTPException(status_code=403, detail="Requires analyst role to reveal email addresses")
+    if reveal:
+        await require_approval(request, ws, "exposure.reveal", status, "Reveal leaked email addresses in clear")
     repo = _repo(request)
     if await request.app.state.suppliers.domains(workspace_id=ws.id):
         await repo.ensure_supplier_watch(workspace_id=ws.id, by="system")

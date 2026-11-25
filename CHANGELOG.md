@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.90.0] — Phase 90: Two-person approval
+
+### Security
+- A workspace can require a **second administrator's approval** to delete a case, export a case's
+  evidence bundle, reveal leaked email addresses or create an admin API key. The call answers `202`
+  with a request; another administrator approves it; the requester repeats the call with
+  `X-Argus-Approval`. Approvals are single-use, bound to the action, resource and requester, and
+  lapse after 24 hours. Self-approval is refused; removing a protected action needs approval too.
+- Requests notify the workspace's alert channels; every step is audited.
+- Settings → **Two-person approval**: the policy, waiting requests and recent decisions. The web
+  interface sends the approval itself when the action is repeated.
+- Migration 0037. Python client: `approvals()`, `approve()`, `reject()`, `request(approval=…)`.
+
 ## [1.89.0] — Phase 89: API key expiry, allowed networks and rotation
 
 ### Security

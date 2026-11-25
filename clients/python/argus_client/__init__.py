@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.89.0"
+__version__ = "1.90.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -154,13 +154,15 @@ class ArgusClient:
         return headers
 
     def request(self, method: str, path: str, *, json: Any = None, params: Mapping[str, Any] | None = None,
-                raw: bool = False, accept: str | None = None) -> Any:  # fmt: skip
+                raw: bool = False, accept: str | None = None, approval: str | None = None) -> Any:  # fmt: skip
         """Call any endpoint. Returns parsed JSON (or the raw response with ``raw=True``)."""
         url = f"{self.base_url}{path}"
         clean = {k: v for k, v in (params or {}).items() if v is not None}
         headers = self._headers()
         if accept:
             headers["Accept"] = accept
+        if approval:  # a second administrator approved this action (see approvals())
+            headers["X-Argus-Approval"] = approval
         key = (self.workspace, path, tuple(sorted((k, str(v)) for k, v in clean.items())), accept)
         remembered = self._remembered.get(key) if method == "GET" and not raw else None
         if remembered:
@@ -384,6 +386,17 @@ class ArgusClient:
     def key_report(self) -> dict[str, Any]:
         """Keys expiring soon, unused for 90 days, that never expire, or usable from anywhere."""
         return self.get("/api/keys/report")
+
+    def approvals(self, *, status: str = "pending") -> list[dict[str, Any]]:
+        """Requests for protected actions in this workspace (pending, approved, rejected, used, expired, all)."""
+        return self.get("/api/approvals", status=status)
+
+    def approve(self, approval_id: str, *, note: str = "") -> dict[str, Any]:
+        """Approve someone else's request; they then repeat their call with ``approval=approval_id``."""
+        return self.post(f"/api/approvals/{approval_id}/approve", {"note": note})
+
+    def reject(self, approval_id: str, *, note: str = "") -> dict[str, Any]:
+        return self.post(f"/api/approvals/{approval_id}/reject", {"note": note})
 
     def report_signing_key(self) -> dict[str, Any]:
         """The public key that signs this server's case reports (compare its ``key_id`` with a report's)."""

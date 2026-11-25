@@ -318,3 +318,47 @@ def require(role: Role):
         return principal
 
     return checker
+
+
+async def require_approval(
+    request: Request, ws: WorkspaceContext, action: str, resource: str, summary: str
+) -> str | None:
+    """Let a protected action through only with a second administrator's approval (Phase 90).
+
+    Returns the approval id spent, or None when the workspace does not protect ``action``. Without an
+    approval it records a request and raises :class:`ApprovalRequired` (answered as 202)."""
+    from argus.security.approvals import HEADER, ApprovalRefused, ApprovalRequired
+
+    repo = request.app.state.approvals
+    if not await repo.protects(ws.id, action):
+        return None
+    presented = (request.headers.get(HEADER) or "").strip()
+    if presented:
+        try:
+            await repo.consume(presented, ws.id, action=action, resource=resource, key_id=ws.principal.key_id)
+        except ApprovalRefused as exc:
+            await audit(request, ws.principal, "approval.refused", presented, "denied",
+                        {"action": action, "resource": resource, "reason": str(exc)})  # fmt: skip
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        await audit(request, ws.principal, "approval.used", presented, details={"action": action, "resource": resource})
+        return presented
+    reason = (request.headers.get("X-Argus-Reason") or "").strip()
+    approval, new = await repo.request(ws.id, action=action, resource=resource, summary=summary, reason=reason,
+                                       key_id=ws.principal.key_id, name=ws.principal.name)  # fmt: skip
+    if new:
+        await audit(request, ws.principal, "approval.request", approval["id"],
+                    details={"action": action, "resource": resource, "summary": summary})  # fmt: skip
+        try:
+            await request.app.state.monitors.create_alert(
+                monitor_id=None, investigation_id="", previous_investigation_id="", target=approval["label"],
+                severity="medium", headline=f"Approval needed: {ws.principal.name} asks to {approval['label'].lower()}",
+                summary={"approval_request": approval}, workspace_id=ws.id,
+                public_url=request.app.state.settings.public_url,
+            )  # fmt: skip
+        except Exception:  # the request stands even if the notification fails
+            logger.exception("Notifying the approval request %s failed", approval["id"])
+    raise ApprovalRequired(
+        approval,
+        f"This needs a second administrator's approval: {approval['label']}. "
+        f"Once approved, repeat the request with the header {HEADER}: {approval['id']}",
+    )

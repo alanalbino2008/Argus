@@ -853,6 +853,40 @@ class EntityAnnotationRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class ApprovalPolicyRow(Base):
+    """Which sensitive actions need a second administrator's approval in a workspace (Phase 90)."""
+
+    __tablename__ = "approval_policies"
+
+    workspace_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    actions: Mapped[list[str]] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str] = mapped_column(String(128))
+
+
+class ApprovalRow(Base):
+    """One request to perform a protected action, and its decision. Used once, then spent."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (Index("ix_approvals_ws_status", "workspace_id", "status"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(64))
+    resource: Mapped[str] = mapped_column(String(128))
+    summary: Mapped[str] = mapped_column(String(500))
+    reason: Mapped[str] = mapped_column(String(500))
+    requested_by: Mapped[str] = mapped_column(String(128))  # name
+    requested_key: Mapped[str] = mapped_column(String(64))  # key id or user:<id>
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16))  # pending, approved, rejected, used, expired
+    decided_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class RateLimitCounterRow(Base):
     """Attempts per limiter, key (hashed) and fixed window, shared by every replica (Phase 86)."""
 
