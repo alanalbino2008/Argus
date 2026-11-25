@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.93.0] — Phase 93: Session controls and workspace network policy
+
+### Security
+- **Idle timeout** for browser sessions (`ARGUS_SESSION_IDLE_MINUTES`, default 60).
+- **Your sessions:** see every browser signed in as you, sign one out, or sign out everywhere else.
+  Platform administrators can sign a person out everywhere.
+- **Network access per workspace:** limit a workspace to its organisation's networks, for browser
+  sessions and API keys alike. Requests from elsewhere get `404` and are audited. A policy that would
+  lock out its author is refused; platform administrators are exempt.
+- Migration 0040. Python client: `access_policy()`, `set_access_policy()`, `sign_user_out()`.
+
 ## [1.92.0] — Phase 92: Audit log export and SIEM streaming
 
 ### Added

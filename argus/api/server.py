@@ -106,6 +106,7 @@ from argus.api.research_routes import router as research_router
 from argus.api.retention_routes import router as retention_router
 from argus.api.scheduler import SCHEDULER, MonitorScheduler
 from argus.api.security_routes import router as security_router
+from argus.api.session_routes import router as session_router
 from argus.api.supplier_routes import router as supplier_router
 from argus.api.taxii_routes import router as taxii_router
 from argus.api.team_routes import router as team_router
@@ -291,6 +292,9 @@ async def lifespan(app: FastAPI):
         ratelimit.use_memory()
     app.state.keys = ApiKeyRepository(db)
     app.state.approvals = ApprovalRepository(db)
+    from argus.security.access_policy import AccessPolicies
+
+    app.state.access_policies = AccessPolicies(db)
     app.state.users = UserRepository(db)
     app.state.workspaces = WorkspaceRepository(db)
     app.state.oidc = OidcProvider(settings) if settings.oidc_issuer and settings.oidc_client_id else None
@@ -709,6 +713,7 @@ app.include_router(campaign_router)
 app.include_router(approval_router)
 app.include_router(retention_router)
 app.include_router(audit_router)
+app.include_router(session_router)
 
 
 @app.exception_handler(ApprovalRequired)

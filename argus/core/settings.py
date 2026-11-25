@@ -461,6 +461,12 @@ class Settings(BaseSettings):
         "workspaces follow the provider at every sign-in.",
     )
     session_ttl_hours: float = Field(default=8.0, gt=0, le=24 * 30, description="Lifetime of a browser session")
+    session_idle_minutes: float = Field(
+        default=60.0,
+        ge=0,
+        le=24 * 60,
+        description="A browser session ends after this long unused; 0: only its lifetime",
+    )
 
     # --- Outbound notifications ------------------------------------------------------------
     encryption_key: SecretStr | None = Field(

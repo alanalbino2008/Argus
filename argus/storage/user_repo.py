@@ -12,6 +12,8 @@ from sqlalchemy.engine import CursorResult
 
 from argus.storage.db import Database, OidcLoginRow, SessionRow, UserRow
 
+SESSION_ID_LENGTH = 16  # the public id of a session: a prefix of its token's SHA-256, never the token
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -120,8 +122,8 @@ class UserRepository:
             )  # fmt: skip
         return token
 
-    async def resolve_session(self, token: str) -> dict[str, Any] | None:
-        """The active, enabled user behind a session cookie, or None."""
+    async def resolve_session(self, token: str, idle: timedelta | None = None) -> dict[str, Any] | None:
+        """The active, enabled user behind a session cookie, or None. A session unused for ``idle`` has ended."""
         now = _now()
         async with self.db.session() as s, s.begin():
             found = (
@@ -136,14 +138,40 @@ class UserRepository:
             session, user = found
             if _aware(session.expires_at) <= now or user.disabled:
                 return None
-            if now - _aware(session.last_seen_at) > timedelta(minutes=5):  # cheap "last active", not every request
+            quiet = now - _aware(session.last_seen_at)
+            if idle and quiet > idle:  # walked away from the browser: the session ends (and goes)
+                await s.delete(session)
+                return None
+            # A cheap "last active" (not a write per request), often enough for the idle limit to hold.
+            if quiet > min(timedelta(minutes=5), (idle or timedelta(minutes=20)) / 4):
                 session.last_seen_at = now
-            return _user(user)
+            return {**_user(user), "session_id": session.token_hash[:SESSION_ID_LENGTH]}
 
     async def delete_session(self, token: str) -> bool:
         async with self.db.session() as s, s.begin():
             result = await s.execute(delete(SessionRow).where(SessionRow.token_hash == _digest(token)))
         return (cast("CursorResult[Any]", result).rowcount or 0) > 0
+
+    async def sessions(self, user_id: str) -> list[dict[str, Any]]:
+        """A user's signed-in browsers, most recently active first (ids are a prefix of the token's hash)."""
+        now = _now()
+        async with self.db.session() as s:
+            rows = (await s.scalars(select(SessionRow).where(SessionRow.user_id == user_id, SessionRow.expires_at > now)
+                                    .order_by(SessionRow.last_seen_at.desc()))).all()  # fmt: skip
+        return [{"id": r.token_hash[:SESSION_ID_LENGTH], "created_at": _aware(r.created_at).isoformat(),
+                 "last_seen_at": _aware(r.last_seen_at).isoformat(), "expires_at": _aware(r.expires_at).isoformat(),
+                 "ip": r.ip, "user_agent": r.user_agent} for r in rows]  # fmt: skip
+
+    async def end_sessions(self, user_id: str, *, only: str | None = None, keep: str | None = None) -> int:
+        """End a user's sessions: one (``only``, a session id), all but one (``keep``), or all."""
+        stmt = delete(SessionRow).where(SessionRow.user_id == user_id)
+        if only:
+            stmt = stmt.where(SessionRow.token_hash.startswith(only, autoescape=True))
+        if keep:
+            stmt = stmt.where(~SessionRow.token_hash.startswith(keep, autoescape=True))
+        async with self.db.session() as s, s.begin():
+            result = await s.execute(stmt)
+        return cast("CursorResult[Any]", result).rowcount or 0
 
     async def count_sessions(self, user_id: str) -> int:
         async with self.db.session() as s:

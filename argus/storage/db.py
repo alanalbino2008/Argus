@@ -878,6 +878,17 @@ class AuditStreamRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AccessPolicyRow(Base):
+    """The networks a workspace may be used from, by any session or key (Phase 93). Empty: anywhere."""
+
+    __tablename__ = "access_policies"
+
+    workspace_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    allowed_networks: Mapped[list[str]] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str] = mapped_column(String(128))
+
+
 class RetentionPolicyRow(Base):
     """How long a workspace keeps old investigations, resolved alerts and closed cases (Phase 91). 0 = forever."""
 

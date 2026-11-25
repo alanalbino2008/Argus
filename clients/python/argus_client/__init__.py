@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.92.0"
+__version__ = "1.93.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -398,6 +398,18 @@ class ArgusClient:
     def stream_audit(self, channel_id: str, *, start: str = "now", platform: bool = False) -> dict[str, Any]:
         """Forward the audit log to a Splunk, Sentinel or webhook destination (``start``: now or beginning)."""
         return self.post("/api/audit/streams", {"channel_id": channel_id, "start": start, "platform": platform})
+
+    def access_policy(self) -> dict[str, Any]:
+        """The networks this workspace may be used from (empty: anywhere)."""
+        return self.get("/api/access-policy")
+
+    def set_access_policy(self, networks: list[str]) -> dict[str, Any]:
+        """Limit this workspace to these networks; refused if it would shut out the caller."""
+        return self.request("PUT", "/api/access-policy", json={"allowed_networks": networks})
+
+    def sign_user_out(self, user_id: str) -> dict[str, Any]:
+        """End every browser session of a person (platform administrators)."""
+        return self.post(f"/api/users/{user_id}/sign-out", {})
 
     def retention(self) -> dict[str, Any]:
         """The workspace's retention periods, and what a purge would delete now."""

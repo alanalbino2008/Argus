@@ -196,7 +196,12 @@ async def _owner_principal(request: Request, token: str) -> Principal | None:
 
 
 async def _session_principal(request: Request, token: str) -> Principal:
-    user = await request.app.state.users.resolve_session(token)
+    from datetime import timedelta
+
+    idle_minutes = request.app.state.settings.session_idle_minutes
+    user = await request.app.state.users.resolve_session(
+        token, idle=timedelta(minutes=idle_minutes) if idle_minutes else None
+    )
     if user is None:
         metrics.AUTH_FAILURES.labels("invalid_session").inc()
         raise HTTPException(
@@ -264,6 +269,17 @@ async def resolve_workspace(request: Request, principal: Principal, ref: str | N
         role = Role(ws["role"])
     else:
         raise _not_found()
+    if not principal.platform_admin:  # platform administrators can always reach a workspace to fix its policy
+        networks = await request.app.state.access_policies.networks(ws["id"])
+        if networks:
+            from argus.storage.security_repo import allowed_from
+
+            ip = client_ip(request)
+            if not allowed_from(networks, ip):
+                metrics.AUTH_FAILURES.labels("workspace_network").inc()
+                await audit(request, principal, "auth.forbidden", request.url.path, "denied",
+                            {"reason": f"workspace used from outside its networks ({ip})", "workspace": ws["id"]})  # fmt: skip
+                raise _not_found()
     request.state.workspace_id = ws["id"]
     return WorkspaceContext(principal=principal, workspace=ws, role=role)
 

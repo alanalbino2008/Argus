@@ -221,6 +221,13 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "session-end") {
+        await api.del(`/api/auth/sessions/${enc(id)}`);
+        toast("Signed out of that browser", "success");
+      } else if (act === "sessions-end-others") {
+        if (!(await confirmDialog({ title: "Sign out everywhere else?", message: "Every other browser signed in as you is signed out now.", confirm: "Sign out", danger: true }))) return;
+        const { ended } = await api.post("/api/auth/sessions/end-others");
+        toast(`Signed out of ${ended} other browser(s)`, "success");
       } else if (act === "audit-export") {
         const format = btn.dataset.format;
         await download(`/api/audit/export?format=${format}`, `argus-audit.${format === "csv" ? "csv" : "jsonl"}`);
@@ -338,6 +345,16 @@ export function initSettings(el) {
       } catch (err) { toast(err.message, "error"); }
       return;
     }
+    if (e.target.id === "access-form") {
+      e.preventDefault();
+      const networks = $("#access-networks").value.split(/[\s,]+/).map((n) => n.trim()).filter(Boolean);
+      try {
+        await api.put("/api/access-policy", { allowed_networks: networks });
+        toast(networks.length ? "This workspace now only works from those networks" : "This workspace works from anywhere", "success");
+      } catch (err) { toast(err.message, "error", 6000); }
+      await refresh();
+      return;
+    }
     if (e.target.id === "audit-stream-form") {
       e.preventDefault();
       try {
@@ -408,16 +425,18 @@ export async function refresh() {
     wsAdmin ? api.get("/api/approvals?status=all").catch(() => null) : null,
     wsAdmin ? api.get("/api/retention").catch(() => null) : null,
     wsAdmin ? api.get("/api/audit/streams").catch(() => null) : null,
+    state.me?.auth === "session" ? api.get("/api/auth/sessions").catch(() => null) : null,
+    wsAdmin ? api.get("/api/access-policy").catch(() => null) : null,
     wsAdmin ? api.get("/api/notifications/channels").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -430,6 +449,34 @@ function themeChooser() {
   const choice = window.argusTheme.choice();
   return html`<div class="segmented">${[["light", "Light"], ["dark", "Dark"], ["system", "System"]].map(([v, l]) =>
     html`<button class="${choice === v ? "active" : ""}" data-theme-choice="${v}">${l}</button>`)}</div>`;
+}
+
+// Phase 93: where this person is signed in.
+function sessionsCard() {
+  const sessions = data.mySessions;
+  if (!sessions) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Your sessions</h2><p class="muted small">Browsers signed in as you. A session ends after a period without use, or when you end it here.</p></div>
+      ${sessions.length > 1 ? html`<button class="btn sm" data-act="sessions-end-others">Sign out everywhere else</button>` : ""}</div>
+    <table class="table"><tbody>${sessions.map((s) => html`<tr>
+      <td><b>${s.user_agent || "Unknown browser"}</b>${s.current ? html` <span class="pill accent">this browser</span>` : ""}<div class="muted small">${s.ip || "unknown address"}</div></td>
+      <td class="small">Active ${timeAgo(s.last_seen_at)}<div class="muted small">Signed in ${timeAgo(s.created_at)}</div></td>
+      <td class="actions">${s.current ? "" : html`<button class="btn sm ghost danger" data-act="session-end" data-id="${s.id}">Sign out</button>`}</td>
+    </tr>`)}</tbody></table>
+  </div>`;
+}
+
+// Phase 93: the networks this workspace may be used from.
+function accessCard() {
+  const policy = data.accessPolicy;
+  if (!policy) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Network access</h2><p class="muted small">Only these networks can use this workspace, from a browser or with an API key; empty means anywhere. Your address now: <span class="mono">${policy.your_address || "unknown"}</span>.</p></div></div>
+    <form id="access-form" class="filters">
+      <input id="access-networks" class="input" style="max-width:520px" value="${policy.allowed_networks.join(", ")}" placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8 (empty: anywhere)">
+      <button class="btn sm" type="submit">Save</button>
+    </form>
+  </div>`;
 }
 
 // Phase 91: how long this workspace keeps old data. Legal hold (on the case page) always wins.
@@ -1015,11 +1062,12 @@ function render() {
     ${backupsCard()}
     ${vaultCard()}
     ${data.personal ? "" : workspacesCard()}
+    ${sessionsCard()}
     ${safetyCard()}
     ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}
-    ${admin ? html`${platform ? usersCard() : ""}${approvalsCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
+    ${admin ? html`${platform ? usersCard() : ""}${approvalsCard()}${accessCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
 }
