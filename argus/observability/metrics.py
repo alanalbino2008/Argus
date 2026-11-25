@@ -241,6 +241,16 @@ INTEGRITY_LAST_RUN = Gauge(
 )
 
 
+BACKUP_DRILL_OK = Gauge(
+    "argus_backup_drill_ok", "1 if the last restore drill of the newest backup succeeded, 0 if it failed",
+    registry=REGISTRY,
+)  # fmt: skip
+BACKUP_DRILL_LAST_SUCCESS = Gauge(
+    "argus_backup_drill_last_success_timestamp_seconds", "Unix time of the last successful restore drill",
+    registry=REGISTRY,
+)  # fmt: skip
+
+
 def watch_run(kind: str, status: str, seconds: float) -> None:
     """Record one finished watch run (status ok, partial or error)."""
     import time

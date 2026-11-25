@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.97.0] — Phase 97: Backup restore drills
+
+### Added
+- **Restore drills:** every week (and on demand, Settings → Backups → **Test a restore**), the newest
+  backup is decrypted with the unattended key into a scratch folder. Each file's fingerprint is
+  checked, and the restored database is opened and verified (integrity, foreign keys, schema, record
+  counts against the backup's own record). Then the scratch folder is deleted.
+- `argus_backup_drill_ok` and the critical `ArgusBackupRestoreDrillFailed` alert (promtool-tested);
+  drills are audited.
+
 ## [1.96.0] — Phase 96: Integrity check
 
 ### Added

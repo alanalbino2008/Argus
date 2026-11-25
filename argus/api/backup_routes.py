@@ -101,6 +101,18 @@ async def backup_check(body: BackupFile, request: Request, principal: Principal 
     return {"ok": True, "backup": info}
 
 
+@router.post("/drill")
+async def backup_drill(request: Request, principal: Principal = ADMIN):
+    """Restore the newest backup into a scratch folder and prove it works (nothing is changed or kept)."""
+    try:
+        result = await request.app.state.backups.drill("manual")
+    except backup.BackupError as exc:
+        await audit(request, principal, "backup.drill", None, outcome="failure", details={"error": str(exc)})
+        raise _problem(exc) from exc
+    await audit(request, principal, "backup.drill", result["backup"], details={"counts": result["counts"]})
+    return await request.app.state.backups.status()
+
+
 @router.post("/restore")
 async def backup_restore(body: BackupFile, request: Request, principal: Principal = ADMIN):
     """Prepare a restore: checked now, swapped in when Argus next starts (the current data is kept aside)."""

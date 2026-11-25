@@ -195,6 +195,14 @@ groups:
           description: Storage damage, broken references, a broken audit chain or altered evidence was found. Investigate before anything else changes.
           runbook: Settings > Integrity (or argus --check) lists each problem. Do not delete anything; compare with the latest backup and the pre-upgrade copies.
 
+      - alert: ArgusBackupRestoreDrillFailed
+        expr: min(argus_backup_drill_ok) == 0
+        labels: {severity: critical}
+        annotations:
+          summary: The newest backup could not be restored
+          description: The weekly restore drill decrypted the newest backup into a scratch folder and it failed its checks. Until a backup restores, a lost disk means lost cases.
+          runbook: Settings > Backups shows the drill's error. Make a new backup and run the drill again (Test a restore); check the backup folder's disk.
+
       - alert: ArgusEgressBlocked
         expr: sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) > 0
         labels: {severity: info}

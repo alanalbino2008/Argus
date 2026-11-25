@@ -163,6 +163,19 @@ export function initSettings(el) {
         render();
         return;
       }
+      if (act === "backup-drill") {
+        btn.disabled = true;
+        btn.textContent = "Testing…";
+        try {
+          data.backups = await api.post("/api/backups/drill");
+          toast("The newest backup restores and checks out", "success");
+        } catch (err) {
+          toast(err.message, "error", 8000);
+          data.backups = await api.get("/api/backups").catch(() => data.backups);
+        }
+        render();
+        return;
+      }
       if (act === "backup-folder") { $("#backup-folder").value = btn.dataset.path; return; }
       if (act === "backup-pick") {
         $("#backup-file-details").open = true;
@@ -764,7 +777,12 @@ function backupsCard() {
   return html`<div class="card card-pad" style="margin-top:16px" id="backups-card">${head}
     ${b.restore_pending ? html`<div class="callout warn" style="margin-bottom:10px">${ico("alert")}<span>A restore is ready and takes over the next time Argus starts. <button class="btn sm" data-act="backup-restore-cancel">Cancel it</button></span></div>` : ""}
     <p class="small"${b.health === "error" ? ' style="color:var(--sev-high)"' : ""}>${b.summary}${b.last_backup && b.health !== "error" ? ` · ${sizeText(b.last_backup.size)}` : ""}</p>
-    ${b.enabled ? html`<button class="btn sm" data-act="backup-now" ${b.running ? "disabled" : ""}>${ico("download")}${b.running ? "Backing up…" : "Back up now"}</button>` : ""}
+    ${b.enabled ? html`<div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn sm" data-act="backup-now" ${b.running ? "disabled" : ""}>${ico("download")}${b.running ? "Backing up…" : "Back up now"}</button>
+      ${b.last_success_at ? html`<button class="btn sm ghost" data-act="backup-drill" title="Restore the newest backup into a scratch folder and check it, keeping nothing">${ico("shield")}Test a restore</button>` : ""}</div>` : ""}
+    ${b.last_drill ? html`<p class="small" style="margin-top:6px">${b.last_drill.ok
+      ? html`<span class="pill ok">Restores</span> The newest backup was restored and checked ${timeAgo(b.last_drill.at)}.`
+      : html`<span class="pill critical">Restore failed</span> ${b.last_drill.error} (${timeAgo(b.last_drill.at)})`}</p>` : ""}
     ${setup}${list}
     <details style="margin-top:12px" id="backup-file-details"><summary>Check or restore a backup</summary>
       <form id="backup-file-form" style="display:grid;gap:8px;max-width:560px;margin-top:8px">

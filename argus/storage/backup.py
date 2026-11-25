@@ -241,10 +241,16 @@ def _header(fh: BinaryIO) -> tuple[dict[str, Any], bytes]:
     return header, head
 
 
-def _open_pieces(fh: BinaryIO, header: dict[str, Any], head: bytes, password: str) -> Iterator[bytes]:
+def _open_pieces(fh: BinaryIO, header: dict[str, Any], head: bytes, password: str | None,
+                 backup_key: dict[str, Any] | None = None) -> Iterator[bytes]:  # fmt: skip
     kdf = header.get("kdf") or {}
     try:
-        key = _derive(password, base64.b64decode(kdf["salt"]), int(kdf["n"]), int(kdf["r"]), int(kdf["p"]))
+        if backup_key is not None:  # the unattended key backups are made with: no password needed
+            if kdf.get("salt") != backup_key.get("salt"):
+                raise BackupError("This backup was made with a different backup password")
+            key = base64.b64decode(backup_key["key"])
+        else:
+            key = _derive(password or "", base64.b64decode(kdf["salt"]), int(kdf["n"]), int(kdf["r"]), int(kdf["p"]))
         prefix = base64.b64decode(header["nonce"])
     except (KeyError, ValueError, TypeError) as exc:
         raise BackupError("This backup file is damaged") from exc
@@ -266,14 +272,16 @@ def _open_pieces(fh: BinaryIO, header: dict[str, Any], head: bytes, password: st
         index += 1
 
 
-def open_backup(path: Path, password: str, into: Path) -> dict[str, Any]:
+def open_backup(
+    path: Path, password: str | None, into: Path, *, backup_key: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Decrypt and check a backup into ``into`` (argus.db, encryption.key); returns its manifest."""
     into.mkdir(parents=True, exist_ok=True)
     payload = into / "payload.tar.gz"
     try:
         with Path(path).open("rb") as fh, payload.open("wb") as out:
             header, head = _header(fh)
-            for piece in _open_pieces(fh, header, head, password):
+            for piece in _open_pieces(fh, header, head, password, backup_key):
                 out.write(piece)
     except OSError as exc:
         raise BackupError(f"Can't read {path}: {exc.strerror or exc}") from exc
@@ -317,6 +325,43 @@ def _describe(manifest: dict[str, Any]) -> dict[str, Any]:
     return {"created_at": manifest.get("created_at"), "argus_version": manifest.get("argus_version"),
             "computer": manifest.get("computer"), "counts": manifest.get("counts") or {},
             "has_key": "encryption.key" in (manifest.get("files") or {})}  # fmt: skip
+
+
+def drill(path: Path, *, work_dir: Path, password: str | None = None,
+          backup_key: dict[str, Any] | None = None) -> dict[str, Any]:  # fmt: skip
+    """Restore a backup into a scratch folder and prove it works, keeping nothing (Phase 97).
+
+    Beyond :func:`check` (decrypt, every file's fingerprint), the restored database is opened: SQLite's
+    integrity check, its foreign keys, its schema revision, and the number of cases, captures and
+    investigations against what the backup recorded when it was made."""
+    import time
+
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory(prefix="argus-drill-", dir=work_dir) as tmp:
+        manifest = open_backup(path, password, Path(tmp), backup_key=backup_key)
+        conn = sqlite3.connect(f"file:{Path(tmp) / 'argus.db'}?mode=ro", uri=True)
+        try:
+            integrity = [r[0] for r in conn.execute("PRAGMA integrity_check")]
+            if integrity != ["ok"]:
+                raise BackupError(f"The restored database is damaged: {'; '.join(integrity[:3])}")
+            orphans = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if orphans:
+                raise BackupError(f"The restored database has {len(orphans)} row(s) referring to missing records")
+            revision = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+            counts = {}
+            for table in manifest.get("counts") or {}:
+                if table == "schema":
+                    continue
+                counts[table] = int(conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])  # noqa: S608 - manifest names
+        except sqlite3.Error as exc:
+            raise BackupError(f"The restored database cannot be read ({exc})") from exc
+        finally:
+            conn.close()
+    expected = {k: v for k, v in (manifest.get("counts") or {}).items() if k != "schema"}
+    if counts != expected:
+        raise BackupError(f"The restored database does not hold what the backup recorded ({counts} vs {expected})")
+    return {"backup": Path(path).name, "created_at": manifest.get("created_at"), "schema": revision[0] if revision else None,
+            "counts": counts, "seconds": round(time.monotonic() - started, 2)}  # fmt: skip
 
 
 # ---------------------------------------------------------------------------- restoring

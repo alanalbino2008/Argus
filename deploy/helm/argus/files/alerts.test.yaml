@@ -273,3 +273,19 @@ tests:
               summary: The integrity check found damaged or inconsistent data
               description: Storage damage, broken references, a broken audit chain or altered evidence was found. Investigate before anything else changes.
               runbook: Settings > Integrity (or argus --check) lists each problem. Do not delete anything; compare with the latest backup and the pre-upgrade copies.
+
+  - name: a failed restore drill is critical; a passing one raises nothing
+    interval: 1m
+    input_series:
+      - series: 'argus_backup_drill_ok{instance="a"}'
+        values: '1 1 0 0'
+    alert_rule_test:
+      - {eval_time: 1m, alertname: ArgusBackupRestoreDrillFailed, exp_alerts: []}
+      - eval_time: 3m
+        alertname: ArgusBackupRestoreDrillFailed
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: The newest backup could not be restored
+              description: The weekly restore drill decrypted the newest backup into a scratch folder and it failed its checks. Until a backup restores, a lost disk means lost cases.
+              runbook: Settings > Backups shows the drill's error. Make a new backup and run the drill again (Test a restore); check the backup folder's disk.

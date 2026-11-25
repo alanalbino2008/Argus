@@ -24,6 +24,7 @@ logger = logging.getLogger("argus.backup")
 STATE_KEY = "backups"
 CONTEXT = "backup-key"
 CHECK_EVERY = 300  # seconds between "is a backup due?" checks
+DRILL_EVERY = timedelta(days=7)  # a restore drill of the newest backup (Phase 97)
 
 
 def _now() -> datetime:
@@ -140,6 +141,45 @@ class BackupService:
             finally:
                 self.running = False
 
+    # ------------------------------------------------------------------ restore drills (Phase 97)
+    async def drill(self, reason: str = "scheduled") -> dict[str, Any]:
+        """Restore the newest backup into a scratch folder and prove it works; record how it went."""
+        import time
+
+        from argus.observability import metrics
+
+        conf = await self.config()
+        key = await self._key()
+        listing = await asyncio.to_thread(backup.list_backups, Path(conf["folder"])) if conf["folder"] else []
+        started = _now()
+        try:
+            if not listing or key is None:
+                raise backup.BackupError("There is no backup to test yet")
+            db = backup.sqlite_path(self.settings.database_url)
+            result = await asyncio.to_thread(backup.drill, Path(listing[0]["file"]),
+                                             work_dir=db.parent if db else Path.home(), backup_key=key)  # fmt: skip
+        except backup.BackupError as exc:
+            await self._record_drill({"ok": False, "at": started.isoformat(), "reason": reason, "error": str(exc),
+                                      "backup": listing[0]["name"] if listing else None})  # fmt: skip
+            metrics.BACKUP_DRILL_OK.set(0)
+            raise
+        await self._record_drill({"ok": True, "at": started.isoformat(), "reason": reason, **result})
+        metrics.BACKUP_DRILL_OK.set(1)
+        metrics.BACKUP_DRILL_LAST_SUCCESS.set(time.time())
+        return result
+
+    async def _record_drill(self, outcome: dict[str, Any]) -> None:
+        stored = await self._stored()
+        stored["last_drill"] = outcome
+        await self.state.set(STATE_KEY, stored)
+
+    async def drill_due(self, now: datetime | None = None) -> bool:
+        stored = await self._stored()
+        if not stored.get("last_success_at"):
+            return False  # nothing to test yet
+        last = (stored.get("last_drill") or {}).get("at")
+        return not last or (now or _now()) - datetime.fromisoformat(last) >= DRILL_EVERY
+
     async def _record(self, *, ok: bool, at: datetime, result: dict[str, Any] | None = None,
                       error: str | None = None) -> None:  # fmt: skip
         stored = await self._stored()
@@ -170,6 +210,11 @@ class BackupService:
             try:
                 if await self.due():
                     await self.run_now("scheduled")
+                if await self.drill_due():
+                    try:
+                        await self.drill("scheduled")
+                    except backup.BackupError as exc:
+                        logger.error("Backup restore drill failed: %s", exc)
             except asyncio.CancelledError:
                 raise
             except backup.BackupError as exc:
@@ -210,6 +255,7 @@ class BackupService:
             "available": self.available, **conf, "running": self.running, "health": level, "summary": text,
             "last_success_at": stored.get("last_success_at"), "last_attempt_at": stored.get("last_attempt_at"),
             "last_error": stored.get("last_error"), "last_backup": stored.get("last_backup"),
+            "last_drill": stored.get("last_drill"),
             "password_set": bool(stored.get("sealed_key")) or bool(self.settings.backup_password),
             "backups": listing[:50], "restore_pending": backup.pending_restore(self.settings),
             "suggestions": [] if conf["managed"] else await asyncio.to_thread(backup.suggested_folders),
