@@ -1,0 +1,6 @@
+# Vulnerabilities accepted after review, one ID per line (Trivy reads this file in CI).
+# Each entry needs a comment above it: why it does not apply to Argus, who reviewed it, and when to
+# look again. Example:
+#
+#   # Only reachable through a feature Argus does not use (zlib's minizip). Reviewed 2026-11-25; recheck 2027-02.
+#   CVE-2023-45853

@@ -12,8 +12,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # create the GitHub release
-      packages: write   # push the image to ghcr.io
+      contents: write      # create the GitHub release
+      packages: write      # push the image to ghcr.io
+      id-token: write      # keyless signing (Sigstore) and provenance
+      attestations: write  # build provenance attestation
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -55,13 +57,36 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - uses: docker/build-push-action@v7
+      - id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ env.VERSION }}
+
+      # Supply chain: who built this image, from what, and what is in it. Verify before deploying:
+      # see docs/explained/98-supply-chain-security.md.
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign the image (keyless, Sigstore)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "ghcr.io/${{ github.repository_owner }}/argus@${DIGEST}"
+      - name: Attest how the image was built (SLSA provenance)
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/argus
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Software bill of materials (CycloneDX), attached to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm -v "$PWD:/work" -v "$HOME/.docker:/root/.docker:ro" -w /work aquasec/trivy:0.56.2 image --format cyclonedx \
+            --output "argus-${VERSION}-sbom.cdx.json" --no-progress "ghcr.io/${{ github.repository_owner }}/argus@${DIGEST}"
+          gh release upload "$GITHUB_REF_NAME" "argus-${VERSION}-sbom.cdx.json"
 
       - uses: azure/setup-helm@v5
         with:

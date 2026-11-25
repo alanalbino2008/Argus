@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.98.0] — Phase 98: Supply-chain security
+
+### Added
+- **Image vulnerability scan in CI** (Trivy): a critical vulnerability with a fix available fails
+  the build. Reviewed exceptions go in `.trivyignore`, with a reason.
+- **SBOM** (CycloneDX) of the image in every CI run, and attached to every release.
+- **Signed release images** (Sigstore keyless) with a **SLSA build-provenance attestation**; the docs
+  show how to verify both (`cosign verify`, `gh attestation verify`) before deploying by digest.
+
 ## [1.97.0] — Phase 97: Backup restore drills
 
 ### Added

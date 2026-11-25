@@ -232,3 +232,22 @@ jobs:
       - name: Image must not contain secrets, source tree or git history
         run: |
           ! docker run --rm --entrypoint sh argus:ci -c 'ls -a /app; ls /app/.git /app/.env /app/tests 2>/dev/null' | grep -E '\.git|\.env|tests'
+      # Known vulnerabilities in everything inside the image: the base OS packages and every Python
+      # package. A critical one with a fix available fails the build; accepted risks go in .trivyignore,
+      # each with a reason and a review date.
+      - name: Vulnerability scan of the image (fails on fixable critical CVEs)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/work" -w /work \
+            aquasec/trivy:0.56.2 image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 \
+            --ignorefile .trivyignore --no-progress argus:ci
+      - name: Software bill of materials of the image (CycloneDX)
+        if: always()
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/work" -w /work \
+            aquasec/trivy:0.56.2 image --format cyclonedx --output sbom-image.cdx.json --no-progress argus:ci
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sbom
+          path: sbom-image.cdx.json
+          if-no-files-found: warn
