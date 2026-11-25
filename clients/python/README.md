@@ -35,6 +35,29 @@ with ArgusClient("https://argus.example.com", api_key=os.environ["ARGUS_API_KEY"
 * **Anything else**: `argus.get(path, **params)`, `argus.post(path, body)`, `argus.patch(…)` and
   `argus.delete(…)` call any endpoint in the [reference](../../docs/API.md).
 
+* **Cheap polling**: answers that carry an `ETag` (campaigns, TAXII) are remembered and asked for
+  again with `If-None-Match`. While nothing changed, the server answers `304` and the remembered
+  answer is returned; `argus.not_modified` counts how often.
+
+## Reading the TAXII feed
+
+```python
+last_seen = None
+for obj in argus.taxii_objects("lookalikes", added_after=last_seen):  # follows every page
+    print(obj["type"], obj.get("name"))
+```
+
+Collections: `tagged`, `lookalikes`, `fingerprint-servers` and `campaigns`. A TAXII client such as
+OpenCTI or MISP can read the same feed at `/taxii2/<workspace>/` with the same API key.
+
+## Watch health
+
+```python
+for watch in argus.watch_health():  # failing or paused watches, paused first
+    print(watch["kind"], watch["name"], watch["failures"], watch["paused_reason"] or watch["last_message"])
+argus.run_watch("brand", watch_id)  # runs it now; resumes a watch Argus paused
+```
+
 ## Verifying webhooks
 
 ```python

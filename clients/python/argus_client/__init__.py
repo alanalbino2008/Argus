@@ -11,16 +11,23 @@ Rate limits are handled for you: a ``429`` or ``503`` is retried after the serve
 ``Retry-After`` (a few times, then :class:`RateLimited` is raised). Every other error raises an
 :class:`ArgusError` subclass carrying the server's human-readable ``detail``.
 
+Polling is cheap: answers the server marks with an ``ETag`` (campaigns, TAXII) are remembered, and
+asked for again with ``If-None-Match``; while nothing changed the server answers ``304`` and the
+remembered answer is returned. :meth:`ArgusClient.taxii_objects` reads a TAXII collection, page by
+page, as a SIEM connector would.
+
 Webhooks: :func:`verify_webhook` checks a delivery's Standard Webhooks signature.
 """
 
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import hmac
 import time
-from collections.abc import Mapping
+from collections import OrderedDict
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 import httpx
@@ -36,9 +43,11 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.87.0"
+__version__ = "1.88.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
+TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
+MAX_REMEMBERED = 256  # answers kept for conditional requests
 USER_AGENT = f"argus-client-python/{__version__}"
 
 
@@ -114,6 +123,8 @@ class ArgusClient:
         self.max_wait = max_wait
         self._own_http = http is None
         self._http = http or httpx.Client(timeout=timeout, follow_redirects=False)
+        self._remembered: OrderedDict[tuple[Any, ...], tuple[str, Any]] = OrderedDict()  # key -> (ETag, answer)
+        self.not_modified = 0  # answers served from what the server confirmed unchanged
 
     # ------------------------------------------------------------------ plumbing
     def close(self) -> None:
@@ -131,6 +142,7 @@ class ArgusClient:
         clone = ArgusClient(self.base_url, self.api_key, workspace=workspace, max_retries=self.max_retries,
                             max_wait=self.max_wait, http=self._http)  # fmt: skip
         clone._own_http = False
+        clone._remembered = self._remembered  # keyed by workspace, so sharing is safe
         return clone
 
     def _headers(self) -> dict[str, str]:
@@ -142,12 +154,19 @@ class ArgusClient:
         return headers
 
     def request(self, method: str, path: str, *, json: Any = None, params: Mapping[str, Any] | None = None,
-                raw: bool = False) -> Any:  # fmt: skip
+                raw: bool = False, accept: str | None = None) -> Any:  # fmt: skip
         """Call any endpoint. Returns parsed JSON (or the raw response with ``raw=True``)."""
         url = f"{self.base_url}{path}"
         clean = {k: v for k, v in (params or {}).items() if v is not None}
+        headers = self._headers()
+        if accept:
+            headers["Accept"] = accept
+        key = (self.workspace, path, tuple(sorted((k, str(v)) for k, v in clean.items())), accept)
+        remembered = self._remembered.get(key) if method == "GET" and not raw else None
+        if remembered:
+            headers["If-None-Match"] = remembered[0]
         for attempt in range(self.max_retries + 1):
-            response = self._http.request(method, url, json=json, params=clean, headers=self._headers())
+            response = self._http.request(method, url, json=json, params=clean, headers=headers)
             if response.status_code in (429, 503) and attempt < self.max_retries:
                 wait = _retry_after(response)
                 time.sleep(min(self.max_wait, wait if wait is not None else 2.0**attempt))
@@ -159,11 +178,22 @@ class ArgusClient:
             except ValueError:
                 detail = response.text
             raise _ERRORS.get(response.status_code, ArgusError)(response.status_code, detail, response)
+        if response.status_code == 304 and remembered:
+            self.not_modified += 1
+            self._remembered.move_to_end(key)
+            return copy.deepcopy(remembered[1])
         if raw:
             return response
         if response.status_code == 204 or not response.content:
             return None
-        return response.json()
+        body = response.json()
+        tag = response.headers.get("ETag")
+        if method == "GET" and tag:
+            self._remembered[key] = (tag, copy.deepcopy(body))
+            self._remembered.move_to_end(key)
+            while len(self._remembered) > MAX_REMEMBERED:
+                self._remembered.popitem(last=False)
+        return body
 
     def get(self, path: str, **params: Any) -> Any:
         return self.request("GET", path, params=params)
@@ -294,6 +324,48 @@ class ArgusClient:
 
     def fingerprint_watches(self) -> list[dict[str, Any]]:
         return self.get("/api/fingerprint-watches")
+
+    def run_watch(self, kind: str, watch_id: str) -> None:
+        """Run a brand or fingerprint watch now (``kind``: ``brand`` or ``fingerprint``); resumes a paused one."""
+        self.post(f"/api/{_watch_path(kind)}/{watch_id}/run", {})
+
+    def delete_watch(self, kind: str, watch_id: str) -> None:
+        self.delete(f"/api/{_watch_path(kind)}/{watch_id}")
+
+    def watch_health(self) -> list[dict[str, Any]]:
+        """Brand and fingerprint watches that are failing or were paused by Argus, worst first."""
+        every = [("brand", w) for w in self.brand_watches()] + [("fingerprint", w) for w in self.fingerprint_watches()]
+        found = [{"kind": kind, "id": w["id"], "name": w.get("domain") or w.get("label"),
+                  "paused": not w.get("enabled", True), "failures": w.get("failures", 0),
+                  "failing_since": w.get("failing_since"), "paused_reason": w.get("paused_reason"),
+                  "last_message": w.get("last_message", "")}
+                 for kind, w in every if w.get("failures") or w.get("paused_reason")]  # fmt: skip
+        return sorted(found, key=lambda w: (not w["paused"], -w["failures"]))
+
+    # ------------------------------------------------------------------ TAXII 2.1
+    def taxii_root(self) -> str:
+        """The path of this workspace's TAXII API root, e.g. ``/taxii2/ws_default/``."""
+        if self.workspace:
+            return f"/taxii2/{self.workspace}/"
+        default = self.request("GET", "/taxii2/", accept=TAXII_MEDIA_TYPE)["default"]
+        return "/" + default.split("://", 1)[-1].split("/", 1)[-1].lstrip("/")
+
+    def taxii_collections(self) -> list[dict[str, Any]]:
+        return self.request("GET", f"{self.taxii_root()}collections/", accept=TAXII_MEDIA_TYPE)["collections"]
+
+    def taxii_objects(self, collection: str, *, added_after: str | None = None,
+                      page_size: int = 500) -> Iterator[dict[str, Any]]:  # fmt: skip
+        """Every STIX object of a collection (``tagged``, ``lookalikes``, ``fingerprint-servers``,
+        ``campaigns`` or its id), oldest first, following ``next`` across pages. Pass the last
+        ``date_added`` you saw as ``added_after`` to read only what is new."""
+        path = f"{self.taxii_root()}collections/{collection}/objects/"
+        params: dict[str, Any] = {"limit": page_size, "added_after": added_after}
+        while True:
+            page = self.request("GET", path, params=params, accept=TAXII_MEDIA_TYPE)
+            yield from page.get("objects") or []
+            if not page.get("more") or not page.get("next"):
+                return
+            params = {"limit": page_size, "added_after": added_after, "next": page["next"]}
 
     def case_report(self, case_id: str) -> bytes:
         """The whole case as one self-contained HTML file (opens offline; loads nothing, runs no scripts)."""
@@ -593,6 +665,13 @@ class ArgusClient:
 
 
 _SIGNATURE_TAG = '<meta name="argus-signature" content="{}">'
+
+
+def _watch_path(kind: str) -> str:
+    paths = {"brand": "brand-watches", "fingerprint": "fingerprint-watches"}
+    if kind not in paths:
+        raise ValueError("kind is 'brand' or 'fingerprint'")
+    return paths[kind]
 
 
 def verify_report(report: bytes | str, trusted_key: str | None = None) -> dict[str, Any]:

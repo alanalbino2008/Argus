@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.88.0] — Phase 88: The Python client polls cheaply
+
+### Added (Python client)
+- **Conditional requests:** answers with an `ETag` (campaigns, TAXII) are remembered and asked for
+  again with `If-None-Match`; a `304` returns the remembered answer. `not_modified` counts them.
+- **TAXII:** `taxii_root()`, `taxii_collections()` and `taxii_objects(collection, added_after=…)`,
+  which follows every page.
+- **Watches:** `watch_health()` (failing and paused watches), `run_watch(kind, id)` (also resumes a
+  paused watch) and `delete_watch(kind, id)`.
+
 ## [1.87.0] — Phase 87: Watch health for the team that owns the watch
 
 ### Added
