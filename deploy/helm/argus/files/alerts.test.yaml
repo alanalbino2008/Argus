@@ -257,3 +257,19 @@ tests:
         values: '0+10x60'
     alert_rule_test:
       - {eval_time: 50m, alertname: ArgusAuditStreamFailing, exp_alerts: []}
+
+  - name: any integrity problem is critical at once; none raises nothing
+    interval: 1m
+    input_series:
+      - series: 'argus_integrity_problems{instance="a"}'
+        values: '0 0 3 3'
+    alert_rule_test:
+      - {eval_time: 1m, alertname: ArgusIntegrityProblems, exp_alerts: []}
+      - eval_time: 3m
+        alertname: ArgusIntegrityProblems
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: The integrity check found damaged or inconsistent data
+              description: Storage damage, broken references, a broken audit chain or altered evidence was found. Investigate before anything else changes.
+              runbook: Settings > Integrity (or argus --check) lists each problem. Do not delete anything; compare with the latest backup and the pre-upgrade copies.

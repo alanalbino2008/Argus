@@ -79,6 +79,7 @@ from argus.api.executive_service import issue_board_report
 from argus.api.exposure_routes import router as exposure_router
 from argus.api.fingerprint_watch_routes import router as fingerprint_watch_router
 from argus.api.inspect_routes import router as inspect_router
+from argus.api.integrity_routes import router as integrity_router
 from argus.api.legal_routes import router as legal_router
 from argus.api.map_routes import router as map_router
 from argus.api.monitor_routes import router as monitor_router
@@ -456,6 +457,13 @@ async def lifespan(app: FastAPI):
     retention_task = (
         asyncio.create_task(app.state.retention.run_forever(), name="retention") if settings.monitors_enabled else None
     )
+    from argus.storage import integrity as integrity_check
+
+    integrity_task = (
+        asyncio.create_task(integrity_check.run_forever(app), name="integrity-check")
+        if settings.monitors_enabled
+        else None
+    )
     key_expiry_task = (
         asyncio.create_task(key_expiry.run_forever(app), name="key-expiry") if settings.monitors_enabled else None
     )
@@ -501,6 +509,7 @@ async def lifespan(app: FastAPI):
                 key_expiry_task,
                 retention_task,
                 audit_stream_task,
+                integrity_task,
             )
             if t
         ]
@@ -717,6 +726,7 @@ app.include_router(retention_router)
 app.include_router(audit_router)
 app.include_router(session_router)
 app.include_router(scim_router)
+app.include_router(integrity_router)
 register_scim_errors(app)
 
 

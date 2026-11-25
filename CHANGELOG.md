@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.96.0] — Phase 96: Integrity check
+
+### Added
+- **Integrity check** of storage (SQLite `integrity_check`), every foreign-key reference (orphaned
+  rows), the audit hash chain and every piece of evidence (file hashes, manifests, chains of custody).
+  It runs weekly, on demand from Settings → Integrity (`POST /api/integrity/check`), and as
+  `argus --check` (exit code 1 on problems). Read-only; skips the encrypted parts while the case vault
+  is locked.
+- `argus_integrity_problems` and the critical `ArgusIntegrityProblems` alert (promtool-tested);
+  every run is audited.
+
 ## [1.95.0] — Phase 95: Safe upgrades
 
 ### Added

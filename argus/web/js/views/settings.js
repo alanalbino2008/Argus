@@ -221,6 +221,11 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "integrity-check") {
+        btn.disabled = true;
+        btn.textContent = "Checking…";
+        const result = await api.post("/api/integrity/check");
+        toast(result.ok ? "Everything is whole" : `${result.problems} problem(s) found`, result.ok ? "success" : "error", 6000);
       } else if (act === "scim-unmap") {
         await api.put("/api/scim/group-roles", { group: btn.dataset.group, workspace_id: btn.dataset.ws, role: null });
         toast("Mapping removed: its members lose that access", "success");
@@ -441,15 +446,16 @@ export async function refresh() {
     wsAdmin ? api.get("/api/access-policy").catch(() => null) : null,
     wsAdmin ? api.get("/api/notifications/channels").catch(() => null) : null,
     platform ? api.get("/api/scim/group-roles").catch(() => null) : null,
+    platform ? api.get("/api/integrity").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels, scim] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels, scim, integrity] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy, scim };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy, scim, integrity, integrityLoaded: platform };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -462,6 +468,23 @@ function themeChooser() {
   const choice = window.argusTheme.choice();
   return html`<div class="segmented">${[["light", "Light"], ["dark", "Dark"], ["system", "System"]].map(([v, l]) =>
     html`<button class="${choice === v ? "active" : ""}" data-theme-choice="${v}">${l}</button>`)}</div>`;
+}
+
+// Phase 96: is everything still whole?
+function integrityCard() {
+  if (!data.integrityLoaded) return "";
+  const r = data.integrity;
+  const label = { storage: "Storage", references: "References", audit_chain: "Audit chain", evidence: "Evidence" };
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Integrity</h2><p class="muted small">Checks the database for damage, every reference between records, the audit chain and every piece of evidence against its fingerprint. Runs weekly; nothing is changed.</p></div>
+      <button class="btn" data-act="integrity-check">${ico("shield")}Check now</button></div>
+    ${r ? html`<p class="small">${r.ok ? html`<span class="pill ok">Whole</span>` : html`<span class="pill critical">${r.problems} problem(s)</span>`} Checked ${timeAgo(r.checked_at)}.</p>
+      <table class="table"><tbody>${r.checks.map((c) => html`<tr>
+        <td><b>${label[c.name] || c.name}</b><div class="muted small">${c.detail}</div></td>
+        <td>${c.skipped ? html`<span class="pill">skipped</span>` : c.ok ? html`<span class="pill ok">ok</span>` : html`<span class="pill critical">${c.count}</span>`}</td>
+        <td class="small">${c.problems.map((p) => html`<div>${p}</div>`)}${c.count > c.problems.length ? html`<div class="muted">… and ${c.count - c.problems.length} more</div>` : ""}</td>
+      </tr>`)}</tbody></table>` : html`<p class="muted small">Not checked yet.</p>`}
+  </div>`;
 }
 
 // Phase 94: users and groups provisioned by the identity provider, and what the groups give.
@@ -1103,7 +1126,7 @@ function render() {
     ${apiCard()}
     ${brandingCard()}
     ${verifyCard()}
-    ${admin ? html`${platform ? usersCard() : ""}${platform ? scimCard() : ""}${approvalsCard()}${accessCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
+    ${admin ? html`${platform ? usersCard() : ""}${platform ? scimCard() : ""}${platform ? integrityCard() : ""}${approvalsCard()}${accessCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
 }

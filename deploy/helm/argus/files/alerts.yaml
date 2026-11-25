@@ -187,6 +187,14 @@ groups:
           description: Every attempt to forward audit entries failed for 30 minutes. Nothing is lost - entries wait at the stream's checkpoint - but the SIEM is blind to what happens in Argus until it recovers.
           runbook: Settings > Audit log streams shows the last error; check the Splunk or Sentinel destination's credentials in Monitoring > Notifications.
 
+      - alert: ArgusIntegrityProblems
+        expr: max(argus_integrity_problems) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: The integrity check found damaged or inconsistent data
+          description: Storage damage, broken references, a broken audit chain or altered evidence was found. Investigate before anything else changes.
+          runbook: Settings > Integrity (or argus --check) lists each problem. Do not delete anything; compare with the latest backup and the pre-upgrade copies.
+
       - alert: ArgusEgressBlocked
         expr: sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) > 0
         labels: {severity: info}

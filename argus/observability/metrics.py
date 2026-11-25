@@ -233,6 +233,14 @@ AUDIT_STREAM_LAG = Gauge(
 )
 
 
+INTEGRITY_PROBLEMS = Gauge(
+    "argus_integrity_problems", "Problems the last integrity check found (0: everything is whole)", registry=REGISTRY
+)
+INTEGRITY_LAST_RUN = Gauge(
+    "argus_integrity_last_run_timestamp_seconds", "Unix time of this replica's last integrity check", registry=REGISTRY
+)
+
+
 def watch_run(kind: str, status: str, seconds: float) -> None:
     """Record one finished watch run (status ok, partial or error)."""
     import time

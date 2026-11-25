@@ -459,6 +459,44 @@ def verify_report_cli(path: str, trusted_key: str | None) -> int:
     return 0
 
 
+async def integrity_cli() -> int:
+    """0: everything is whole; 1: problems found (each listed)."""
+    from types import SimpleNamespace
+
+    from argus.core.settings import get_settings
+    from argus.storage import integrity
+    from argus.storage.case_repo import CaseRepository
+    from argus.storage.db import Database
+    from argus.storage.security_repo import AuditLog
+    from argus.storage.subscriber_repo import AppStateRepository
+    from argus.storage.vault_store import VaultService
+
+    db = Database(get_settings().database_url)
+    try:
+        state = AppStateRepository(db)
+        await VaultService(db, state).load()  # so a locked vault is known, not misread as damage
+        result = await integrity.run(SimpleNamespace(db=db, audit=AuditLog(db), cases=CaseRepository(db)))
+    finally:
+        await db.dispose()
+    for check in result["checks"]:
+        mark = (
+            "[yellow]skipped[/yellow]"
+            if check.get("skipped")
+            else "[green]ok[/green]"
+            if check["ok"]
+            else "[red]PROBLEMS[/red]"
+        )
+        console.print(f"{check['name']:<12} {mark}  {check['detail']} ({check['seconds']} s)")
+        for problem in check["problems"]:
+            console.print(f"    - {problem}")
+        if check["count"] > len(check["problems"]):
+            console.print(f"    … and {check['count'] - len(check['problems'])} more")
+    console.print(
+        "[green]Everything is whole.[/green]" if result["ok"] else f"[red]{result['problems']} problem(s) found.[/red]"
+    )
+    return 0 if result["ok"] else 1
+
+
 def verify_audit_cli(path: str, trusted_key: str | None) -> int:
     """0: the audit export is intact and signed (by the given public key, if one was given); 1 otherwise."""
     from pathlib import Path
@@ -553,6 +591,8 @@ def cli_entrypoint():
     )
     parser.add_argument("--verify-report", metavar="FILE", help="Check a signed case report, then exit")
     parser.add_argument("--verify-audit", metavar="FILE", help="Check an audit log export (JSON Lines), then exit")
+    parser.add_argument("--check", action="store_true",
+                        help="Check the database, its references, the audit chain and all evidence, then exit")  # fmt: skip
     parser.add_argument(
         "--report-key", metavar="KEY",
         help="With --verify-report: the issuer's public key or key id; with --verify-audit: its public key",
@@ -570,6 +610,8 @@ def cli_entrypoint():
         raise SystemExit(verify_report_cli(args.verify_report, args.report_key))
     if args.verify_audit:
         raise SystemExit(verify_audit_cli(args.verify_audit, args.report_key))
+    if args.check:
+        raise SystemExit(asyncio.run(integrity_cli()))
 
     if args.migrate:
         revision = asyncio.run(migrate_cli(float(os.environ.get("ARGUS_MIGRATE_WAIT_SECONDS", "90"))))
