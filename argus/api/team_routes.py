@@ -32,8 +32,8 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 INVITE_TTL = timedelta(days=7)
 SETUP_TTL = timedelta(days=7)  # a created account's "choose your password" link
-_invites = SlidingWindowLimiter(limit=30, window=3600)  # invitations per team an hour
-_joins = SlidingWindowLimiter(limit=10, window=3600)  # join attempts per address an hour
+_invites = SlidingWindowLimiter(limit=30, window=3600, name="team_invites")  # invitations per team an hour
+_joins = SlidingWindowLimiter(limit=10, window=3600, name="team_joins")  # join attempts per address an hour
 
 
 class LicenceBody(BaseModel):
@@ -113,7 +113,7 @@ async def _check_room(request: Request, owner: dict[str, Any], email: str) -> st
     if not request.app.state.mailer.enabled:
         raise HTTPException(status_code=503, detail="Accounts and invitations are sent by email, which isn't set up: "
                                                     "contact support")  # fmt: skip
-    if not _invites.hit(owner["id"]):
+    if not await _invites.allow(owner["id"]):
         raise HTTPException(status_code=429, detail="Too many invitations this hour; try later")
     return email
 
@@ -238,7 +238,7 @@ async def _invitation(request: Request, token: str) -> tuple[dict[str, Any], dic
 @router.post("/join/info")
 async def team_join_info(body: JoinInfo, request: Request):
     """What the join page shows: whose team, and whether the invited email already has an account."""
-    _limit(request)
+    await _limit(request)
     invite, owner = await _invitation(request, body.token)
     exists = await request.app.state.subscribers.by_email(invite["email"]) is not None
     return {"team": _team_name(owner), "email": invite["email"], "has_account": exists}
@@ -248,8 +248,8 @@ async def team_join_info(body: JoinInfo, request: Request):
 async def team_join(body: JoinBody, request: Request):
     """Join with the invited email: its password if it has an account, or a new account."""
     repo, _private = _service(request)
-    _limit(request)
-    if not _joins.hit(client_ip(request) or "unknown"):
+    await _limit(request)
+    if not await _joins.allow(client_ip(request) or "unknown"):
         raise HTTPException(status_code=429, detail="Too many attempts; try later")
     invite, owner = await _invitation(request, body.token)
     found = await repo.by_email(invite["email"])

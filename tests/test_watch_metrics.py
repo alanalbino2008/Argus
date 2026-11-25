@@ -91,16 +91,16 @@ def test_takedown_steps_are_counted(bw):  # noqa: F811
     }
 
 
-def test_refusals_are_counted_by_limit():
+async def test_refusals_are_counted_by_limit():
     from fastapi import HTTPException
 
     from argus.api.deps import cooldown, throttle
 
     limiter = SlidingWindowLimiter(limit=1, window=60, name="test_limit")
     before = _value("argus_rate_limited_total", limit="test_limit")
-    throttle(limiter, "k", "slow down")
+    await throttle(limiter, "k", "slow down")
     with pytest.raises(HTTPException) as refused:
-        throttle(limiter, "k", "slow down")
+        await throttle(limiter, "k", "slow down")
     assert refused.value.status_code == 429
     assert _value("argus_rate_limited_total", limit="test_limit") == before + 1
 

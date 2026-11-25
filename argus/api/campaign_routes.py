@@ -116,7 +116,7 @@ async def list_campaigns(request: Request, response: Response, ws: WorkspaceCont
     tag, unchanged = _conditional(request, version, "campaigns")
     if unchanged is not None:
         return unchanged
-    throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
+    await throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
     response.headers["ETag"], response.headers["Cache-Control"] = tag, "private, no-cache"
     return await computed(request, ws.id, version)
 
@@ -134,7 +134,7 @@ async def campaign_takedown(campaign_id: str, body: CampaignTakedown, request: R
     Calling it again re-shows the reports, and drafts only domains that have no open takedown yet."""
     from argus.intel import takedown
 
-    throttle(_campaign_takedown_limiter, ws.principal.key_id, "Too many campaign takedowns; wait a minute")
+    await throttle(_campaign_takedown_limiter, ws.principal.key_id, "Too many campaign takedowns; wait a minute")
     campaign = next((c for c in await campaigns_of(request, ws.id) if c["id"] == campaign_id), None)
     if campaign is None:
         raise HTTPException(status_code=404, detail="Campaign not found (its membership may have changed)")
@@ -204,7 +204,7 @@ async def brand_protection_summary(request: Request, ws: WorkspaceContext = VIEW
     """Lookalikes found, open threats, takedowns (with median time to takedown), campaigns and weekly trend."""
     from argus.intel.brand_metrics import summarise
 
-    throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
+    await throttle(_read_limiter, ws.principal.key_id, "Too many requests; wait a minute")
     days = max(7, min(days, 365))
     watches = await request.app.state.brand_watches.first_seen(ws.id, triage=False)
     return summarise(watches, await campaigns_of(request, ws.id), days=days)
@@ -264,7 +264,7 @@ async def brand_protection_report(body: BrandReportRequest, request: Request, ws
     """The brand-protection report as a PDF, registered like every Argus report (verifiable by SHA-256)."""
     from fastapi import Response
 
-    throttle(_report_limiter, ws.principal.key_id, "Too many reports; wait a minute")
+    await throttle(_report_limiter, ws.principal.key_id, "Too many reports; wait a minute")
     issued = await issue_brand_report(request.app, ws.workspace, days=body.days, tlp=body.tlp,
                                       prepared_for=body.prepared_for.strip(), issued_by=ws.principal.name)  # fmt: skip
     await audit(request, ws.principal, "report.brand", issued["record"]["id"], details={"sha256": issued["sha256"]})

@@ -20,7 +20,7 @@ VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
 Period = Literal[30, 90, 180]
 PERIODS = (30, 90, 180)
-_board_limiter = SlidingWindowLimiter(limit=6, window=60)  # rendering costs CPU
+_board_limiter = SlidingWindowLimiter(limit=6, window=60, name="board_report")  # rendering costs CPU
 
 
 class BoardReportRequest(BaseModel):
@@ -43,7 +43,7 @@ async def executive_overview(
 @router.post("/report")
 async def board_report(body: BoardReportRequest, request: Request, ws: WorkspaceContext = ANALYST):
     """A two-page board report (PDF). Its fingerprint is registered so copies can be verified."""
-    if not _board_limiter.hit(ws.principal.key_id):
+    if not await _board_limiter.allow(ws.principal.key_id):
         metrics.RATE_LIMITED.labels("board_report").inc()
         raise HTTPException(status_code=429, detail="Too many reports; try again in a minute")
     issued = await issue_board_report(request.app, ws.workspace, days=body.days, tlp=body.tlp,

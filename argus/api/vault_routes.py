@@ -26,8 +26,8 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api/vault", tags=["vault"])
 ADMIN = Depends(require_platform_admin)
 OPEN_WHILE_LOCKED = ("/api/vault", "/api/health", "/api/live", "/api/auth/config", "/api/auth/logout", "/api/personal/")
-_attempts = SlidingWindowLimiter(limit=5, window=60)  # per caller
-_attempts_all = SlidingWindowLimiter(limit=20, window=300)  # everyone together
+_attempts = SlidingWindowLimiter(limit=5, window=60, name="vault_unlock")  # per caller
+_attempts_all = SlidingWindowLimiter(limit=20, window=300, name="vault_unlock_all")  # everyone together
 
 
 class Passphrase(BaseModel):
@@ -103,7 +103,7 @@ async def unlock_vault(body: UnlockRequest, request: Request, principal: Princip
         raise HTTPException(status_code=409, detail="No vault is set up")
     if not vault.locked():
         return _service(request).status()
-    if not _attempts.hit(principal.key_id) or not _attempts_all.hit("all"):
+    if not await _attempts.allow(principal.key_id) or not await _attempts_all.allow("all"):
         raise HTTPException(status_code=429, detail="Too many attempts: wait a few minutes")
     started = time.monotonic()
     try:
@@ -135,7 +135,7 @@ async def lock_vault(request: Request, principal: Principal = ADMIN):
 
 @router.post("/passphrase")
 async def change_passphrase(body: ChangeRequest, request: Request, principal: Principal = ADMIN):
-    if not _attempts.hit(principal.key_id):
+    if not await _attempts.allow(principal.key_id):
         raise HTTPException(status_code=429, detail="Too many attempts: wait a minute")
     try:
         await _service(request).change_passphrase(body.current, body.new)
@@ -148,7 +148,7 @@ async def change_passphrase(body: ChangeRequest, request: Request, principal: Pr
 @router.post("/recovery-code")
 async def new_recovery_code(body: Passphrase, request: Request, principal: Principal = ADMIN):
     """Replace the recovery code (the old one stops working). Shown once."""
-    if not _attempts.hit(principal.key_id):
+    if not await _attempts.allow(principal.key_id):
         raise HTTPException(status_code=429, detail="Too many attempts: wait a minute")
     try:
         code = await _service(request).new_recovery_code(body.passphrase)
@@ -163,7 +163,7 @@ async def disable_vault(body: Passphrase, request: Request, principal: Principal
     """Decrypt everything and turn the vault off."""
     if not vault.STATE.enabled:
         raise HTTPException(status_code=409, detail="No vault is set up")
-    if not _attempts.hit(principal.key_id):
+    if not await _attempts.allow(principal.key_id):
         raise HTTPException(status_code=429, detail="Too many attempts: wait a minute")
     busy = _busy(request)
     if busy:

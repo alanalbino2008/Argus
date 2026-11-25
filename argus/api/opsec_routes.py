@@ -33,7 +33,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api/opsec", tags=["opsec"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
-_check_limiter = SlidingWindowLimiter(limit=6, window=60)
+_check_limiter = SlidingWindowLimiter(limit=6, window=60, name="route_check")
 CHECK_TIMEOUT = 40
 
 
@@ -134,7 +134,7 @@ async def verify_route(name: str, request: Request, ws: WorkspaceContext = ANALY
     route = find_route(settings, name)
     if route is None:
         raise HTTPException(status_code=422, detail="Choose a route to test")
-    if not _check_limiter.hit(ws.principal.key_id):
+    if not await _check_limiter.allow(ws.principal.key_id):
         raise HTTPException(status_code=429, detail="Too many route tests; wait a minute")
     result = await check_route(route, settings)
     await audit(request, ws.principal, "opsec.route_check", name,

@@ -27,7 +27,7 @@ SETUP_TTL = timedelta(minutes=15)
 LOCK_AFTER, LOCK_FOR = 5, timedelta(minutes=15)
 CONFIRM_FOR = timedelta(minutes=10)  # a code is fresh enough for sensitive changes this long
 PENDING_KEY = "owner_setup_pending"
-_attempts = SlidingWindowLimiter(limit=30, window=600)  # per address, for every sign-in step
+_attempts = SlidingWindowLimiter(limit=30, window=600, name="owner_sign_in")  # per address, for every sign-in step
 OWNER = Principal(key_id="owner", name="owner", role=Role.ADMIN)
 
 
@@ -67,10 +67,10 @@ def _enabled(request: Request) -> Any:
     return settings
 
 
-def _guard(request: Request) -> None:
+async def _guard(request: Request) -> None:
     if request.method != "GET" and not _same_origin(request):
         raise HTTPException(status_code=403, detail="Cross-site request refused")
-    if not _attempts.hit(client_ip(request) or "unknown"):
+    if not await _attempts.allow(client_ip(request) or "unknown"):
         raise HTTPException(status_code=429, detail="Too many attempts from this address; wait a few minutes")
 
 
@@ -158,7 +158,7 @@ async def owner_state(request: Request):
 
 async def _setup_checks(request: Request, body: SetupStart) -> str:
     settings = _enabled(request)
-    _guard(request)
+    await _guard(request)
     if await request.app.state.owner.get() is not None:
         raise HTTPException(status_code=409, detail="The owner is already set up")
     if not settings.owner_email:
@@ -230,7 +230,7 @@ async def owner_setup_finish(body: SetupFinish, request: Request, response: Resp
 async def owner_login(body: Login, request: Request, response: Response):
     """Step 1 of signing in: email and password."""
     settings = _enabled(request)
-    _guard(request)
+    await _guard(request)
     owner = await _locked(request)
     stored = owner["password_hash"] if owner else DUMMY_HASH
     ok = await asyncio.to_thread(verify_password, body.password, stored)  # same work whether or not it matches
@@ -246,7 +246,7 @@ async def owner_login(body: Login, request: Request, response: Response):
 async def owner_verify(body: Code, request: Request, response: Response):
     """Step 2: the authenticator code (or a recovery code)."""
     settings = _enabled(request)
-    _guard(request)
+    await _guard(request)
     owner = await _locked(request)
     token = request.cookies.get(COOKIE)
     if owner is None or not token or await owner_session(request, stage="code") is None:
@@ -274,7 +274,7 @@ async def owner_verify(body: Code, request: Request, response: Response):
 async def owner_confirm(body: Code, request: Request):
     """A fresh code before a sensitive change (keys, passwords, payments)."""
     await require_owner(request)
-    _guard(request)
+    await _guard(request)
     owner = await _locked(request)
     if owner is None or await _check_code(request, owner, body.code) is None:
         raise await _wrong(request, owner, "code")

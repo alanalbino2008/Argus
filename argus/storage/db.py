@@ -848,6 +848,17 @@ class EntityAnnotationRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class RateLimitCounterRow(Base):
+    """Attempts per limiter, key (hashed) and fixed window, shared by every replica (Phase 86)."""
+
+    __tablename__ = "rate_limit_counters"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    key: Mapped[str] = mapped_column(String(32), primary_key=True)
+    window_start: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    count: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class DataVersionRow(Base):
     """A counter per workspace, raised by every write that changes what campaigns and TAXII serve
     (lookalikes, brand and fingerprint watches, annotations). Results computed from that data are

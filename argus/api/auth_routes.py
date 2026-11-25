@@ -33,7 +33,7 @@ from argus.storage.user_repo import UserRepository
 logger = logging.getLogger("argus.api.sso")
 router = APIRouter(tags=["single sign-on"])
 LOGIN_TTL = timedelta(minutes=10)
-_login_limiter = SlidingWindowLimiter(limit=30, window=60)  # per client IP
+_login_limiter = SlidingWindowLimiter(limit=30, window=60, name="login")  # per client IP
 
 
 def _provider(request: Request) -> OidcProvider:
@@ -68,7 +68,7 @@ async def auth_config(request: Request):
 @router.get("/auth/oidc/login")
 async def oidc_login(request: Request, return_to: str | None = Query(None, max_length=512)):
     provider = _provider(request)
-    if not _login_limiter.hit(client_ip(request) or "unknown"):
+    if not await _login_limiter.allow(client_ip(request) or "unknown"):
         metrics.RATE_LIMITED.labels("sso_login").inc()
         raise HTTPException(status_code=429, detail="Too many sign-in attempts")
     state, nonce, verifier = new_login_secrets()

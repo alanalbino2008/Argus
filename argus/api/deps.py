@@ -144,9 +144,9 @@ def _rate_limit(request: Request, key_id: str) -> None:
         )
 
 
-def throttle(limiter: Any, key: str, message: str) -> None:
+async def throttle(limiter: Any, key: str, message: str) -> None:
     """Refuse with 429 and Retry-After when ``key`` has used up ``limiter``."""
-    if not limiter.hit(key):
+    if not await limiter.allow(key):
         from argus.observability import metrics
 
         metrics.RATE_LIMITED.labels(getattr(limiter, "name", None) or "endpoint").inc()

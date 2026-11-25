@@ -279,13 +279,19 @@ async def lifespan(app: FastAPI):
     from argus.storage.data_version import VersionedCache
 
     app.state.derived_cache = VersionedCache(maxsize=128)  # campaigns and TAXII, per data version (Phase 85)
+    from argus.security import ratelimit
+
+    if settings.shared_rate_limits:
+        ratelimit.use_database(db)  # named limiters hold for the whole deployment (Phase 86)
+    else:
+        ratelimit.use_memory()
     app.state.keys = ApiKeyRepository(db)
     app.state.users = UserRepository(db)
     app.state.workspaces = WorkspaceRepository(db)
     app.state.oidc = OidcProvider(settings) if settings.oidc_issuer and settings.oidc_client_id else None
     app.state.audit = AuditLog(db)
     app.state.ws_tickets = TicketStore(db, settings.ws_ticket_ttl_seconds)
-    app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60)
+    app.state.scan_limiter = SlidingWindowLimiter(settings.scans_per_minute, 60, name="scans_per_minute")
     app.state.api_limiter = (
         SlidingWindowLimiter(settings.api_requests_per_minute, 60) if settings.api_requests_per_minute else None
     )
@@ -440,6 +446,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        ratelimit.use_memory()  # the database is closed below
         background = [
             t
             for t in (
@@ -922,7 +929,7 @@ async def _rescan(app: FastAPI, config: ScanConfig, principal: Principal, purpos
             status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
         )
     limiter: SlidingWindowLimiter = app.state.scan_limiter
-    if not limiter.hit(principal.key_id):
+    if not await limiter.allow(principal.key_id):
         metrics.RATE_LIMITED.labels("scans_per_minute").inc()
         raise HTTPException(status_code=429, detail="Scan rate limit exceeded",
                             headers={"Retry-After": str(limiter.retry_after(principal.key_id))})  # fmt: skip
@@ -1321,7 +1328,7 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
             status_code=429, detail=f"Server is at its limit of {settings.max_concurrent_scans} concurrent scans"
         )
     limiter: SlidingWindowLimiter = request.app.state.scan_limiter
-    if not limiter.hit(principal.key_id):
+    if not await limiter.allow(principal.key_id):
         metrics.RATE_LIMITED.labels("scans_per_minute").inc()
         raise HTTPException(
             status_code=429,
@@ -1485,7 +1492,7 @@ class InternetSearchRequest(BaseModel):
     )
 
 
-_internet_search_limiter = SlidingWindowLimiter(limit=10, window=60)
+_internet_search_limiter = SlidingWindowLimiter(limit=10, window=60, name="internet_search")
 ENGINE_NAMES = {"shodan": "Shodan", "censys": "Censys"}
 
 
@@ -1532,7 +1539,7 @@ async def internet_search_pivot(
     if not key:
         setting = "ARGUS_SHODAN_API_KEY" if req.engine == "shodan" else "ARGUS_CENSYS_API_TOKEN"
         raise HTTPException(status_code=409, detail=f"Internet search needs a {name} key ({setting})")
-    if not _internet_search_limiter.hit(f"{ws.id}:{ws.principal.key_id}"):
+    if not await _internet_search_limiter.allow(f"{ws.id}:{ws.principal.key_id}"):
         raise HTTPException(status_code=429, detail="Too many internet searches: try again in a minute")
     try:
         async with outbound_client(settings, None) as http:
@@ -1692,7 +1699,7 @@ class ReportRequest(BaseModel):
     )
 
 
-_report_limiter = SlidingWindowLimiter(limit=10, window=60)  # per principal: PDF rendering costs CPU
+_report_limiter = SlidingWindowLimiter(limit=10, window=60, name="report")  # per principal: PDF rendering costs CPU
 
 
 @app.post("/api/investigation/{inv_id}/report")
@@ -1706,7 +1713,7 @@ async def generate_report(
     inv = await _resolve(inv_id, repo, ws.id)
     if inv.status.value in ACTIVE_STATUSES:
         raise HTTPException(status_code=409, detail="The scan is still running; generate the report when it finishes")
-    if not _report_limiter.hit(principal.key_id):
+    if not await _report_limiter.allow(principal.key_id):
         metrics.RATE_LIMITED.labels("report").inc()
         raise HTTPException(status_code=429, detail="Too many reports; try again in a minute")
     graph = await _resolve_graph(inv_id, repo, ws.id)

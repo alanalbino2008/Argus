@@ -48,7 +48,7 @@ _limiter = SlidingWindowLimiter(
 async def _workspace(
     workspace: str, request: Request, principal: Principal = Depends(get_principal)
 ) -> WorkspaceContext:
-    throttle(_limiter, principal.key_id, "Too many TAXII requests; wait a minute")
+    await throttle(_limiter, principal.key_id, "Too many TAXII requests; wait a minute")
     return await resolve_workspace(request, principal, ref=workspace)
 
 

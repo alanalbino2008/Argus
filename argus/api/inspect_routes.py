@@ -22,12 +22,12 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api", tags=["cases"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 INSPECT_TIMEOUT = 60
-_limiter = SlidingWindowLimiter(limit=30, window=60)
+_limiter = SlidingWindowLimiter(limit=30, window=60, name="inspect")
 
 
 async def _file(request: Request, ws: WorkspaceContext, capture_id: str, name: str, action: str) -> tuple[str, bytes]:
     await _capture(request, ws, capture_id)
-    if not _limiter.hit(ws.principal.key_id):
+    if not await _limiter.allow(ws.principal.key_id):
         raise HTTPException(status_code=429, detail="Too many inspections; wait a minute")
     found = await _repo(request).file(capture_id, name, by=ws.principal.name, action=action)
     if found is None:

@@ -28,7 +28,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api", tags=["analyst"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
-_limiter = SlidingWindowLimiter(limit=6, window=60)
+_limiter = SlidingWindowLimiter(limit=6, window=60, name="analyst")
 Task = Literal["brief", "extract", "report"]
 
 
@@ -139,7 +139,7 @@ async def run_analyst(case_id: str, body: AnalystRequest, request: Request, ws: 
     if ai_access() is None:
         raise HTTPException(status_code=503, detail="The AI analyst needs an Argus account (Argus Connect) or "
                                                     "your own Claude API key (ARGUS_ANTHROPIC_API_KEY)")  # fmt: skip
-    if not _limiter.hit(ws.principal.key_id):
+    if not await _limiter.allow(ws.principal.key_id):
         raise HTTPException(status_code=429, detail="Too many analyst requests; wait a minute")
     case = await _case(request, ws, case_id)
     try:

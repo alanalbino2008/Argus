@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ADMIN = Depends(in_workspace(Role.ADMIN))
 SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
-_verify_limiter = SlidingWindowLimiter(limit=60, window=60)  # per client IP
+_verify_limiter = SlidingWindowLimiter(limit=60, window=60, name="report_verify")  # per client IP
 
 
 class BrandingRequest(BaseModel):
@@ -100,7 +100,7 @@ async def get_logo(request: Request, ws: WorkspaceContext = VIEWER):
 @router.get("/verify/{sha256}")
 async def verify_report(sha256: str, request: Request):
     """Public: is this file a genuine, unmodified report issued by this Argus?"""
-    if not _verify_limiter.hit(client_ip(request) or "unknown"):
+    if not await _verify_limiter.allow(client_ip(request) or "unknown"):
         metrics.RATE_LIMITED.labels("report_verify").inc()
         raise HTTPException(status_code=429, detail="Too many verification requests")
     if not SHA256.match(sha256):

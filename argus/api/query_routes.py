@@ -17,7 +17,7 @@ from argus.storage.saved_query_repo import MAX_SAVED_QUERIES
 router = APIRouter(prefix="/api", tags=["query"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
-_hunt_limiter = SlidingWindowLimiter(limit=20, window=60)  # hunts load many graphs: keep them occasional
+_hunt_limiter = SlidingWindowLimiter(limit=20, window=60, name="hunt")  # hunts load many graphs: keep them occasional
 
 Severity = Literal["low", "medium", "high", "critical"]
 
@@ -105,7 +105,7 @@ async def hunt(body: HuntRequest, request: Request, ws: WorkspaceContext = VIEWE
     Bounded by ``investigations`` (at most 200) and a 25-second budget; ``partial`` says when the
     budget ran out first.
     """
-    if not _hunt_limiter.hit(f"{ws.id}:{ws.principal.key_id}"):
+    if not await _hunt_limiter.allow(f"{ws.id}:{ws.principal.key_id}"):
         raise HTTPException(status_code=429, detail="Too many hunts: try again in a minute")
     try:
         result = await hunting.hunt(

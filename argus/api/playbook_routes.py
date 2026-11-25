@@ -145,7 +145,7 @@ async def start_run(case_id: str, body: PlaybookRequest, request: Request, ws: W
         raise HTTPException(
             status_code=409, detail="A playbook is already running in this case; wait for it or stop it"
         )
-    if not request.app.state.scan_limiter.hit(ws.principal.key_id):
+    if not await request.app.state.scan_limiter.allow(ws.principal.key_id):
         raise HTTPException(status_code=429, detail="Scan rate limit exceeded")
     available = _available()
     steps = []

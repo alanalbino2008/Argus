@@ -384,6 +384,10 @@ class Settings(BaseSettings):
     watch_run_cooldown_seconds: float = Field(
         default=600.0, ge=0, description="Minimum time between runs of one brand or fingerprint watch started by hand"
     )
+    shared_rate_limits: bool = Field(
+        default=True,
+        description="Count sign-in, unlock and other named rate limits in the database, so they hold across every replica",
+    )
     brand_watch_enabled: bool = Field(
         default=True, description="Look for lookalike domains of watched brands in Certificate Transparency"
     )

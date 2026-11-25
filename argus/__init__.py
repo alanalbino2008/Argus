@@ -5,5 +5,5 @@ Argus delivers rapid cross-platform reconnaissance, recursive infrastructure
 mapping, and interactive link analysis.
 """
 
-__version__ = "1.85.0"
+__version__ = "1.86.0"
 __author__ = "Argus Intelligence"

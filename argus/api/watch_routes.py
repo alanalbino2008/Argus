@@ -18,7 +18,7 @@ from argus.security.ratelimit import SlidingWindowLimiter
 router = APIRouter(prefix="/api", tags=["cases"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
-_check_limiter = SlidingWindowLimiter(limit=10, window=60)
+_check_limiter = SlidingWindowLimiter(limit=10, window=60, name="account_watch_check")
 MAX_WATCHES = 100  # per case
 
 
@@ -124,7 +124,7 @@ async def check_account_watch(case_id: str, watch_id: str, request: Request, ws:
     watch = await _repo(request).get(watch_id, case_id)
     if watch is None:
         raise HTTPException(status_code=404, detail="Watch not found")
-    if not _check_limiter.hit(ws.principal.key_id):
+    if not await _check_limiter.allow(ws.principal.key_id):
         raise HTTPException(status_code=429, detail="Too many checks; wait a minute")
     result = await request.app.state.account_watcher.check(watch)
     await audit(request, ws.principal, "account_watch.check", watch_id, details={"status": result["status"]})

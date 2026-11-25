@@ -89,7 +89,7 @@ async def report_signing_key(request: Request):
 @router.post("/reports/verify")
 async def verify_signed_report(request: Request, file: UploadFile = File(...), ws: WorkspaceContext = VIEWER):
     """Check a case report: unaltered since it was signed (``valid``), and signed by this server (``trusted``)."""
-    throttle(_verify_limiter, ws.principal.key_id, "Too many verifications; wait a minute")
+    await throttle(_verify_limiter, ws.principal.key_id, "Too many verifications; wait a minute")
     data = await file.read(MAX_VERIFY_BYTES + 1)
     if len(data) > MAX_VERIFY_BYTES:
         raise HTTPException(status_code=413, detail="That file is larger than any Argus report")

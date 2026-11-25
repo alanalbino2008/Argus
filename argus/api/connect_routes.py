@@ -31,7 +31,7 @@ from argus.security.auth import Principal
 from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api", tags=["accounts"])
-_per_account = SlidingWindowLimiter(limit=120, window=60)
+_per_account = SlidingWindowLimiter(limit=120, window=60, name="connect")
 KEYS = {"companies_house": "companies_house_api_key", "web_search": "web_search_api_key",
         "opencorporates": "opencorporates_api_key", "courtlistener": "courtlistener_api_key",
         "tineye": "tineye_api_key"}  # fmt: skip
@@ -84,7 +84,7 @@ async def _customer(request: Request, token: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=402, detail=f"Your subscription is {account['status']}: renew to use Argus Connect"
         )
-    if not _per_account.hit(account["id"]):
+    if not await _per_account.allow(account["id"]):
         raise HTTPException(status_code=429, detail="Too many lookups; wait a minute")
     return {**account, "pool": teams.pool_id(account)}
 

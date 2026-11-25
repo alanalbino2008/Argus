@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.86.0] — Phase 86: Rate limits that hold across replicas
+
+### Security
+- **Rate limits are shared by every replica.** Sign-in, vault unlock, sign-up, password reset, team
+  invitations and joins, scans, Shodan and Censys searches, reports, hunts, captures, TAXII and the
+  other named limits are counted in the database (migration 0035) instead of in each process, so a
+  deployment with three replicas no longer allows three times the attempts. Callers are stored as a
+  hash. If the database is unreachable, a limiter counts in memory for that attempt.
+- Every limiter now has a name in `argus_rate_limited_total`.
+
+### Configuration
+- `ARGUS_SHARED_RATE_LIMITS` (default `true`).
+
 ## [1.85.0] — Phase 85: Caching campaigns and TAXII
 
 ### Performance

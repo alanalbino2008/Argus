@@ -33,8 +33,8 @@ from argus.security.auth import Principal, Role
 from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
-_per_ip = SlidingWindowLimiter(limit=20, window=60)
-_signups = SlidingWindowLimiter(limit=5, window=3600)
+_per_ip = SlidingWindowLimiter(limit=20, window=60, name="account_sign_in")
+_signups = SlidingWindowLimiter(limit=5, window=3600, name="signups")
 EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,255}\.[A-Za-z]{2,}$")
 SERVICE = Principal(key_id="account-service", name="account-service", role=Role.ANALYST)
 
@@ -95,8 +95,8 @@ def _issuer(request: Request) -> str:
     return (request.app.state.settings.public_url or str(request.base_url)).rstrip("/")
 
 
-def _limit(request: Request) -> None:
-    if not _per_ip.hit(client_ip(request) or "unknown"):
+async def _limit(request: Request) -> None:
+    if not await _per_ip.allow(client_ip(request) or "unknown"):
         raise HTTPException(status_code=429, detail="Too many attempts; wait a minute")
 
 
@@ -123,8 +123,8 @@ async def signup(body: SignupRequest, request: Request):
     settings = request.app.state.settings
     if not settings.account_signup_enabled:
         raise HTTPException(status_code=403, detail="Sign-up is closed: ask for an account")
-    _limit(request)
-    if not _signups.hit(client_ip(request) or "unknown"):
+    await _limit(request)
+    if not await _signups.allow(client_ip(request) or "unknown"):
         raise HTTPException(status_code=429, detail="Too many new accounts from this address; try later")
     email = body.email.strip().lower()
     if not EMAIL.match(email):
@@ -155,7 +155,7 @@ async def signup(body: SignupRequest, request: Request):
 async def sign_in(body: TokenRequest, request: Request):
     """Sign in from a computer: returns a signed licence for that computer."""
     repo, private = _service(request)
-    _limit(request)
+    await _limit(request)
     found = await repo.by_email(body.email.strip())
     stored = found[1] if found else DUMMY_HASH  # same work whether or not the account exists
     ok = await asyncio.to_thread(verify_password, body.password, stored)
@@ -193,7 +193,7 @@ def _terms(request: Request, account: dict[str, Any]) -> dict[str, Any]:
 
 async def _licence_account(request: Request, token: str) -> tuple[dict[str, Any], dict[str, Any], Any]:
     repo, private = _service(request)
-    _limit(request)
+    await _limit(request)
     try:
         payload = verify(token, private.public_key(), issuer=_issuer(request))
     except LicenceError as exc:
@@ -268,15 +268,15 @@ async def sign_out(body: LicenceRequest, request: Request):
 
 # ---------------------------------------------------------------------------- forgotten passwords
 RESET_TTL = timedelta(hours=1)
-_resets_per_ip = SlidingWindowLimiter(limit=10, window=3600)
+_resets_per_ip = SlidingWindowLimiter(limit=10, window=3600, name="password_resets")
 
 
 @router.post("/password-reset", status_code=202)
 async def request_password_reset(body: ResetRequest, request: Request):
     """Email a reset link. The answer is the same whether or not the account exists."""
     repo, _private = _service(request)
-    _limit(request)
-    if not _resets_per_ip.hit(client_ip(request) or "unknown"):
+    await _limit(request)
+    if not await _resets_per_ip.allow(client_ip(request) or "unknown"):
         raise HTTPException(status_code=429, detail="Too many reset requests from this address; try later")
     mailer = request.app.state.mailer
     if not mailer.enabled:
@@ -299,7 +299,7 @@ async def request_password_reset(body: ResetRequest, request: Request):
 async def confirm_password_reset(body: ResetConfirm, request: Request):
     """Set a new password with a reset link; every computer is signed out."""
     repo, _private = _service(request)
-    _limit(request)
+    await _limit(request)
     mail = request.app.state.account_mail
     expired = "This reset link has expired or was already used: ask for a new one"
     account_id = await mail.use_reset(body.token, consume=False)

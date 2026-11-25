@@ -180,7 +180,7 @@ async def draft_takedown(watch_id: str, body: TakedownRequest, request: Request,
     if current and current.get("status") in ("drafted", "reported"):
         raise HTTPException(status_code=409, detail="A takedown is already open for this domain")
     triage = finding.get("triage") or {}
-    throttle(_rdap_limiter, ws.principal.key_id, "Too many takedown look-ups; wait a minute")
+    await throttle(_rdap_limiter, ws.principal.key_id, "Too many takedown look-ups; wait a minute")
     found = await request.app.state.brand_watcher.takedown_contacts(name, (triage.get("dns") or {}).get("ips") or [])
     letter = takedown.draft(domain=name, display=finding.get("display") or name, brand=watch["domain"],
                             finding=finding, triage=triage, found=found, organisation=body.organisation.strip())  # fmt: skip
@@ -267,7 +267,7 @@ async def lookalike_case(watch_id: str, domain: str, body: LookalikeCase, reques
     if body.capture:  # the same limit as "Capture a page" (each runs a browser), checked before anything is created
         from argus.api.case_routes import _limit as capture_limit
 
-        capture_limit(ws)
+        await capture_limit(ws)
     cases, settings, name = request.app.state.cases, request.app.state.settings, item["name"]
     triage = item.get("triage") or {}
     if body.case_id:

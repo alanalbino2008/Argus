@@ -268,8 +268,8 @@ async def delete_item(case_id: str, item_id: str, request: Request, ws: Workspac
 
 
 # ---------------------------------------------------------------------------- evidence
-def _limit(ws: WorkspaceContext) -> None:
-    throttle(_capture_limiter, ws.principal.key_id, "Too many captures; wait a minute")
+async def _limit(ws: WorkspaceContext) -> None:
+    await throttle(_capture_limiter, ws.principal.key_id, "Too many captures; wait a minute")
 
 
 @router.post("/cases/{case_id}/captures", status_code=201)
@@ -277,7 +277,7 @@ async def capture_page(case_id: str, body: CaptureRequest, request: Request, ws:
     """Preserve a public web page as it is now: response, screenshot, text, manifest and fingerprint."""
     case = await _case(request, ws, case_id)
     route = route_for(request.app.state.settings, case, body.egress)  # 409 if it would expose an anonymous case
-    _limit(ws)
+    await _limit(ws)
     try:
         capture = await capture_url(body.url, request.app.state.settings, route)
     except CaptureError as exc:
@@ -294,7 +294,7 @@ async def upload_evidence(case_id: str, request: Request, file: UploadFile = Fil
                           ws: WorkspaceContext = ANALYST):  # fmt: skip
     """Add evidence you already hold (a screenshot of a private chat, a document, a photo)."""
     await _case(request, ws, case_id)
-    _limit(ws)
+    await _limit(ws)
     limit = request.app.state.settings.evidence_max_upload_mb * 1024 * 1024
     data = await file.read(limit + 1)
     if len(data) > limit:
