@@ -100,6 +100,7 @@ from argus.api.personal_routes import router as personal_router
 from argus.api.playbook_routes import RUNS as PLAYBOOK_RUNS
 from argus.api.playbook_routes import router as playbook_router
 from argus.api.query_routes import router as query_router
+from argus.api.quota_routes import router as quota_router
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
@@ -162,6 +163,7 @@ from argus.security.crypto import secret_box_from_settings
 from argus.security.headers import SecurityHeadersMiddleware
 from argus.security.network import validate_scan_target
 from argus.security.oidc import OidcProvider
+from argus.security.quotas import QuotaExceeded
 from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage import Database, InvestigationRecorder, InvestigationRepository
 from argus.storage import backup as backup_files
@@ -318,6 +320,10 @@ async def lifespan(app: FastAPI):
     app.state.exposure = ExposureRepository(db)
     app.state.remediation = RemediationRepository(db)
     app.state.cases = CaseRepository(db)
+    from argus.security.quotas import Quotas
+
+    app.state.quotas = Quotas(db, settings)
+    app.state.cases.quotas = app.state.quotas
     app.state.account_watches = AccountWatchRepository(db)
     app.state.subscribers = SubscriberRepository(db)
     app.state.credits = CreditRepository(db)
@@ -729,7 +735,18 @@ app.include_router(session_router)
 app.include_router(scim_router)
 app.include_router(integrity_router)
 app.include_router(csp_router)
+app.include_router(quota_router)
 register_scim_errors(app)
+
+
+@app.exception_handler(QuotaExceeded)
+async def _quota_exceeded(request: Request, exc: QuotaExceeded) -> JSONResponse:
+    """A workspace limit: 429 with Retry-After for scans per day, 403 for capacity limits."""
+    metrics.QUOTA_REFUSALS.labels(exc.resource).inc()
+    body = {"detail": str(exc), "quota": exc.resource, "limit": exc.limit, "used": exc.used}
+    if exc.retry_after:
+        return JSONResponse(body, status_code=429, headers={"Retry-After": str(exc.retry_after)})
+    return JSONResponse(body, status_code=403)
 
 
 @app.exception_handler(ApprovalRequired)
@@ -949,6 +966,7 @@ async def launch_scan(
     egress: EgressRoute | None = None,
 ) -> ArgusEngine:
     """Single code path for every scan (manual or scheduled): record, register, run in background."""
+    await app.state.quotas.check(workspace_id, "scans_per_day")  # by hand, monitors and playbooks alike
     repo: InvestigationRepository = app.state.repo
     engine = ArgusEngine(config, egress=egress)
     engine.investigation.workspace_id = workspace_id
@@ -1451,6 +1469,8 @@ async def start_scan(req: StartScanRequest, request: Request, ws: WorkspaceConte
         engine = await launch_scan(
             request.app, config, created_by=principal.name, purpose=req.purpose, workspace_id=ws.id, egress=route
         )
+    except QuotaExceeded:
+        raise  # the workspace's scans per day: 429 with Retry-After, not "database unavailable"
     except Exception as exc:
         logger.exception("Database unavailable")
         raise HTTPException(status_code=503, detail="Database unavailable") from exc

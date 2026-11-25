@@ -61,6 +61,7 @@ async def create_fingerprint_watch(body: WatchRequest, request: Request, ws: Wor
         raise HTTPException(status_code=409, detail=f"This fingerprint is already watched on {name}")
     if await _repo(request).count(ws.id) >= MAX_WATCHES:
         raise HTTPException(status_code=422, detail=f"A workspace can watch up to {MAX_WATCHES} fingerprints")
+    await request.app.state.quotas.check(ws.id, "watches")
     kind = str(entity.metadata.get("category") or entity.type.value).replace("_", " ")
     label = (entity.label if kind.lower() in entity.label.lower() else f"{kind} {entity.label}")[:200]
     watch = await _repo(request).create(

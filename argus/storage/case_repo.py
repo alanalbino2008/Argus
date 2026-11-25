@@ -78,6 +78,7 @@ def visible(case: CaseRow | dict[str, Any], who: str) -> bool:
 class CaseRepository:
     def __init__(self, db: Database):
         self.db = db
+        self.quotas: Any = None  # set at start-up: evidence storage is held to the workspace's quota
 
     # ------------------------------------------------------------------ cases
     async def create(self, *, workspace_id: str, by: str, **fields: Any) -> dict[str, Any]:
@@ -209,6 +210,9 @@ class CaseRepository:
     async def add_capture(
         self, case_id: str, workspace_id: str, capture: Capture, *, by: str, note: str = ""
     ) -> dict[str, Any]:
+        if self.quotas is not None:
+            size = sum(len(data) for _, data in capture.files.values())
+            await self.quotas.check(workspace_id, "evidence_mb", size / (1024 * 1024))
         moment = _now()
         m = capture.manifest
         row = EvidenceCaptureRow(

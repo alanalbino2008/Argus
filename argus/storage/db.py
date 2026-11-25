@@ -909,6 +909,20 @@ class AuditStreamRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class WorkspaceQuotaRow(Base):
+    """A workspace's own limits (Phase 100); None in a column means the server's default."""
+
+    __tablename__ = "workspace_quotas"
+
+    workspace_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    scans_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evidence_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    watches: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    api_keys: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_by: Mapped[str] = mapped_column(String(128))
+
+
 class AccessPolicyRow(Base):
     """The networks a workspace may be used from, by any session or key (Phase 93). Empty: anywhere."""
 

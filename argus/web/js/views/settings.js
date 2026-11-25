@@ -460,15 +460,16 @@ export async function refresh() {
     wsAdmin ? api.get("/api/notifications/channels").catch(() => null) : null,
     platform ? api.get("/api/scim/group-roles").catch(() => null) : null,
     platform ? api.get("/api/integrity").catch(() => null) : null,
+    state.workspace ? api.get("/api/quota").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels, scim, integrity] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, mySessions, accessPolicy, siemChannels, scim, integrity, quota] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy, scim, integrity, integrityLoaded: platform };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels, mySessions, accessPolicy, scim, integrity, integrityLoaded: platform, quota };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -520,6 +521,20 @@ function scimCard() {
       <select id="scim-role" class="select" style="max-width:140px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
       <button class="btn sm" type="submit">Map group</button>
     </form>
+  </div>`;
+}
+
+// Phase 100: what this workspace uses of its limits (shown once a limit is set).
+function quotaCard() {
+  const q = data.quota;
+  const limited = q ? Object.values(q.resources).filter((r) => r.limit) : [];
+  if (!limited.length) return "";
+  return html`<div class="card card-pad" style="margin-top:16px">
+    <div class="card-head"><div><h2>Workspace usage</h2><p class="muted small">This workspace's limits on a shared server. A platform administrator can raise them.</p></div></div>
+    ${Object.entries(q.resources).filter(([, r]) => r.limit).map(([, r]) => html`<div style="margin:10px 0">
+      <div class="small" style="display:flex;justify-content:space-between"><span>${r.label}</span><span class="${r.warning ? "error-text" : "muted"}">${r.used} of ${r.limit}</span></div>
+      <div style="height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden"><div style="height:100%;width:${Math.min(100, Math.round((r.share || 0) * 100))}%;background:${r.warning ? "var(--sev-high)" : "var(--accent)"}"></div></div>
+    </div>`)}
   </div>`;
 }
 
@@ -1140,6 +1155,7 @@ function render() {
     ${vaultCard()}
     ${data.personal ? "" : workspacesCard()}
     ${sessionsCard()}
+    ${quotaCard()}
     ${safetyCard()}
     ${apiCard()}
     ${brandingCard()}

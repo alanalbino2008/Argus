@@ -395,6 +395,14 @@ class Settings(BaseSettings):
         default=None,
         description="Bearer token the identity provider uses for SCIM provisioning (/scim/v2); unset: SCIM is off",
     )
+    quota_scans_per_day: int = Field(
+        default=0, ge=0, description="Default per-workspace limit: scans in 24 hours (0: none)"
+    )
+    quota_evidence_mb: int = Field(default=0, ge=0, description="Default per-workspace limit: MB of evidence (0: none)")
+    quota_watches: int = Field(
+        default=0, ge=0, description="Default per-workspace limit: brand and fingerprint watches"
+    )
+    quota_api_keys: int = Field(default=0, ge=0, description="Default per-workspace limit: active API keys (0: none)")
     shared_rate_limits: bool = Field(
         default=True,
         description="Count sign-in, unlock and other named rate limits in the database, so they hold across every replica",

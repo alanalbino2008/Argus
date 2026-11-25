@@ -118,6 +118,8 @@ async def create_key(
     if body.platform and not (principal.platform_admin and body.role == Role.ADMIN):
         raise HTTPException(status_code=403, detail="Only platform administrators can create platform admin keys")
     workspace_id = None if body.platform else ws.id
+    if workspace_id:
+        await request.app.state.quotas.check(workspace_id, "api_keys")
     if body.role == Role.ADMIN:
         await require_approval(request, ws, "key.create_admin", body.name,
                                f"Create the admin API key \u201c{body.name}\u201d" + (" (platform-wide)" if body.platform else ""))  # fmt: skip

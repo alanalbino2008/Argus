@@ -259,6 +259,11 @@ CSP_VIOLATIONS = Counter(
 )
 
 
+QUOTA_REFUSALS = Counter(
+    "argus_quota_refusals_total", "Actions refused because a workspace reached a quota", ["resource"], registry=REGISTRY
+)
+
+
 def watch_run(kind: str, status: str, seconds: float) -> None:
     """Record one finished watch run (status ok, partial or error)."""
     import time

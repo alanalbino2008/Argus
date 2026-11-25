@@ -103,6 +103,7 @@ async def create_brand_watch(body: BrandWatchRequest, request: Request, ws: Work
         raise HTTPException(status_code=409, detail=f"{domain} is already watched")
     if await _repo(request).count(ws.id) >= MAX_WATCHES:
         raise HTTPException(status_code=422, detail=f"A workspace can watch up to {MAX_WATCHES} brands")
+    await request.app.state.quotas.check(ws.id, "watches")
     web_check = _web_check(request, body.web_check)
     watch = await _repo(request).create(workspace_id=ws.id, domain=domain, allow=allow, web_check=web_check,
                                         interval_hours=body.interval_hours, by=ws.principal.name)  # fmt: skip

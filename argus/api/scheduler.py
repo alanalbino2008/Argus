@@ -31,6 +31,7 @@ from argus.observability import metrics
 from argus.security import vault
 from argus.security.auth import Principal, Role
 from argus.security.network import validate_scan_target
+from argus.security.quotas import QuotaExceeded
 from argus.storage.monitor_repo import MonitorRepository
 from argus.storage.security_repo import AuditLog
 
@@ -97,6 +98,10 @@ class MonitorScheduler:
             inv_id = await self.launch(
                 config, f"monitor:{monitor['created_by']}", monitor["purpose"], monitor["id"], monitor["workspace_id"]
             )
+        except QuotaExceeded as exc:  # the workspace's scans per day: tried again once there is room
+            logger.warning("Monitor %s waits: %s", monitor["id"], exc)
+            await self.monitors.release(monitor["id"])
+            return
         except Exception:
             logger.exception("Monitor %s failed to launch", monitor["id"])
             await self.monitors.release(monitor["id"])  # retry on the next tick

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.100.0] — Phase 100: Per-workspace quotas
+
+### Added
+- **Quotas per workspace** on scans per day (by hand, monitors and playbooks alike), evidence storage,
+  watches and API keys. Server defaults come from `ARGUS_QUOTA_*` (0 = none); platform administrators
+  set a workspace's own limits (`PUT /api/quota`, audited).
+- Refusals are `403` naming the quota (`429` with `Retry-After` for scans per day). Monitors wait
+  quietly. Settings → **Workspace usage** shows usage, red from 80%. `argus_quota_refusals_total`
+  counts refusals.
+
+### Fixed
+- A refused scan was reported as "Database unavailable" (503) by the scan endpoint's catch-all; it
+  now gets its own answer.
+
 ## [1.99.0] — Phase 99: No third-party requests from the browser
 
 ### Security
