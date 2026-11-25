@@ -322,9 +322,13 @@ class AuditLog:
         return [{"id": r.id, **self._entry(r), "hash": r.hash} for r in rows]
 
     async def events(self, *, after_id: int = 0, since: datetime | None = None,
-                     actions: Iterable[str] = (), limit: int = 500) -> builtins.list[dict[str, Any]]:  # fmt: skip
-        """Entries in order, after an id and/or since a time, of the given actions (for alerts and summaries)."""
+                     actions: Iterable[str] = (), limit: int = 500,
+                     workspace_id: str | None = None) -> builtins.list[dict[str, Any]]:  # fmt: skip
+        """Entries in order, after an id and/or since a time, of the given actions (for alerts, summaries and
+        audit streams), each with its chain hashes."""
         stmt = select(AuditEventRow).where(AuditEventRow.id > after_id).order_by(AuditEventRow.id).limit(limit)
+        if workspace_id is not None:
+            stmt = stmt.where(AuditEventRow.workspace_id == workspace_id)
         wanted = list(actions)
         if wanted:
             stmt = stmt.where(AuditEventRow.action.in_(wanted))
@@ -332,7 +336,33 @@ class AuditLog:
             stmt = stmt.where(AuditEventRow.ts >= since.isoformat())
         async with self.db.session() as s:
             rows = (await s.execute(stmt)).scalars().all()
-        return [{"id": r.id, **self._entry(r)} for r in rows]
+        return [{"id": r.id, **self._entry(r), "prev_hash": r.prev_hash, "hash": r.hash} for r in rows]
+
+    async def export(self, *, workspace_id: str | None, since: str | None = None, until: str | None = None,
+                     action: str | None = None, actor_id: str | None = None,
+                     limit: int = 100_000) -> builtins.list[dict[str, Any]]:  # fmt: skip
+        """Entries oldest first, with their chain hashes, for an export (``workspace_id`` None: every entry)."""
+        stmt = select(AuditEventRow).order_by(AuditEventRow.id).limit(limit)
+        if workspace_id is not None:
+            stmt = stmt.where(AuditEventRow.workspace_id == workspace_id)
+        if since:
+            stmt = stmt.where(AuditEventRow.ts >= since)
+        if until:
+            stmt = stmt.where(AuditEventRow.ts < until)
+        if action:
+            stmt = stmt.where(AuditEventRow.action == action)
+        if actor_id:
+            stmt = stmt.where(AuditEventRow.actor_id == actor_id)
+        async with self.db.session() as s:
+            rows = (await s.execute(stmt)).scalars().all()
+        return [{"id": r.id, "prev_hash": r.prev_hash, "hash": r.hash, **self._entry(r)} for r in rows]
+
+    async def head(self) -> dict[str, Any]:
+        """The newest entry's id and hash: the state of the whole chain at this moment."""
+        async with self.db.session() as s:
+            row = (await s.execute(select(AuditEventRow.id, AuditEventRow.hash)
+                                   .order_by(AuditEventRow.id.desc()).limit(1))).first()  # fmt: skip
+        return {"id": row.id if row else 0, "hash": row.hash if row else GENESIS_HASH}
 
     async def last_id(self) -> int:
         async with self.db.session() as s:

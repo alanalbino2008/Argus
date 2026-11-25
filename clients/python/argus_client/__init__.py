@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.91.0"
+__version__ = "1.92.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -386,6 +386,18 @@ class ArgusClient:
     def key_report(self) -> dict[str, Any]:
         """Keys expiring soon, unused for 90 days, that never expire, or usable from anywhere."""
         return self.get("/api/keys/report")
+
+    def audit_export(self, *, format: str = "jsonl", **filters: Any) -> bytes:
+        """The audit log as a file: signed JSON Lines (check with ``argus --verify-audit``) or CSV.
+        Filters: ``since``, ``until`` (ISO dates), ``action``, ``actor_id``, ``scope`` ("workspace" or "all")."""
+        return self.request("GET", "/api/audit/export", params={"format": format, **filters}, raw=True).content
+
+    def audit_streams(self) -> list[dict[str, Any]]:
+        return self.get("/api/audit/streams")
+
+    def stream_audit(self, channel_id: str, *, start: str = "now", platform: bool = False) -> dict[str, Any]:
+        """Forward the audit log to a Splunk, Sentinel or webhook destination (``start``: now or beginning)."""
+        return self.post("/api/audit/streams", {"channel_id": channel_id, "start": start, "platform": platform})
 
     def retention(self) -> dict[str, Any]:
         """The workspace's retention periods, and what a purge would delete now."""

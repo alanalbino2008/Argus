@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.92.0] — Phase 92: Audit log export and SIEM streaming
+
+### Added
+- **Signed audit exports:** `GET /api/audit/export` (and Settings → Audit log) gives JSON Lines with
+  each entry's chain hashes and a manifest signed with the server's Ed25519 key.
+  `argus --verify-audit FILE` checks it offline. CSV is offered too, with formula cells neutralised.
+- **Audit streams:** every new audit entry is forwarded, in order and from a checkpoint, to a Splunk,
+  Sentinel or webhook destination. Nothing is lost while the destination is down. Platform
+  administrators can stream every workspace.
+- `argus_audit_stream_events_total`, `argus_audit_stream_lag_entries`, and the
+  `ArgusAuditStreamFailing` alert (with a promtool test).
+- Two-person approval can protect stopping a stream (`audit.stream_stop`).
+- Migration 0039. Python client: `audit_export()`, `audit_streams()`, `stream_audit()`.
+
 ## [1.91.0] — Phase 91: Retention policies and legal hold
 
 ### Added

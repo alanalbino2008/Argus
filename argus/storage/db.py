@@ -859,6 +859,25 @@ class EntityAnnotationRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
+class AuditStreamRow(Base):
+    """Forwarding of the audit log to a SIEM destination, with a checkpoint (Phase 92)."""
+
+    __tablename__ = "audit_streams"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32), index=True)  # the destination's workspace
+    platform: Mapped[bool] = mapped_column(Boolean, default=False)  # every entry, not just the workspace's
+    channel_id: Mapped[str] = mapped_column(String(32))
+    last_id: Mapped[int] = mapped_column(BigInteger, default=0)  # the newest entry delivered
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    sent: Mapped[int] = mapped_column(BigInteger, default=0)
+    last_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class RetentionPolicyRow(Base):
     """How long a workspace keeps old investigations, resolved alerts and closed cases (Phase 91). 0 = forever."""
 

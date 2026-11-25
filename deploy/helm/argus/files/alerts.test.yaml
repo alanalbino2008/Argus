@@ -229,3 +229,31 @@ tests:
               summary: An API key was presented from outside the networks it is allowed from
               description: A valid key restricted to certain networks was refused because the request came from elsewhere - the key may have leaked.
               runbook: Find the key and the address in the audit log (auth.failed, "outside its networks"); rotate the key if the address is not yours.
+
+  - name: an audit stream that only fails raises an alert after 15 minutes; a recovering one does not
+    interval: 1m
+    input_series:
+      - series: 'argus_audit_stream_events_total{outcome="failed"}'
+        values: '0+1x60'
+      - series: 'argus_audit_stream_events_total{outcome="sent"}'
+        values: '5x60'
+    alert_rule_test:
+      - {eval_time: 10m, alertname: ArgusAuditStreamFailing, exp_alerts: []}
+      - eval_time: 50m
+        alertname: ArgusAuditStreamFailing
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: The audit log is not reaching the SIEM
+              description: Every attempt to forward audit entries failed for 30 minutes. Nothing is lost - entries wait at the stream's checkpoint - but the SIEM is blind to what happens in Argus until it recovers.
+              runbook: Settings > Audit log streams shows the last error; check the Splunk or Sentinel destination's credentials in Monitoring > Notifications.
+
+  - name: an audit stream that keeps delivering raises no alert
+    interval: 1m
+    input_series:
+      - series: 'argus_audit_stream_events_total{outcome="failed"}'
+        values: '0+1x60'
+      - series: 'argus_audit_stream_events_total{outcome="sent"}'
+        values: '0+10x60'
+    alert_rule_test:
+      - {eval_time: 50m, alertname: ArgusAuditStreamFailing, exp_alerts: []}

@@ -176,6 +176,17 @@ groups:
           description: A valid key restricted to certain networks was refused because the request came from elsewhere - the key may have leaked.
           runbook: Find the key and the address in the audit log (auth.failed, "outside its networks"); rotate the key if the address is not yours.
 
+      - alert: ArgusAuditStreamFailing
+        expr: |
+          sum(increase(argus_audit_stream_events_total{outcome="failed"}[30m])) > 0
+            unless sum(increase(argus_audit_stream_events_total{outcome="sent"}[30m])) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: The audit log is not reaching the SIEM
+          description: Every attempt to forward audit entries failed for 30 minutes. Nothing is lost - entries wait at the stream's checkpoint - but the SIEM is blind to what happens in Argus until it recovers.
+          runbook: Settings > Audit log streams shows the last error; check the Splunk or Sentinel destination's credentials in Monitoring > Notifications.
+
       - alert: ArgusEgressBlocked
         expr: sum(increase(argus_outbound_requests_total{outcome="blocked"}[15m])) > 0
         labels: {severity: info}

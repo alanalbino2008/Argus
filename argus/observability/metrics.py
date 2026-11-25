@@ -222,6 +222,17 @@ TAKEDOWN_EVENTS = Counter(
 TAKEDOWN_STEPS = ("drafted", "reported", "down", "closed")
 
 
+AUDIT_STREAM_EVENTS = Counter(
+    "argus_audit_stream_events_total",
+    "Audit entries forwarded to a SIEM (sent) or not yet (failed: retried from the checkpoint)",
+    ["outcome"],
+    registry=REGISTRY,
+)
+AUDIT_STREAM_LAG = Gauge(
+    "argus_audit_stream_lag_entries", "Audit entries not yet forwarded, the largest of every stream", registry=REGISTRY
+)
+
+
 def watch_run(kind: str, status: str, seconds: float) -> None:
     """Record one finished watch run (status ok, partial or error)."""
     import time

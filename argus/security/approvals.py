@@ -35,6 +35,7 @@ ACTIONS = {
     "case.export": "Export a case's evidence bundle",
     "exposure.reveal": "Reveal leaked email addresses in clear",
     "key.create_admin": "Create an admin API key",
+    "audit.stream_stop": "Stop or remove an audit log stream to a SIEM",
     "approval.policy": "Remove an action from the approval policy",
 }
 POLICY_ACTIONS = [a for a in ACTIONS if a != "approval.policy"]  # what a workspace can protect

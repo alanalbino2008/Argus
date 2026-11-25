@@ -61,6 +61,7 @@ from argus.api.account_routes import router as account_router
 from argus.api.analyst_routes import router as analyst_router
 from argus.api.annotation_routes import router as annotation_router
 from argus.api.approval_routes import router as approval_router
+from argus.api.audit_routes import router as audit_router
 from argus.api.auth_routes import router as auth_router
 from argus.api.backup_routes import router as backup_router
 from argus.api.billing_routes import router as billing_router
@@ -435,6 +436,14 @@ async def lifespan(app: FastAPI):
         else None
     )
     from argus.intel.retention import Retention
+    from argus.security.audit_stream import AuditStreams
+
+    app.state.audit_streams = AuditStreams(app)
+    audit_stream_task = (
+        asyncio.create_task(app.state.audit_streams.run_forever(), name="audit-streams")
+        if settings.notifications_enabled
+        else None
+    )
     from argus.security import key_expiry
 
     app.state.retention = Retention(app)
@@ -485,6 +494,7 @@ async def lifespan(app: FastAPI):
                 privacy_task,
                 key_expiry_task,
                 retention_task,
+                audit_stream_task,
             )
             if t
         ]
@@ -698,6 +708,7 @@ app.include_router(taxii_router)
 app.include_router(campaign_router)
 app.include_router(approval_router)
 app.include_router(retention_router)
+app.include_router(audit_router)
 
 
 @app.exception_handler(ApprovalRequired)

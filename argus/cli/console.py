@@ -459,6 +459,30 @@ def verify_report_cli(path: str, trusted_key: str | None) -> int:
     return 0
 
 
+def verify_audit_cli(path: str, trusted_key: str | None) -> int:
+    """0: the audit export is intact and signed (by the given public key, if one was given); 1 otherwise."""
+    from pathlib import Path
+
+    from argus.security.audit_export import VerificationError, verify
+
+    try:
+        result = verify(Path(path).read_bytes(), trusted_key)
+    except (VerificationError, ValueError, KeyError) as exc:
+        console.print(f"[red]NOT VALID[/red]: {exc}")
+        return 1
+    console.print(f"[green]Valid[/green]: {result['entries']} entries (ids {result['first_id']} to "
+                  f"{result['last_id']}), unaltered since exported by {result['exported_by']} at {result['exported_at']}")  # fmt: skip
+    console.print(f"Signed by key {result['key_id']}" + (" (the key you trust)" if result["trusted_key_checked"]
+                  else ": compare it with the key published at /api/report-signing-key"))  # fmt: skip
+    if result["complete_chain"]:
+        console.print("The entries form an unbroken part of the chain.")
+    else:
+        console.print(f"{result['gaps']} gap(s) between entries: entries of other workspaces or outside the filters.")
+    head = result.get("head") or {}
+    console.print(f"Chain head at export: entry {head.get('id')}, hash {head.get('hash')}")
+    return 0
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -528,9 +552,11 @@ def cli_entrypoint():
         "--backup-restore", metavar="FILE", help="Prepare a restore from a backup (it takes over at the next start)"
     )
     parser.add_argument("--verify-report", metavar="FILE", help="Check a signed case report, then exit")
+    parser.add_argument("--verify-audit", metavar="FILE", help="Check an audit log export (JSON Lines), then exit")
     parser.add_argument(
-        "--report-key", metavar="KEY", help="With --verify-report: the issuer's public key or key id to trust"
-    )
+        "--report-key", metavar="KEY",
+        help="With --verify-report: the issuer's public key or key id; with --verify-audit: its public key",
+    )  # fmt: skip
     parser.add_argument(
         "--role",
         choices=["viewer", "analyst", "admin"],
@@ -542,6 +568,8 @@ def cli_entrypoint():
 
     if args.verify_report:
         raise SystemExit(verify_report_cli(args.verify_report, args.report_key))
+    if args.verify_audit:
+        raise SystemExit(verify_audit_cli(args.verify_audit, args.report_key))
 
     if args.migrate:
         revision = asyncio.run(migrate_cli(float(os.environ.get("ARGUS_MIGRATE_WAIT_SECONDS", "90"))))

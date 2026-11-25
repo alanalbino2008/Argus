@@ -221,6 +221,17 @@ export function initSettings(el) {
         if (disabling && !(await confirmDialog({ title: "Disable this user?", message: "They are signed out everywhere immediately and cannot sign in again until re-enabled.", confirm: "Disable", danger: true }))) return;
         await api.patch(`/api/users/${enc(id)}`, { disabled: disabling });
         toast(disabling ? "User disabled and signed out" : "User re-enabled", "success");
+      } else if (act === "audit-export") {
+        const format = btn.dataset.format;
+        await download(`/api/audit/export?format=${format}`, `argus-audit.${format === "csv" ? "csv" : "jsonl"}`);
+        return;
+      } else if (act === "audit-stream-pause" || act === "audit-stream-resume") {
+        await api.patch(`/api/audit/streams/${enc(id)}`, { enabled: act === "audit-stream-resume" });
+        toast(act === "audit-stream-resume" ? "Streaming resumed from where it stopped" : "Streaming paused", "success");
+      } else if (act === "audit-stream-delete") {
+        if (!(await confirmDialog({ title: "Stop streaming the audit log?", message: "The SIEM will stop receiving Argus audit entries.", confirm: "Remove", danger: true }))) return;
+        await api.del(`/api/audit/streams/${enc(id)}`);
+        toast("Stream removed", "success");
       } else if (act === "retention-run") {
         const w = data.retention.would_delete;
         if (!(await confirmDialog({ title: "Purge now?", message: `This permanently deletes ${w.investigations} investigation(s), ${w.alerts} alert(s) and ${w.cases} case(s).`, confirm: "Purge", danger: true }))) return;
@@ -327,6 +338,15 @@ export function initSettings(el) {
       } catch (err) { toast(err.message, "error"); }
       return;
     }
+    if (e.target.id === "audit-stream-form") {
+      e.preventDefault();
+      try {
+        await api.post("/api/audit/streams", { channel_id: $("#audit-stream-channel").value, start: $("#audit-stream-start").value });
+        toast("Streaming the audit log", "success");
+      } catch (err) { toast(err.message, "error"); }
+      await refresh();
+      return;
+    }
     if (e.target.id === "retention-form") {
       e.preventDefault();
       const days = (id) => Number($(id).value || 0);
@@ -387,15 +407,17 @@ export async function refresh() {
     wsAdmin ? api.get("/api/approval-policy").catch(() => null) : null,
     wsAdmin ? api.get("/api/approvals?status=all").catch(() => null) : null,
     wsAdmin ? api.get("/api/retention").catch(() => null) : null,
+    wsAdmin ? api.get("/api/audit/streams").catch(() => null) : null,
+    wsAdmin ? api.get("/api/notifications/channels").catch(() => null) : null,
   ];
-  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention] = await Promise.all(tasks);
+  const [health, keys, audit, plugins, users, members, branding, opsec, personal, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels] = await Promise.all(tasks);
   const [credits, billing, team, ownKeys] = personal?.signed_in ? await Promise.all([
     api.get("/api/personal/credits").catch(() => null),
     api.get("/api/personal/billing").catch(() => null),
     api.get("/api/personal/team").catch(() => null),
     api.get("/api/personal/keys").catch(() => null),
   ]) : [null, null, null, null];
-  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention };
+  data = { ...data, health, keys, audit, plugins, users, members, branding, opsec, personal, credits, billing, team, ownKeys, vault, backups, approvalPolicy, approvals, retention, auditStreams, siemChannels };
   if (logoUrl) URL.revokeObjectURL(logoUrl);
   logoUrl = null;
   if (branding?.has_logo) {
@@ -908,13 +930,41 @@ function usersCard() {
   </div>`;
 }
 
+// Phase 92: the audit log forwarded to a SIEM destination, from a checkpoint.
+function auditStreams() {
+  const streams = data.auditStreams;
+  if (!streams) return "";
+  const siem = (data.siemChannels || []).filter((ch) => ["splunk", "sentinel", "webhook"].includes(ch.type));
+  const name = (id) => (data.siemChannels || []).find((ch) => ch.id === id)?.name || id;
+  return html`<div style="margin-bottom:12px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface-2)">
+    <b>Streaming to a SIEM</b>
+    ${streams.length ? html`<table class="table" style="margin-top:6px"><tbody>${streams.map((st) => html`<tr>
+      <td><b>${name(st.channel_id)}</b>${st.platform ? html` <span class="pill">all workspaces</span>` : ""}</td>
+      <td class="small">${st.sent} sent${st.behind ? html` · <span class="${st.last_error ? "error-text" : ""}">${st.behind} waiting</span>` : ""}${st.last_sent_at ? html` · last ${timeAgo(st.last_sent_at)}` : ""}
+        ${st.last_error ? html`<div class="error-text small">${st.last_error}</div>` : ""}</td>
+      <td class="actions">${st.enabled ? html`<button class="btn sm ghost" data-act="audit-stream-pause" data-id="${st.id}">Pause</button>` : html`<span class="pill">paused</span> <button class="btn sm ghost" data-act="audit-stream-resume" data-id="${st.id}">Resume</button>`}
+        <button class="btn sm ghost danger" data-act="audit-stream-delete" data-id="${st.id}">Remove</button></td>
+    </tr>`)}</tbody></table>` : html`<p class="muted small" style="margin:4px 0">Send every new audit entry to Splunk, Sentinel or a webhook, in order. Nothing is lost while the destination is down.</p>`}
+    ${siem.length ? html`<form id="audit-stream-form" class="filters" style="margin-top:6px">
+      <select id="audit-stream-channel" class="select" style="max-width:260px">${siem.map((ch) => html`<option value="${ch.id}">${ch.name} (${ch.type})</option>`)}</select>
+      <select id="audit-stream-start" class="select" style="max-width:220px"><option value="now">From now on</option><option value="beginning">Everything so far, then new entries</option></select>
+      <button class="btn sm" type="submit">Start streaming</button></form>`
+      : html`<p class="muted small" style="margin:4px 0">Add a Splunk, Sentinel or webhook destination under Monitoring → Notifications first.</p>`}
+  </div>`;
+}
+
 function auditCard() {
   const v = data.verify;
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head">
       <div><h2>Audit log</h2><p class="muted small">Every scan, export, deletion and access decision. Each entry is hash-chained to the previous one, so edits are detectable.</p></div>
-      <button class="btn" data-act="verify">${ico("shield")}Verify integrity</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-act="verify">${ico("shield")}Verify integrity</button>
+        <button class="btn" data-act="audit-export" data-format="jsonl" title="Signed: check it offline with argus --verify-audit">${ico("download")}Export (signed)</button>
+        <button class="btn ghost" data-act="audit-export" data-format="csv">CSV</button>
+      </div>
     </div>
+    ${auditStreams()}
     ${v ? html`<div class="callout" style="margin-bottom:12px">${v.valid ? html`<span class="pill ok">Intact</span> All ${v.checked} entries verified — no tampering detected.`
       : html`<span class="pill critical">Tampered</span> Entry #${v.first_invalid_id} does not match the chain.`}</div>` : ""}
     ${data.audit ? data.audit.length ? html`<table class="table"><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Resource</th><th>Outcome</th></tr></thead><tbody>
