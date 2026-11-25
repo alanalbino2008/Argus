@@ -398,6 +398,9 @@ async def lifespan(app: FastAPI):
         else None
     )
     app.state.brand_watcher = BrandWatcher(app.state.brand_watches, settings, raise_alert=partial(_brand_alert, app))
+    app.state.brand_watcher.health_alert = app.state.fingerprint_watcher.health_alert = partial(
+        _watch_health_alert, app
+    )
     brand_task = (
         asyncio.create_task(app.state.brand_watcher.run_forever(), name="brand-watcher")
         if settings.brand_watch_enabled and settings.monitors_enabled
@@ -1080,6 +1083,41 @@ async def _fingerprint_alert(
     await app.state.audit.record(
         SCHEDULER, "fingerprint_watch.alert", alert["id"],
         details={"watch": watch["id"], "new_servers": len(new)}, workspace_id=watch["workspace_id"],
+    )  # fmt: skip
+    return alert
+
+
+async def _watch_health_alert(
+    app: FastAPI, kind: str, watch: dict[str, Any], event: str, message: str
+) -> dict[str, Any]:
+    """A watch keeps failing, was paused, or works again: tell its workspace, with what to do about it."""
+    from argus.intel import watch_health
+
+    name = watch.get("domain") or watch.get("label") or watch["id"]
+    severity = {"paused": "high", "failing": "medium"}.get(event, "low")
+    state = await (app.state.brand_watches if kind == "brand" else app.state.fingerprint_watches).get(
+        watch["id"], watch["workspace_id"]
+    )
+    failures = int((state or {}).get("failures") or watch_health.ALERT_AFTER)
+    alert = await app.state.monitors.create_alert(
+        monitor_id=None,
+        investigation_id=watch.get("investigation_id") or "",
+        previous_investigation_id=watch.get("investigation_id") or "",
+        target=str(name),
+        severity=severity,
+        headline=watch_health.headline(kind, str(name), event, failures),
+        summary={"watch_health": {
+            "kind": kind, "watch_id": watch["id"], "name": name, "event": event, "failures": failures,
+            "failing_since": (state or {}).get("failing_since"), "error": message[:300],
+            "advice": "" if event == "recovered" else watch_health.advice(message),
+        }},
+        workspace_id=watch["workspace_id"],
+        public_url=app.state.settings.public_url,
+    )  # fmt: skip
+    metrics.ALERTS_RAISED.labels(severity).inc()
+    await app.state.audit.record(
+        SCHEDULER, f"{kind}_watch.health", alert["id"],
+        details={"watch": watch["id"], "event": event}, workspace_id=watch["workspace_id"],
     )  # fmt: skip
     return alert
 

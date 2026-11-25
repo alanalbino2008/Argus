@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import func, select, update
 
+from argus.intel import watch_health
 from argus.storage.data_version import bump
 from argus.storage.db import Database, FingerprintWatchRow
 
@@ -53,6 +54,7 @@ def _view(row: FingerprintWatchRow) -> dict[str, Any]:
         "alerts_raised": row.alerts_raised,
         "created_by": row.created_by,
         "workspace_id": row.workspace_id,
+        **watch_health.view(data),
     }
 
 
@@ -114,6 +116,9 @@ class FingerprintWatchRepository:
             if row is None or row.workspace_id != workspace_id:
                 return False
             row.next_run_at = _now()
+            if not row.enabled:  # "Run now" resumes a watch Argus paused
+                row.enabled, row.data = True, watch_health.resumed(row.data or {})
+                await bump(s, workspace_id)
             return True
 
     async def due(self, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -160,12 +165,12 @@ class FingerprintWatchRepository:
     async def record(
         self, watch_id: str, *, status: str, total: int | None = None, known: list[str] | None = None,
         new: list[str] | None = None, message: str = "", alerted: bool = False, seen: list[str] | None = None,
-    ) -> None:  # fmt: skip
+    ) -> str | None:  # fmt: skip
         """``seen``: servers seen for the first time in this run (baseline included), dated now."""
         async with self.db.session() as s, s.begin():
             row = await s.get(FingerprintWatchRow, watch_id)
             if row is None:
-                return
+                return None
             data = dict(row.data or {})
             if known is not None:
                 data["known"] = known[-MAX_KNOWN:]
@@ -180,6 +185,9 @@ class FingerprintWatchRepository:
             data["last_message"] = message[:300]
             if status == "ok":
                 data["baselined"] = True  # the first successful run records today's servers
+            data, health = watch_health.after_run(data, status, _now())
+            if health == "paused":
+                row.enabled = False
             row.data = data
             row.last_run_at, row.last_status = _now(), status
             await bump(s, row.workspace_id)
@@ -187,3 +195,4 @@ class FingerprintWatchRepository:
                 row.last_total = total
             if alerted:
                 row.alerts_raised = (row.alerts_raised or 0) + 1
+            return health

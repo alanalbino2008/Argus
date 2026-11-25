@@ -87,6 +87,8 @@ class FingerprintWatcher:
         self.repo = repo
         self.settings = settings
         self.raise_alert = raise_alert
+        # (kind, watch, event, message): the workspace's alert when a watch keeps failing (Phase 87)
+        self.health_alert: Callable[[str, dict[str, Any], str, str], Awaitable[Any]] | None = None
         self.search = search or self._search
         self.poll_seconds = poll_seconds
         self._running: set[asyncio.Task[Any]] = set()
@@ -101,6 +103,14 @@ class FingerprintWatcher:
             return await internet_search.censys(
                 http, key, query, mode="search", organization=self.settings.censys_organization_id
             )
+
+    async def _report_health(self, watch: dict[str, Any], event: str | None, message: str) -> None:
+        """Tell the workspace its watch keeps failing, was paused or works again (never breaks the run)."""
+        if event and self.health_alert is not None:
+            try:
+                await self.health_alert("fingerprint", watch, event, message)
+            except Exception:
+                logger.exception("Raising the health alert for fingerprint watch %s failed", watch["id"])
 
     # ------------------------------------------------------------------ the loop
     async def tick(self) -> list[dict[str, Any]]:
@@ -146,11 +156,13 @@ class FingerprintWatcher:
             result = await self.search(watch["engine"], watch["query"])
         except internet_search.SearchError as exc:
             metrics.WATCH_SOURCE_ERRORS.labels(name).inc()
-            await self.repo.record(watch["id"], status="error", message=str(exc.detail))
+            health = await self.repo.record(watch["id"], status="error", message=str(exc.detail))
+            await self._report_health(watch, health, str(exc.detail))
             return {"watch_id": watch["id"], "status": "error", "new": 0, "alert": None}
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
             metrics.WATCH_SOURCE_ERRORS.labels(name).inc()
-            await self.repo.record(watch["id"], status="error", message=f"{name} could not be reached")
+            health = await self.repo.record(watch["id"], status="error", message=f"{name} could not be reached")
+            await self._report_health(watch, health, f"{name} could not be reached")
             return {"watch_id": watch["id"], "status": "error", "new": 0, "alert": None}
         known = await self.repo.known(watch["id"])
         seen = set(known)
@@ -173,11 +185,12 @@ class FingerprintWatcher:
             message = f"Baseline: {len(new_hosts)} server(s) of {total} recorded"
         else:
             message = f"{len(new_hosts)} new server(s); {total} share it in all"
-        await self.repo.record(
+        health = await self.repo.record(
             watch["id"], status="ok", total=total, known=known,
             new=[server_key(h) or "" for h in new_hosts] if not baseline else [], message=message,
             alerted=alert is not None, seen=[k for k in (server_key(h) for h in new_hosts) if k],
         )  # fmt: skip
+        await self._report_health(watch, health, message)
         logger.info("Fingerprint watch %s: %s", watch["id"], message)
         return {
             "watch_id": watch["id"],

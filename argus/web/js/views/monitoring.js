@@ -141,6 +141,17 @@ export async function refresh() {
   render();
 }
 
+// Phase 87: a watch Argus paused after a week of failures, or one that keeps failing. "Run now" resumes it.
+function watchHealth(w) {
+  if (!w.enabled && w.paused_reason) {
+    return html`<div class="small"><span class="pill high">Paused</span> ${w.paused_reason}. Fix the cause, then use Run now to resume it.</div>`;
+  }
+  if (w.failures >= 3) {
+    return html`<div class="small"><span class="pill medium">Failing</span> ${w.failures} runs in a row</div>`;
+  }
+  return "";
+}
+
 function render() {
   if (!root) return;
   const open = (alerts || []).filter((a) => !a.acknowledged_at);
@@ -210,7 +221,8 @@ function fingerprintCard() {
       <td>${w.interval_hours === 24 ? "day" : "week"}</td>
       <td>${w.known}${w.last_total != null ? html` <span class="muted small">of ${Number(w.last_total).toLocaleString()}</span>` : ""}</td>
       <td>${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : "high"}" title="${w.last_message}">${timeAgo(w.last_run_at)}</span>` : "Pending"}
-        ${w.last_status === "error" ? html`<div class="muted small">${w.last_message}</div>` : ""}</td>
+        ${w.last_status === "error" ? html`<div class="muted small">${w.last_message}</div>` : ""}
+        ${watchHealth(w)}</td>
       <td class="actions">
         <button class="btn sm ghost" data-act="open" data-id="${w.investigation_id}" title="Open the investigation it was watched from">${ico("eye")}</button>
         <button class="btn sm ghost" data-act="fp-run" data-id="${w.id}" title="Run the search now (spends a search credit)">Run now</button>
@@ -239,6 +251,7 @@ function brandCard() {
       : brandWatches.map((w) => html`<div class="list-row" style="align-items:flex-start">
         <div class="list-main"><div class="list-title"><b>${w.domain}</b> <span class="muted small">every ${w.interval_hours === 24 ? "day" : "week"} · ${w.known} lookalike${w.known === 1 ? "" : "s"} known${w.allow.length ? ` · ${w.allow.length} own domain${w.allow.length === 1 ? "" : "s"} excluded` : ""}${w.references?.length ? ` · compared with ${w.references.length} of your page${w.references.length === 1 ? "" : "s"}` : ""}</span></div>
           <div class="list-sub">${w.last_run_at ? html`<span class="pill ${w.last_status === "ok" ? "ok" : w.last_status === "partial" ? "medium" : "high"}" title="${Object.entries(w.sources || {}).map(([k, v]) => `${k}: ${v.message || v.status}`).join("\n")}">${w.last_status}</span> ${timeAgo(w.last_run_at)} · ${w.last_message}` : "First check pending"}</div>
+          ${watchHealth(w)}
           ${w.recent.slice(0, 8).map((f) => html`<div class="list-sub"><span class="pill ${SEV[f.triage?.severity || f.severity] || ""}">${f.triage?.severity || f.severity}</span> ${f.triage ? html`<span class="pill ${f.triage.verdict === "phishing" ? "critical" : ""}" title="${(f.triage.reasons || []).join("\n")}">${f.triage.label}</span> ` : ""}${takedownPill(w, f)}<span class="mono" title="${(f.hosts || []).join("\n")}">${f.display}</span>${f.host_count > 1 ? html` <span class="muted">+${f.host_count - 1} host${f.host_count > 2 ? "s" : ""}</span>` : ""} <span class="muted">${f.technique}: ${f.detail} · ${f.issuer || "?"} · ${String(f.not_before).slice(0, 10)}</span></div>`)}</div>
         <div class="actions">
           <label class="small muted" title="Visit lookalikes' websites to spot cloned login pages">Websites ${webSelect("", w.web_check, w.id)}</label>

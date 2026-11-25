@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.87.0] — Phase 87: Watch health for the team that owns the watch
+
+### Added
+- A brand or fingerprint watch that fails **3 runs in a row** raises one alert in its workspace with
+  the error and the likely fix (an API key to add or replace, a quota, a removed route, the outbound
+  network).
+- A watch that has failed every run for **a week is paused**, so it stops spending Shodan, Censys or
+  Cert Spotter credits, with a high-severity alert. **Run now** resumes it with a fresh week.
+- The first successful run after an alert sends a low-severity "working again" alert.
+- Monitoring shows **Paused** and **Failing** on the watch; the API reports `failures`,
+  `failing_since` and `paused_reason`.
+
 ## [1.86.0] — Phase 86: Rate limits that hold across replicas
 
 ### Security

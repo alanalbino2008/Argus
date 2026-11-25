@@ -306,6 +306,8 @@ class BrandWatcher:
         self.repo = repo
         self.settings = settings
         self.raise_alert = raise_alert
+        # (kind, watch, event, message): the workspace's alert when a watch keeps failing (Phase 87)
+        self.health_alert: Callable[[str, dict[str, Any], str, str], Awaitable[Any]] | None = None
         self.http_factory = http_factory or (lambda: outbound_client(settings, None))
         self.web_factory: Callable[[str], Any] = self._web_client  # route name or "direct" -> HTTP client
         self.dns_lookup: Callable[[str], Awaitable[dict[str, Any] | None]] = lookalike_triage.dns_profile
@@ -455,6 +457,14 @@ class BrandWatcher:
         async with outbound_client(self.settings, None) as http:
             return await takedown.contacts(http, domain, ips)
 
+    async def _report_health(self, watch: dict[str, Any], event: str | None, message: str) -> None:
+        """Tell the workspace its watch keeps failing, was paused or works again (never breaks the run)."""
+        if event and self.health_alert is not None:
+            try:
+                await self.health_alert("brand", watch, event, message)
+            except Exception:
+                logger.exception("Raising the health alert for brand watch %s failed", watch["id"])
+
     def _key(self) -> str:
         value = getattr(self.settings, "certspotter_api_key", None)
         return value.get_secret_value().strip() if value else ""
@@ -540,7 +550,10 @@ class BrandWatcher:
             if outcome["status"] in ("error", "partial"):
                 metrics.WATCH_SOURCE_ERRORS.labels(source).inc()
         if status == "error":
-            await self.repo.record(watch["id"], status=status, sources=sources, message=problems, retry_in=RETRY)
+            health = await self.repo.record(
+                watch["id"], status=status, sources=sources, message=problems, retry_in=RETRY
+            )
+            await self._report_health(watch, health, problems)
             return {"watch_id": watch["id"], "status": status, "new": 0, "alert": None}
 
         baseline = not watch.get("baselined")
@@ -595,10 +608,11 @@ class BrandWatcher:
                    else f"{len(fresh)} new lookalike domain(s)")  # fmt: skip
         if problems:
             message += f" ({problems})"
-        await self.repo.record(
+        health = await self.repo.record(
             watch["id"], status=status, sources=sources, message=message, new=[asdict(f) for f in fresh], cursor=cursor, alerted=alert is not None,
             retry_in=RETRY if failed else None, triage=triaged, visual_refs=new_refs,
         )  # fmt: skip
+        await self._report_health(watch, health, message)
         logger.info("Brand watch %s (%s): %s", watch["id"], domain, message)
         return {"watch_id": watch["id"], "status": status, "baseline": baseline, "new": len(news),
                 "recorded": len(fresh), "alert": alert["id"] if alert else None}  # fmt: skip

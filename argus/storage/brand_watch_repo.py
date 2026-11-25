@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from argus.intel import watch_health
 from argus.intel.lookalike_triage import VERDICT_LABELS
 from argus.observability import metrics
 from argus.storage.data_version import bump
@@ -93,6 +94,7 @@ def _view(row: BrandWatchRow, extras: dict[str, Any] | None = None, *, full: boo
         "alerts_raised": row.alerts_raised,
         "created_by": row.created_by,
         "workspace_id": row.workspace_id,
+        **watch_health.view(data),
     }
     if full:
         out["visual_refs"] = data.get("visual_refs") or []
@@ -235,6 +237,9 @@ class BrandWatchRepository:
             if row is None or row.workspace_id != workspace_id:
                 return False
             row.next_run_at = _now()
+            if not row.enabled:  # "Run now" resumes a watch Argus paused
+                row.enabled, row.data = True, watch_health.resumed(row.data or {})
+                await bump(s, workspace_id)
             return True
 
     async def due(self, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -384,13 +389,15 @@ class BrandWatchRepository:
         new: list[dict[str, Any]] | None = None, cursor: int | None = None, alerted: bool = False,
         retry_in: timedelta | None = None, triage: dict[str, dict[str, Any]] | None = None,
         visual_refs: list[dict[str, Any]] | None = None,
-    ) -> None:  # fmt: skip
-        """Record a run: the lookalikes found for the first time, the triage of those checked, and the state."""
+    ) -> str | None:  # fmt: skip
+        """Record a run: the lookalikes found for the first time, the triage of those checked, and the state.
+
+        Returns the watch's health event, if any (see :mod:`argus.intel.watch_health`)."""
         now = _now()
         async with self.db.session() as s, s.begin():
             row = await s.get(BrandWatchRow, watch_id)
             if row is None:
-                return
+                return None
             triage = triage or {}
             for finding in new or []:
                 verdict = triage.get(finding["name"]) or {}
@@ -432,6 +439,9 @@ class BrandWatchRepository:
             data["sources"], data["last_message"] = sources, message[:300]
             if visual_refs is not None:
                 data["visual_refs"] = visual_refs
+            data, health = watch_health.after_run(data, status, now)
+            if health == "paused":
+                row.enabled = False
             row.data = data
             row.last_run_at, row.last_status = now, status
             await bump(s, row.workspace_id)
@@ -439,3 +449,4 @@ class BrandWatchRepository:
                 row.alerts_raised = (row.alerts_raised or 0) + 1
             if retry_in is not None:  # every source failed: try again soon rather than in a day
                 row.next_run_at = min(_utc(row.next_run_at) or now, now + retry_in)
+            return health
