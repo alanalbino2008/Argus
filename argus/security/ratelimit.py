@@ -6,10 +6,11 @@ deployment, not for each replica: three replicas no longer allow three times the
 vault unlocks or Shodan-spending runs. Their async :meth:`SlidingWindowLimiter.allow` is what routes
 call.
 
-The shared count uses two fixed windows weighted by how far the current one has run (the usual
-"sliding window counter"): the previous window's count times the share of it still inside the
-sliding window, plus the current window's count. The attempt is added first (one upsert that returns
-the new count) and taken back if it went over, so two replicas cannot both slip under the limit. If
+The shared count is exact: attempts are counted in small buckets (a sixtieth of the window) and every
+bucket inside the window is summed; a bucket the window's start falls inside counts in full, so the
+limiter can only err on the strict side. (An earlier version weighted the previous fixed window by
+how much of it remained, which undercounts bursts near a window boundary.) The attempt is added
+first and taken back if it went over, so two replicas cannot both slip under the limit. If
 the database cannot be reached, the limiter falls back to counting in memory for that attempt.
 
 The per-request API budget stays in memory: it protects each replica's own capacity and runs on
@@ -112,20 +113,31 @@ class SlidingWindowLimiter:
         return self.limit - sum(1 for t in q if now - t < self.window) if q else self.limit
 
 
-def estimate(previous: int, current: int, elapsed: float, window: float) -> float:
-    """Events in the sliding window ending now: the share of the previous window still inside it, plus this one."""
-    return previous * max(0.0, 1 - elapsed / window) + current
+def bucket_size(window: float) -> int:
+    """Seconds per counting bucket: a sixtieth of the window (one second for a one-minute limit)."""
+    return max(1, int(window // 60))
 
 
-def wait_for(previous: int, current: int, elapsed: float, window: float, limit: int) -> int:
-    """Seconds until one more event fits under ``limit`` (``current`` excludes the refused attempt)."""
-    if current >= limit:  # wait for the next window, then for enough of this one to slide out
-        later = window - elapsed + (window * (1 - limit / current) if current else 0)
-    elif previous:
-        later = window * (1 - (limit - current) / previous) - elapsed
-    else:
-        later = window - elapsed
-    return max(1, min(int(2 * window), math.ceil(later)))
+def in_window(buckets: list[tuple[int, int]], now: float, window: float) -> int:
+    """Attempts in the window ending now. A bucket the window's start falls inside counts in full, so
+    the count can only be slightly high (a little strict), never low (never lets more through)."""
+    size = bucket_size(window)
+    return sum(count for start, count in buckets if start + size > now - window)
+
+
+def wait_for(buckets: list[tuple[int, int]], now: float, window: float, limit: int) -> int:
+    """Seconds until one more attempt fits: until enough of the oldest buckets leave the window."""
+    size = bucket_size(window)
+    live = sorted((start, count) for start, count in buckets if start + size > now - window)
+    total = sum(count for _, count in live)
+    for start, count in live:
+        if total < limit:
+            break
+        total -= count
+        expires = start + size + window  # when this bucket stops counting
+        if total < limit:
+            return max(1, math.ceil(expires - now))
+    return 1
 
 
 class _DatabaseCounters:
@@ -139,10 +151,9 @@ class _DatabaseCounters:
         from argus.storage.db import RateLimitCounterRow
 
         table: Table = RateLimitCounterRow.__table__  # type: ignore[assignment]
-        span = max(1, int(window))
+        size = bucket_size(window)
         now = time.time()
-        start = int(now // span * span)
-        elapsed = now - start
+        start = int(now // size * size)
         digest = hashlib.sha256(key.encode()).hexdigest()[:32]  # addresses and key ids are not stored
         if self.db.dialect == "postgresql":
             from sqlalchemy.dialects.postgresql import insert
@@ -151,16 +162,15 @@ class _DatabaseCounters:
         where = (table.c.name == name, table.c.key == digest)
         async with self.db.session() as s, s.begin():
             upsert = insert(table).values(name=name, key=digest, window_start=start, count=1)
-            added = upsert.on_conflict_do_update(index_elements=[table.c.name, table.c.key, table.c.window_start],
-                                                 set_={"count": table.c.count + 1}).returning(table.c.count)  # fmt: skip
-            current = int((await s.execute(added)).scalar_one())
-            previous = int(
-                await s.scalar(select(table.c.count).where(*where, table.c.window_start == start - span)) or 0
-            )
-            if estimate(previous, current, elapsed, span) > limit:
+            await s.execute(upsert.on_conflict_do_update(index_elements=[table.c.name, table.c.key, table.c.window_start],
+                                                         set_={"count": table.c.count + 1}))  # fmt: skip
+            rows = (await s.execute(select(table.c.window_start, table.c.count)
+                                    .where(*where, table.c.window_start > now - window - size))).all()  # fmt: skip
+            buckets = [(int(b), int(c)) for b, c in rows]
+            if in_window(buckets, now, window) > limit:
                 await s.execute(update(table).where(*where, table.c.window_start == start)
                                 .values(count=table.c.count - 1))  # fmt: skip
-                return wait_for(previous, current - 1, elapsed, span, limit)
-            if random.random() < 0.02:  # forget windows that no longer count
-                await s.execute(delete(table).where(table.c.name == name, table.c.window_start < start - span))
+                return wait_for([(b, c - 1 if b == start else c) for b, c in buckets], now, window, limit)
+            if random.random() < 0.02:  # forget buckets that no longer count
+                await s.execute(delete(table).where(table.c.name == name, table.c.window_start < now - window - size))
         return 0

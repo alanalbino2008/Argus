@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from argus.security import ratelimit
-from argus.security.ratelimit import SlidingWindowLimiter, estimate, wait_for
+from argus.security.ratelimit import SlidingWindowLimiter, bucket_size, in_window, wait_for
 from argus.storage.db import Base, Database, RateLimitCounterRow
 
 
@@ -58,12 +58,34 @@ async def test_a_broken_database_falls_back_to_memory(tmp_path):
         ratelimit.use_memory()
 
 
-def test_the_sliding_estimate():
-    assert estimate(10, 2, elapsed=30, window=60) == 7  # half of the previous window still counts
-    assert estimate(10, 2, elapsed=60, window=60) == 2
-    assert wait_for(0, 5, elapsed=10, window=60, limit=5) == 50  # next window: the previous one counts 5*(1-e/60)
-    assert wait_for(8, 2, elapsed=30, window=60, limit=5) == 8  # 8*(1-t/60)+2 < 5 once t > 37.5: 8 s from now
-    assert wait_for(8, 2, elapsed=30, window=60, limit=5) <= 120
+def test_the_exact_count_never_undercounts_at_a_boundary():
+    assert bucket_size(60) == 1 and bucket_size(3600) == 60 and bucket_size(5) == 1
+    now = 1_000_030.5
+    # Ten attempts in the last seconds of one minute, the eleventh at the start of the next: still refused.
+    late = [(1_000_000 - i, 1) for i in range(1, 11)]
+    assert in_window([*late, (1_000_030, 1)], now, 60) == 11
+    assert in_window([(999_960, 4)], now, 60) == 0  # long gone
+    assert in_window([(999_970, 4)], now, 60) == 4  # the bucket the window's start falls in counts in full
+    # Waiting: the oldest attempts must leave the window first.
+    assert wait_for([(999_990, 5), (1_000_020, 5)], now, 60, 10) == 21  # 999_991 + 60 - now
+    assert wait_for([(1_000_030, 1)], now, 60, 5) >= 1
+
+
+async def test_a_burst_across_a_minute_boundary_is_held_to_the_limit(monkeypatch, db):
+    """The CI failure: a slow burst straddling a minute boundary let an 11th attempt through."""
+    from argus.security import ratelimit as rl
+
+    clock = {"t": 1_000_050.0}
+    monkeypatch.setattr(rl.time, "time", lambda: clock["t"])
+    limiter = SlidingWindowLimiter(limit=10, window=60, name="boundary_test")
+    results = []
+    for _ in range(11):
+        results.append(await limiter.allow("k"))
+        clock["t"] += 2.6  # one report every 2.6 s, crossing the minute at 1_000_080
+    assert results == [True] * 10 + [False]
+    assert 1 <= limiter.retry_after("k") <= 60
+    clock["t"] = 1_000_050.0 + 61  # a minute after the first attempt: room again
+    assert await limiter.allow("k")
 
 
 def test_the_server_shares_its_limits(make_client):

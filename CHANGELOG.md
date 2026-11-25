@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.94.1] — Fix: shared rate limits could let a burst through at a minute boundary
+
+### Fixed
+- The database-shared rate limiter (Phase 86) estimated the sliding window from two fixed windows,
+  weighting the previous one by how much of it remained. That undercounts bursts near a boundary: a
+  slow series of attempts straddling a minute could get one more than the limit (seen in CI on
+  report generation). It now counts exactly, in buckets of a sixtieth of the window; a bucket the
+  window's start falls inside counts in full, so it can only err on the strict side. Concurrent
+  replicas still cannot both slip under the limit. No migration.
+
 ## [1.94.0] — Phase 94: SCIM provisioning
 
 ### Added
