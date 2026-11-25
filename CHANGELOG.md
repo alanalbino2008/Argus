@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.95.0] — Phase 95: Safe upgrades
+
+### Added
+- **A checked copy before every SQLite upgrade:** when migrations are pending, the database is copied
+  (`VACUUM INTO`) to `pre-upgrade/` and the copy is integrity-checked first (newest three kept,
+  owner-only).
+- **No upgrade may lose rows:** every table is counted before and after migrating. If any lost rows,
+  or the migration failed, the copy is put back and Argus refuses to start, naming the tables. This
+  would have stopped the 1.91.0 case-items loss on the first installation that met it.
+
 ## [1.94.1] — Fix: shared rate limits could let a burst through at a minute boundary
 
 ### Fixed

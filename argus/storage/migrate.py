@@ -75,7 +75,119 @@ async def upgrade_database(db: Database) -> str | None:
     return revision
 
 
+class MigrationDataLoss(RuntimeError):
+    """An upgrade removed rows it should not have; the database was put back as it was."""
+
+
+# Tables whose rows may legitimately vanish during an upgrade (short-lived, recreated on demand).
+EPHEMERAL = {"alembic_version", "ws_tickets", "oidc_logins", "rate_limit_counters", "sessions"}
+SNAPSHOTS_KEPT = 3
+
+
+def _sqlite_file(db: Database) -> Path | None:
+    name = db.engine.url.database
+    if not name or name == ":memory:" or name.startswith("file:"):
+        return None
+    return Path(name)
+
+
+def _counts(path: Path) -> dict[str, int]:
+    """Rows in every table of a SQLite file (read-only)."""
+    import sqlite3
+
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        tables = [
+            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        ]
+        return {t: int(conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]) for t in tables}  # noqa: S608 - names from the schema
+    finally:
+        conn.close()
+
+
+def _snapshot(path: Path, current: str | None, head: str) -> Path:
+    """A consistent copy of the database before it is migrated, next to it, readable by its owner only."""
+    import sqlite3
+    from datetime import datetime, timezone
+
+    folder = path.parent / "pre-upgrade"
+    folder.mkdir(mode=0o700, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    out = folder / f"{path.stem}-{current or 'none'}-to-{head}-{stamp}.db"
+    source = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        source.execute("VACUUM INTO ?", (str(out),))
+    finally:
+        source.close()
+    out.chmod(0o600)
+    check = sqlite3.connect(f"file:{out}?mode=ro", uri=True)
+    try:
+        if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise RuntimeError(f"The pre-upgrade snapshot {out} is damaged; not upgrading")
+    finally:
+        check.close()
+    for old in sorted(folder.glob(f"{path.stem}-*.db"))[:-SNAPSHOTS_KEPT]:
+        old.unlink(missing_ok=True)
+    return out
+
+
+def _put_back(path: Path, snapshot: Path) -> None:
+    import shutil
+
+    for suffix in ("-wal", "-shm"):
+        Path(f"{path}{suffix}").unlink(missing_ok=True)
+    shutil.copyfile(snapshot, path)
+
+
+async def _pending(db: Database) -> tuple[str | None, str, bool]:
+    """(current revision, head, whether the database holds anything worth protecting)."""
+    head = head_revision()
+    async with db.engine.connect() as conn:
+
+        def read(c: Connection) -> tuple[str | None, bool]:
+            tables = set(inspect(c).get_table_names())
+            return MigrationContext.configure(c).get_current_revision(), bool(tables - {"alembic_version"})
+
+        current, populated = await conn.run_sync(read)
+    return current, head, populated
+
+
 async def _upgrade_sqlite(db: Database) -> str | None:
+    """Migrate SQLite safely: a checked snapshot first, foreign keys off, and no rows lost (Phase 95).
+
+    Before a pending migration runs, the database is copied (``VACUUM INTO``) to ``pre-upgrade/`` next
+    to it and the copy checked; the newest three are kept. After the migration, every table is counted
+    again: if one has fewer rows than before (short-lived tables aside), the snapshot is put back and
+    :class:`MigrationDataLoss` stops the start-up, so a faulty migration can never cost data silently.
+    """
+    path = _sqlite_file(db)
+    current, head, populated = await _pending(db)
+    if path is None or current == head or not populated or not path.exists():
+        return await _migrate_sqlite(db)
+    snapshot = _snapshot(path, current, head)
+    before = _counts(snapshot)
+    logger.warning("Upgrading the database from %s to %s; a copy was saved first: %s", current, head, snapshot)
+    try:
+        revision = await _migrate_sqlite(db)
+    except Exception:
+        await db.engine.dispose()
+        _put_back(path, snapshot)
+        logger.error("The upgrade failed; the database was put back as it was (%s)", snapshot)
+        raise
+    after = _counts(path)
+    lost = {t: (n, after.get(t, 0)) for t, n in before.items()
+            if t not in EPHEMERAL and t in after and after[t] < n}  # fmt: skip
+    if lost:
+        await db.engine.dispose()
+        _put_back(path, snapshot)
+        detail = ", ".join(f"{t}: {a} of {b} rows" for t, (b, a) in sorted(lost.items()))
+        raise MigrationDataLoss(f"Upgrading from {current} to {head} would have lost rows ({detail}). The database "
+                                f"was put back as it was; Argus did not start. Report this, with the log, before "
+                                f"upgrading again. The copy taken before the upgrade is {snapshot}.")  # fmt: skip
+    return revision
+
+
+async def _migrate_sqlite(db: Database) -> str | None:
     """Migrate SQLite with foreign keys off, as Alembic's batch mode requires.
 
     SQLite cannot alter most of a table, so batch migrations copy it to a new table, drop the old one
