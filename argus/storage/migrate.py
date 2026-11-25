@@ -65,9 +65,36 @@ async def upgrade_database(db: Database) -> str | None:
     Safe to call from several replicas at once: on PostgreSQL the migration runs under a
     transaction-scoped advisory lock, so the others wait and then find nothing to do.
     """
+    if db.dialect == "sqlite":
+        return await _upgrade_sqlite(db)
     async with db.engine.begin() as conn:
         if db.dialect == "postgresql":
             await conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": MIGRATION_LOCK})
         revision = await conn.run_sync(_upgrade)
+    logger.info("Database schema at revision %s", revision)
+    return revision
+
+
+async def _upgrade_sqlite(db: Database) -> str | None:
+    """Migrate SQLite with foreign keys off, as Alembic's batch mode requires.
+
+    SQLite cannot alter most of a table, so batch migrations copy it to a new table, drop the old one
+    and rename. With foreign keys on, dropping the old table fires every ``ON DELETE CASCADE`` that
+    points at it: rebuilding ``cases`` would delete every case item and piece of evidence. The pragma
+    only takes effect outside a transaction, so it is set before the migration starts, the foreign keys
+    are checked once it is done, and they are switched back on.
+    """
+    async with db.engine.connect() as conn:
+        await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        await conn.commit()
+        try:
+            async with conn.begin():
+                revision = await conn.run_sync(_upgrade)
+            problems = (await conn.exec_driver_sql("PRAGMA foreign_key_check")).fetchall()
+            if problems:
+                logger.warning("Rows referring to missing parents after migrating: %s", problems[:20])
+        finally:
+            await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            await conn.commit()
     logger.info("Database schema at revision %s", revision)
     return revision

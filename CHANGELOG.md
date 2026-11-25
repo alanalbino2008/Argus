@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.93.1] — Fix: SQLite upgrades could delete data
+
+### Fixed
+- **Upgrading a SQLite database could delete rows through `ON DELETE CASCADE`.** SQLite migrations
+  that change a table rebuild it (copy, drop, rename); with foreign keys on, dropping the old table
+  deleted its children. Migration 0038 (1.91.0) rebuilt `cases`, deleting every case item and piece
+  of evidence. Older migrations that rebuilt `subscriber_accounts` and `investigations` had the same
+  effect on their children. Migrations now run with foreign keys off on SQLite (as Alembic's batch
+  mode requires), check them afterwards, and switch them back on. Migration 0038 now adds its
+  columns without rebuilding the table. PostgreSQL was never affected.
+- **If you run Argus on SQLite and upgraded to 1.91.0–1.93.0,** check your cases. If their notes,
+  links or evidence are missing, restore the backup taken before the upgrade (Phase 56 backups).
+- A regression test fills an old database with parents and children and checks that upgrading keeps
+  every row.
+
 ## [1.93.0] — Phase 93: Session controls and workspace network policy
 
 ### Security

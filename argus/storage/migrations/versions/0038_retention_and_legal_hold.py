@@ -32,10 +32,11 @@ def upgrade() -> None:
         sa.Column("last_run_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_result", sa.JSON(), nullable=True),
     )
-    with op.batch_alter_table("cases") as batch:
-        batch.add_column(sa.Column("legal_hold", sa.Boolean(), nullable=False, server_default=sa.false()))
-        batch.add_column(sa.Column("legal_hold_note", sa.String(length=500), nullable=True))
-        batch.add_column(sa.Column("legal_hold_by", sa.String(length=128), nullable=True))
+    # Plain ADD COLUMN, not a batch rebuild: on SQLite a rebuild drops and recreates "cases", which (with
+    # foreign keys on) deleted every case item and piece of evidence through ON DELETE CASCADE.
+    op.add_column("cases", sa.Column("legal_hold", sa.Boolean(), nullable=False, server_default=sa.false()))
+    op.add_column("cases", sa.Column("legal_hold_note", sa.String(length=500), nullable=True))
+    op.add_column("cases", sa.Column("legal_hold_by", sa.String(length=128), nullable=True))
 
 
 def downgrade() -> None:
