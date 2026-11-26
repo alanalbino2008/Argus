@@ -147,7 +147,7 @@ function renderCase() {
         <h1 style="margin-top:4px">${c.title} ${c.restricted ? html`<span class="pill" style="vertical-align:middle">${ico("shield")}Restricted</span>` : ""}
           ${c.legal_hold ? html`<span class="pill high" style="vertical-align:middle" title="${c.legal_hold_note || "On legal hold"}${c.legal_hold_by ? ` (by ${c.legal_hold_by})` : ""}">Legal hold</span>` : ""}</h1>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">${safetyPills(c)}</div>
-        <p>${c.purpose}</p>
+        <p>${c.purpose}</p>${c.authorization ? html`<p class="muted small">${ico("shield")}Authorisation: ${c.authorization}</p>` : ""}
         <p class="muted small">Opened by ${c.created_by} ${timeAgo(c.created_at)}${c.restricted ? ` · visible to ${[c.created_by, ...c.members].join(", ")}` : ""}${c.tags.length ? ` · ${c.tags.join(", ")}` : ""}</p></div>
       <div class="page-actions">
         ${canEdit() ? html`<button class="btn sm primary" data-act="capture">${ico("eye")}Capture a page</button>
@@ -292,7 +292,7 @@ const FORMS = {
     const created = await api.post("/api/cases", { title: $("#case-title").value.trim(), purpose: $("#case-purpose").value.trim(),
       restricted: $("#case-restricted").checked, members: $("#case-members").value.split(",").map((m) => m.trim()).filter(Boolean),
       tags: $("#case-tags").value.split(",").map((t) => t.trim()).filter(Boolean), egress: $("#case-egress").value,
-      opsec_mode: $("#case-anonymous").checked ? "anonymous" : "standard", confirmed: true });
+      opsec_mode: $("#case-anonymous").checked ? "anonymous" : "standard", authorization: $("#case-authorization").value.trim(), confirmed: true });
     closeModal("case-modal");
     await openCase(created.id);
   },

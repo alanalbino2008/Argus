@@ -788,6 +788,8 @@ class CaseRow(Base):
         EncryptedText(500, label="cases.legal_hold_note"), nullable=True
     )
     legal_hold_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Phase 114: the legal authorisation the work rests on (warrant, court order, ticket, DPIA reference).
+    authorization: Mapped[str | None] = mapped_column(EncryptedText(300, label="cases.authorization"), nullable=True)
 
 
 class AccountWatchRow(Base):

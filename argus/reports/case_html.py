@@ -186,7 +186,7 @@ def _header(case: dict[str, Any], by: str, generated_at: datetime) -> str:
     return f"""<h1>{e(case["title"])}</h1>
 <p class="muted">Case report · generated {e(generated_at.strftime("%d %b %Y %H:%M UTC"))} by {e(by)}</p>
 <dl class="meta">
-<dt>Purpose</dt><dd>{e(case.get("purpose"))}</dd>
+<dt>Purpose</dt><dd>{e(case.get("purpose"))}</dd>{f"<dt>Authorisation</dt><dd>{e(case['authorization'])}</dd>" if case.get("authorization") else ""}
 <dt>Status</dt><dd>{e(str(case.get("status", "")).capitalize())}</dd>
 <dt>Opened</dt><dd>{_when(case.get("created_at"))} by {e(case.get("created_by"))}</dd>
 <dt>Last change</dt><dd>{_when(case.get("updated_at"))}</dd>

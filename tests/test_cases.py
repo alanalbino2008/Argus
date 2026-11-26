@@ -113,13 +113,22 @@ async def test_capture_follows_redirects_and_records_everything():
     try:
         c = await cap.capture_url(f"http://127.0.0.1:{port}/start", settings)
         assert c.manifest["final_url"].endswith("/memo") and c.manifest["title"] == "Leaked memo"
-        assert set(c.files) == {"page.html", "headers.json", "text.txt"}
+        assert set(c.files) == {"page.html", "headers.json", "text.txt", "page.warc"}
         redirects = json.loads(c.files["headers.json"][1])["redirects"]
         assert [r["status"] for r in redirects] == [302, 200]
         assert any("No headless browser" in w for w in c.warnings)
+        warc = c.files["page.warc"][1]
+        records = warc.split(b"WARC/1.1\r\n")[1:]
+        assert [r.split(b"\r\n", 1)[0] for r in records] == [b"WARC-Type: warcinfo", b"WARC-Type: response",
+                                                              b"WARC-Type: response"]  # fmt: skip
+        assert b"HTTP/1.1 302 Found" in records[1] and b"WARC-Target-URI: http://127.0.0.1" in records[2]
+        body = c.files["page.html"][1]
+        assert records[2].rstrip(b"\r\n").endswith(body)
+        assert f"WARC-Payload-Digest: sha256:{hashlib.sha256(body).hexdigest()}".encode() in records[2]
+        assert c.files["page.warc"][0] == "application/warc"
         other = await cap.capture_url(f"http://127.0.0.1:{port}/data.json", settings)
         assert (
-            set(other.files) == {"response.bin", "headers.json"}
+            set(other.files) == {"response.bin", "headers.json", "page.warc"}
             and other.files["response.bin"][0] == "application/json"
         )
     finally:
@@ -164,6 +173,7 @@ async def test_the_browser_screenshot_goes_through_the_guard(monkeypatch):
     assert rendered["screenshot"], rendered["notes"]
     assert rendered["screenshot"].startswith(b"\x89PNG")
     assert b"Board memo" in rendered["dom"] and "169.254.169.254:80" in rendered["blocked"]
+    assert rendered["pdf"] and rendered["pdf"].startswith(b"%PDF"), rendered["notes"]  # the page printed as a PDF
 
 
 async def test_trusted_timestamps(monkeypatch):
@@ -285,6 +295,7 @@ def test_capture_custody_tamper_detection_and_bundle(client):
         "page.html",
         "headers.json",
         "text.txt",
+        "page.warc",
     }
     upload = client.post(f"/api/cases/{case['id']}/uploads", files={"file": ("chat.png", b"\x89PNG\r\n\x1a\nfake", "image/png")},
                          data={"note": "Screenshot sent by a source"}).json()  # fmt: skip

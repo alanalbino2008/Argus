@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.115.0] — Capture and audit; a person's graph and groups
+
+### Added
+- **Confirmed accounts are captured at once** as case evidence through the case's route; the candidate shows
+  whether its page was preserved. `"capture": false` to skip.
+- **WARC and PDF** in every web capture: `page.warc` (WARC 1.1: redirects, response, screenshot) and
+  `page.pdf` (printed by the headless browser), both in the manifest and the capture digest.
+- **Legal authorisation** on cases (encrypted; shown on the case and in its report; in the audit details of
+  case creation, person searches, confirmations and captures). `ARGUS_REQUIRE_CASE_AUTHORIZATION` makes it
+  mandatory. Migration 0044.
+- Opening a person is audited (`subject.view`).
+- **Person graph** (`GET .../subjects/{id}/graph`): known details, candidates, links between candidates,
+  shared websites and connected people, drawn on the person's card.
+- **Groups** (`GET .../subjects/{id}/clusters`): candidates sharing a picture or links (or two weaker signals:
+  a website, name, bio wording, public email). Open candidates sharing a picture or link with a confirmed
+  account score higher.
+
 ## [1.113.0] — A person's timeline, the people around them, and an AI dossier
 
 ### Added

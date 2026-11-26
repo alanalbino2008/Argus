@@ -303,10 +303,11 @@ def _facts_text(facts: dict[str, Any]) -> str:
     return " ".join(parts).lower()
 
 
-def score(candidate: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
-    """How well a candidate fits what is known: a score from 0 to 100, a verdict, and the reasons."""
+def score(candidate: dict[str, Any], known: dict[str, Any], extra: list[str] | None = None) -> dict[str, Any]:
+    """How well a candidate fits what is known: a score from 0 to 100, a verdict, and the reasons.
+    ``extra``: what it strongly shares with confirmed accounts (a picture, a link), counted as agreements."""
     facts = candidate.get("facts") or {}
-    agree: list[str] = []
+    agree: list[str] = list(extra or [])
     conflict: list[str] = []
     kind = candidate["kind"]
     if kind == "profile":
@@ -527,9 +528,10 @@ def merge(existing: dict[str, dict[str, Any]], found: list[dict[str, Any]], *, s
 
 
 def rescore(candidates: dict[str, dict[str, Any]], known: dict[str, Any]) -> None:
+    shared = cluster_reasons({"candidates": candidates})
     for cand in candidates.values():
         if cand.get("status") == "open":
-            cand.update(score(cand, known))
+            cand.update(score(cand, known, extra=shared.get(cand["id"])))
 
 
 def follow_up(cand: dict[str, Any]) -> dict[str, Any] | None:
@@ -845,3 +847,178 @@ def check_dossier(output: dict[str, Any], sources: dict[str, dict[str, Any]]) ->
     return {**output, "established": resolve(output.get("established") or [], "established"),
             "likely": resolve(output.get("likely") or [], "likely"),
             "conflicts": resolve(output.get("conflicts") or [], "conflicts")}  # fmt: skip
+
+
+# ---------------------------------------------------------------------------- clusters and the person's graph
+STRONG_LINKS = {"the same profile picture", "one links to the other"}
+
+
+def _bio_words(facts: dict[str, Any]) -> set[str]:
+    from argus.intel.profiles import _words
+
+    return _words(str(facts.get("bio") or ""))
+
+
+def _hosts(cand: dict[str, Any]) -> set[str]:
+    facts = cand.get("facts") or {}
+    urls = [*_urls(facts.get("links")), str(facts.get("website") or "")]
+    return {_host(u) for u in urls if u and _host(u) and _host(u) not in GENERIC_HOSTS and "." in _host(u)}
+
+
+def _pair_reasons(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
+    """What two candidates share that suggests one owner."""
+    from argus.intel.avatars import same_picture
+
+    fa, fb = a.get("facts") or {}, b.get("facts") or {}
+    reasons = []
+    if same_picture(a.get("avatar_hash"), b.get("avatar_hash")):
+        reasons.append("the same profile picture")
+    la, lb = {_norm_url(u) for u in _urls(fa.get("links"))}, {_norm_url(u) for u in _urls(fb.get("links"))}
+    if (a.get("url") and _norm_url(a["url"]) in lb) or (b.get("url") and _norm_url(b["url"]) in la):
+        reasons.append("one links to the other")
+    shared_hosts = _hosts(a) & _hosts(b)
+    if shared_hosts:
+        reasons.append(f"both link to {', '.join(sorted(shared_hosts)[:2])}")
+    na, nb = str(fa.get("display_name") or "").strip(), str(fb.get("display_name") or "").strip()
+    if na and nb and _real_name(na) and na.lower() == nb.lower():
+        reasons.append(f"the same name ({na})")
+    words = _bio_words(fa) & _bio_words(fb)
+    if len(words) >= 3:
+        reasons.append(f"similar bios ({', '.join(sorted(words)[:4])})")
+    ea = {str(fa.get(k) or "").lower() for k in ("public_email", "email") if fa.get(k)}
+    eb = {str(fb.get(k) or "").lower() for k in ("public_email", "email") if fb.get(k)}
+    if ea & eb:
+        reasons.append("the same public email address")
+    return reasons
+
+
+def clusters(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Groups of candidates that share a picture, links, a website, a name, bio wording or an address:
+    probably one owner. A group that includes a confirmed account points at more of the person's accounts."""
+    cands = [c for c in (data.get("candidates") or {}).values() if c.get("status") in ("open", "confirmed")]
+    cands = cands[:400]
+    parent = {c["id"]: c["id"] for c in cands}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    links: list[dict[str, Any]] = []
+    for i, a in enumerate(cands):
+        for b in cands[i + 1 :]:
+            reasons = _pair_reasons(a, b)
+            if not reasons:
+                continue
+            strong = any(r in STRONG_LINKS for r in reasons) or len(reasons) >= 2
+            links.append({"a": a["id"], "b": b["id"], "reasons": reasons, "strong": strong})
+            if strong:  # a single weak signal (a shared website or similar bios) is shown, not grouped
+                parent[find(a["id"])] = find(b["id"])
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for c in cands:
+        groups.setdefault(find(c["id"]), []).append(c)
+    out = []
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        ids = {m["id"] for m in members}
+        out.append({
+            "members": [{"id": m["id"], "label": m.get("label") or m["value"], "status": m.get("status")}
+                        for m in members],
+            "links": [x for x in links if x["a"] in ids and x["b"] in ids],
+            "includes_confirmed": any(m.get("status") == "confirmed" for m in members),
+        })  # fmt: skip
+    out.sort(key=lambda g: (not g["includes_confirmed"], -len(g["members"])))  # type: ignore[arg-type]
+    return out
+
+
+def cluster_reasons(data: dict[str, Any]) -> dict[str, list[str]]:
+    """For each open candidate, what it strongly shares with a confirmed account (for the score)."""
+    cands = data.get("candidates") or {}
+    confirmed = [c for c in cands.values() if c.get("status") == "confirmed"]
+    out: dict[str, list[str]] = {}
+    for cand in cands.values():
+        if cand.get("status") != "open":
+            continue
+        for other in confirmed:
+            reasons = [r for r in _pair_reasons(cand, other) if r in STRONG_LINKS]
+            if reasons:
+                out.setdefault(cand["id"], []).append(
+                    f"shares {reasons[0]} with a confirmed account ({other.get('label')})"
+                )
+    return out
+
+
+def graph(name: str, data: dict[str, Any], *, include_rejected: bool = False) -> dict[str, Any]:
+    """The person at the centre; what is known; the candidates, linked to the detail they were found from;
+    links between candidates (shared picture, links, websites); shared websites; and connected people."""
+    known = data.get("known") or {}
+    nodes: list[dict[str, Any]] = [{"id": "person", "label": name, "type": "person", "status": "subject"}]
+    edges: list[dict[str, Any]] = []
+    by_value: dict[str, str] = {}
+    confirmed_keys = {
+        c["key"]: c["id"] for c in (data.get("candidates") or {}).values() if c.get("status") == "confirmed"
+    }
+    n = 0
+    for field in LISTS:
+        for value in known.get(field) or []:
+            if key_of(field[:-1], value) in confirmed_keys:  # shown once, as the confirmed account
+                by_value[key_of(field[:-1], value)] = confirmed_keys[key_of(field[:-1], value)]
+                continue
+            n += 1
+            node_id = f"k{n}"
+            nodes.append({"id": node_id, "label": value, "type": field[:-1], "status": "known"})
+            edges.append({"source": "person", "target": node_id, "label": "known"})
+            by_value[key_of(field[:-1], value)] = node_id
+            if field == "profiles":
+                handle = handle_from_url(value)
+                if handle:
+                    by_value.setdefault(key_of("username", handle), node_id)
+            if field == "websites":
+                by_value.setdefault(key_of("website", _host(value)), node_id)
+    shown = [c for c in (data.get("candidates") or {}).values()
+             if c.get("status") in ("open", "confirmed") or (include_rejected and c.get("status") == "rejected")]  # fmt: skip
+    shown.sort(key=lambda c: (c.get("status") != "confirmed", -(c.get("score") or 0)))
+    shown = shown[:150]
+    ids = {c["id"] for c in shown}
+    for c in shown:
+        nodes.append({"id": c["id"], "label": c.get("label") or c["value"], "type": c["kind"], "status": c.get("status"),
+                      "verdict": c.get("verdict"), "score": c.get("score"), "url": c.get("url")})  # fmt: skip
+        source = "person"
+        for f in c.get("found_from") or []:
+            source = by_value.get(key_of(f.get("kind", ""), str(f.get("value") or "")), source)
+            if source != "person":
+                break
+        edges.append(
+            {"source": source, "target": c["id"], "label": "confirmed" if c.get("status") == "confirmed" else "found"}
+        )
+    edges.extend(
+        {"source": link["a"], "target": link["b"], "label": "; ".join(link["reasons"]), "kind": "shared"}
+        for group in clusters({"candidates": {c["id"]: c for c in shown}})
+        for link in group["links"]
+    )
+    host_users: dict[str, list[str]] = {}
+    for c in shown:
+        for host in _hosts(c):
+            host_users.setdefault(host, []).append(c["id"])
+    for host, users in host_users.items():
+        if len(users) >= 2:
+            node_id = f"site:{host}"
+            nodes.append({"id": node_id, "label": host, "type": "domain", "status": "shared"})
+            edges += [{"source": u, "target": node_id, "label": "links to", "kind": "shared"} for u in users]
+    via_label = {c.get("label") or c["value"]: c["id"] for c in shown}
+    for i, a in enumerate(associates(data)[:40], 1):
+        node_id = f"a{i}"
+        nodes.append({"id": node_id, "label": a["name"], "type": "associate", "status": "associate"})
+        for via in a["via"]:
+            if via in via_label and via_label[via] in ids:
+                edges.append(
+                    {
+                        "source": via_label[via],
+                        "target": node_id,
+                        "label": ", ".join(a["relations"]),
+                        "kind": "associate",
+                    }
+                )
+    return {"nodes": nodes, "edges": edges}

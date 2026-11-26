@@ -456,6 +456,10 @@ class Settings(BaseSettings):
     oidc_allowed_domains: list[str] = Field(
         default_factory=list, description='Only these email domains may sign in, e.g. ["acme.com"] (empty = any)'
     )
+    require_case_authorization: bool = Field(
+        default=False,
+        description="Every new case must name its legal authorisation (warrant, court order, ticket or assessment)",
+    )
     oidc_require_verified_email: bool = Field(
         default=True, description="Reject identities whose provider does not assert email_verified=true"
     )

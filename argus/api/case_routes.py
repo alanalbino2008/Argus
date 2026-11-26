@@ -45,6 +45,11 @@ class CaseRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
     egress: str = Field(default="", max_length=32, description="Route its captures and scans use; empty: direct")
     opsec_mode: OpsecMode = Field(default="standard", description="anonymous: never touch the subjects directly")
+    authorization: str = Field(
+        default="",
+        max_length=300,
+        description="The legal authorisation the work rests on: a warrant, court order, ticket or assessment reference",
+    )
     confirmed: bool = Field(description="Confirms there is a legitimate purpose for this investigation")
 
 
@@ -58,6 +63,7 @@ class CaseUpdate(BaseModel):
     tags: list[str] | None = Field(default=None, max_length=20)
     egress: str | None = Field(default=None, max_length=32)
     opsec_mode: OpsecMode | None = None
+    authorization: str | None = Field(default=None, max_length=300)
 
 
 class ItemRequest(BaseModel):
@@ -180,14 +186,18 @@ async def create_case(body: CaseRequest, request: Request, ws: WorkspaceContext 
     if not body.confirmed:
         raise HTTPException(status_code=422, detail="Confirm there is a legitimate purpose for this investigation")
     egress = _safety(request, body.egress, body.opsec_mode)
+    if request.app.state.settings.require_case_authorization and not body.authorization.strip():
+        raise HTTPException(status_code=422, detail="Give the legal authorisation for this investigation (a warrant, "
+                                                    "court order, ticket or assessment reference)")  # fmt: skip
     case = await _repo(request).create(
         workspace_id=ws.id, by=ws.principal.name, title=body.title.strip(), purpose=body.purpose.strip(),
         summary=body.summary, restricted=body.restricted, members=_clean_list(body.members), tags=_clean_list(body.tags, 40),
-        egress=egress, opsec_mode=body.opsec_mode,
+        egress=egress, opsec_mode=body.opsec_mode, authorization=body.authorization.strip() or None,
     )  # fmt: skip
     await audit(request, ws.principal, "case.create", case["id"],
                 details={"title": case["title"], "purpose": case["purpose"], "restricted": case["restricted"],
-                         "route": egress or "direct", "opsec_mode": body.opsec_mode})  # fmt: skip
+                         "route": egress or "direct", "opsec_mode": body.opsec_mode,
+                         "authorization": case["authorization"]})  # fmt: skip
     return case
 
 

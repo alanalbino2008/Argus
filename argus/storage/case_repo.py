@@ -23,7 +23,18 @@ from argus.evidence.capture import Capture, canonical, sha256
 from argus.storage.db import CaseItemRow, CaseRow, Database, EvidenceCaptureRow, EvidenceCustodyRow, EvidenceFileRow
 
 GENESIS = "0" * 64
-CASE_FIELDS = ("title", "purpose", "summary", "status", "restricted", "members", "tags", "egress", "opsec_mode")
+CASE_FIELDS = (
+    "title",
+    "purpose",
+    "summary",
+    "status",
+    "restricted",
+    "members",
+    "tags",
+    "egress",
+    "opsec_mode",
+    "authorization",
+)
 ITEM_FIELDS = ("title", "body", "data", "occurred_at")
 
 
@@ -45,6 +56,7 @@ def _case(row: CaseRow) -> dict[str, Any]:
         "opsec_mode": row.opsec_mode or "standard", "created_by": row.created_by,
         "created_at": _iso(row.created_at), "updated_at": _iso(row.updated_at),
         "legal_hold": bool(row.legal_hold), "legal_hold_note": row.legal_hold_note, "legal_hold_by": row.legal_hold_by,
+        "authorization": row.authorization or "",
     }  # fmt: skip
 
 

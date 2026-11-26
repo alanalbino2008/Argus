@@ -1,6 +1,7 @@
 // The People tab of a case: everything already known about a person, one search from all of it,
 // and the accounts, addresses and records found, scored against what is known, to confirm or reject.
 
+/* global cytoscape */
 import { api, enc, request } from "../api.js";
 import { ico } from "../components.js";
 import { $, formatDate, html, on, setHTML, timeAgo, toast } from "../dom.js";
@@ -112,7 +113,8 @@ function candidateRow(c) {
     <td><b>${c.label}</b>${c.platform ? html` <span class="muted small">${c.platform}</span>` : ""}<div class="muted small">${KIND[c.kind] || c.kind} · ${c.grade} · found from ${(c.found_from || []).map((f) => f.value).join(", ")}</div>
       ${c.agree?.length ? html`<div class="small" style="color:var(--ok)">${ico("check")}${c.agree.join("; ")}</div>` : ""}
       ${c.conflict?.length ? html`<div class="small error-text">${c.conflict.join("; ")}</div>` : ""}
-      ${c.note ? html`<div class="muted small">Note: ${c.note}</div>` : ""}</td>
+      ${c.note ? html`<div class="muted small">Note: ${c.note}</div>` : ""}
+      ${c.capture ? html`<div class="small ${c.capture.status === "failed" ? "error-text" : "muted"}">${ico("shield")}${{ capturing: "Preserving the page as evidence…", done: "Page preserved as evidence (fingerprinted, in the case)", failed: `Page not preserved: ${c.capture.detail || "error"}` }[c.capture.status] || ""}</div>` : ""}</td>
     <td style="white-space:nowrap">${safeUrl(c.url) ? html`<a href="${c.url}" target="_blank" rel="noopener noreferrer" class="small">${ico("external")}Open</a>` : ""}
       ${canEdit() && c.status === "open" ? html` <button class="btn sm" data-sj="confirm" data-id="${c.id}" title="It is theirs: add it to the known details and the case">${ico("check")}Theirs</button>
         <button class="btn sm ghost" data-sj="reject" data-id="${c.id}" title="Not theirs: never suggest it again">Not theirs</button>` : ""}
@@ -138,7 +140,9 @@ function suggestionsView(s) {
 const DOSSIER_SECTIONS = [["established", "Established"], ["likely", "Likely, not confirmed"], ["conflicts", "Conflicts"]];
 
 function deeperView(s) {
-  return html`<details data-sj-load="timeline" style="margin-top:12px"><summary class="small"><b>Timeline of their online life</b></summary><div data-sj-panel="timeline"><p class="muted small">Loading…</p></div></details>
+  return html`<details data-sj-load="graph" style="margin-top:12px"><summary class="small"><b>Graph</b></summary><div data-sj-panel="graph"><p class="muted small">Loading…</p></div></details>
+    <details data-sj-load="groups" style="margin-top:8px"><summary class="small"><b>Groups: accounts that seem to share an owner</b></summary><div data-sj-panel="groups"><p class="muted small">Loading…</p></div></details>
+    <details data-sj-load="timeline" style="margin-top:8px"><summary class="small"><b>Timeline of their online life</b></summary><div data-sj-panel="timeline"><p class="muted small">Loading…</p></div></details>
     <details data-sj-load="associates" style="margin-top:8px"><summary class="small"><b>Other people connected</b></summary><div data-sj-panel="associates"><p class="muted small">Loading…</p></div></details>
     <details data-sj-load="dossier" style="margin-top:8px"><summary class="small"><b>${ico("sparkle")}AI dossier</b></summary><div data-sj-panel="dossier"><p class="muted small">Loading…</p></div></details>`;
 }
@@ -176,9 +180,45 @@ function dossierPanel(d) {
       <div class="muted small">By ${d.by}, ${formatDate(d.generated_at)}${d.model ? ` · ${d.model}` : ""}</div></div>` : ""}`;
 }
 
+const NODE_COLOR = { subject: "#4f5bd5", known: "#0d74ce", confirmed: "#30a46c", open: "#ad7f00", rejected: "#9ca3af", shared: "#8e4ec6", associate: "#e54666" };
+let personCy = null;
+
+function drawGraph(target, g) {
+  setHTML(target, html`<div class="muted small" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 0">${Object.entries({ subject: "The person", known: "Known", confirmed: "Theirs", open: "To review", shared: "Shared website", associate: "Other people" }).map(([k, label]) => html`<span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${NODE_COLOR[k]}"></i> ${label}</span>`)}</div>
+    <div data-sj-cy style="height:460px;border:1px solid var(--border);border-radius:8px"></div>
+    <p class="muted small">Dashed lines: what two accounts share (picture, links, website, name, bio). Click an account to open it.</p>`);
+  if (typeof cytoscape === "undefined") return;
+  personCy?.destroy();
+  const box = target.querySelector("[data-sj-cy]");
+  personCy = cytoscape({ container: box, wheelSensitivity: 0.2,
+    elements: [...g.nodes.map((n) => ({ data: { ...n, color: NODE_COLOR[n.status] || "#6b7280" } })),
+      ...g.edges.map((e, i) => ({ data: { id: `e${i}`, ...e } }))],
+    style: [
+      { selector: "node", style: { "background-color": "data(color)", label: "data(label)", "font-size": 9, color: "#555", "text-wrap": "ellipsis", "text-max-width": 120, width: 16, height: 16 } },
+      { selector: 'node[status = "subject"]', style: { width: 30, height: 30, "font-size": 12, "font-weight": 700 } },
+      { selector: "edge", style: { width: 1, "line-color": "#c7c7cf", "curve-style": "bezier" } },
+      { selector: 'edge[label = "confirmed"]', style: { width: 2, "line-color": "#30a46c" } },
+      { selector: 'edge[kind = "shared"]', style: { "line-style": "dashed", "line-color": "#8e4ec6" } },
+      { selector: 'edge[kind = "associate"]', style: { "line-color": "#e54666" } },
+    ],
+    layout: { name: "cose", animate: false, nodeRepulsion: 9000, idealEdgeLength: 70 } });
+  personCy.on("tap", "node", (ev) => { const url = ev.target.data("url"); if (url && /^https?:\/\//.test(url)) window.open(url, "_blank", "noopener,noreferrer"); });
+}
+
+function groupsPanel(g) {
+  return g.groups.length ? html`${g.groups.map((grp) => html`<div class="note" style="margin:6px 0">
+      <b class="small">${grp.includes_confirmed ? "Includes an account you confirmed" : "Accounts that seem to share an owner"} (${grp.members.length})</b>
+      <div class="small">${grp.members.map((m) => html`<span class="pill ${m.status === "confirmed" ? "ok" : ""}" style="text-transform:none;margin:2px">${m.label}</span>`)}</div>
+      ${grp.links.slice(0, 8).map((l) => html`<div class="muted small">${grp.members.find((m) => m.id === l.a)?.label} ↔ ${grp.members.find((m) => m.id === l.b)?.label}: ${l.reasons.join("; ")}</div>`)}</div>`)}
+    <p class="muted small">A shared picture or a link between two accounts groups them; a shared website, name or similar bio alone is shown but not enough. Open candidates that share a picture or a link with an account you confirmed score higher.</p>`
+    : html`<p class="muted small">No groups yet: no two accounts share a picture, links, a website, a name or bio wording.</p>`;
+}
+
 async function loadPanel(kind, target) {
   const path = `${base()}/${enc(current.id)}`;
   try {
+    if (kind === "graph") return drawGraph(target, await api.get(`${path}/graph`));
+    if (kind === "groups") setHTML(target, groupsPanel(await api.get(`${path}/clusters`)));
     if (kind === "timeline") setHTML(target, timelinePanel(await api.get(`${path}/timeline?include_open=${timelineOpen}`)));
     if (kind === "associates") setHTML(target, associatesPanel(await api.get(`${path}/associates`)));
     if (kind === "dossier") setHTML(target, dossierPanel(await api.get(`${path}/dossier`)));

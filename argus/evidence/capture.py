@@ -5,7 +5,9 @@ A capture is a set of files plus a **manifest**:
 * ``screenshot.png`` and ``rendered.html``: the page as a browser displayed it (needs a
   headless Chromium/Chrome);
 * ``text.txt``: the visible text, for searching;
-* ``headers.json``: the HTTP status, headers and redirect chain.
+* ``headers.json``: the HTTP status, headers and redirect chain;
+* ``page.warc``: all of the above in the web-archive standard (WARC 1.1), for replay tools and archives;
+* ``page.pdf``: the page printed as a PDF by the browser (with a headless browser).
 
 The manifest lists every file with its SHA-256, the URL, the final URL, the time, the tool and
 what the browser was refused. The **capture digest** is the SHA-256 of the canonical manifest,
@@ -370,7 +372,7 @@ async def render(url: str, browser: str, settings: Settings, proxy: GuardProxy |
         async with GuardProxy(allow_private=settings.allow_private_targets) as own:
             return await render(url, browser, settings, own)
     notes: list[str] = []
-    screenshot = dom = None
+    screenshot = dom = pdf = None
     version = os.path.basename(browser)
     # Late writes by Chrome's helper processes must not fail the capture.
     with tempfile.TemporaryDirectory(prefix="argus-capture-", ignore_cleanup_errors=True) as tmp:
@@ -424,6 +426,10 @@ async def render(url: str, browser: str, settings: Settings, proxy: GuardProxy |
                     result = await dt.call("Runtime.evaluate", {"expression": "document.documentElement.outerHTML",
                                                                 "returnByValue": True})  # fmt: skip
                     dom = str((result.get("result") or {}).get("value") or "").encode()
+                    with contextlib.suppress(CaptureError, asyncio.TimeoutError, KeyError, ValueError):
+                        printed = await dt.call("Page.printToPDF", {"printBackground": True, "preferCSSPageSize": True},
+                                                timeout=40)  # fmt: skip
+                        pdf = base64.b64decode(printed.get("data", "")) or None
                     with contextlib.suppress(CaptureError, asyncio.TimeoutError):
                         await dt.call("Browser.close", page=False, timeout=5)
                 finally:
@@ -437,6 +443,7 @@ async def render(url: str, browser: str, settings: Settings, proxy: GuardProxy |
     return {
         "screenshot": screenshot or None,
         "dom": dom if dom and dom.strip() else None,
+        "pdf": pdf if pdf and pdf.startswith(b"%PDF") else None,
         "browser": version,
         "blocked": sorted(set(proxy.log.blocked)),
         "notes": notes,
@@ -519,6 +526,51 @@ def route_record(route: EgressRoute | None) -> dict[str, Any]:
     return {"name": route.name, "kind": route.kind, "anonymous": route.is_anonymous}
 
 
+# ---------------------------------------------------------------------------- WARC (ISO 28500)
+HOP_HEADERS = {"content-encoding", "transfer-encoding", "content-length", "connection"}
+
+
+def _warc_record(kind: str, uri: str | None, date: str, content_type: str, block: bytes, **extra: str) -> bytes:
+    import uuid
+
+    head = [
+        "WARC/1.1", f"WARC-Type: {kind}", f"WARC-Record-ID: <urn:uuid:{uuid.uuid4()}>", f"WARC-Date: {date}",
+        *([f"WARC-Target-URI: {uri}"] if uri else []), f"Content-Type: {content_type}",
+        f"WARC-Block-Digest: sha256:{hashlib.sha256(block).hexdigest()}",
+        *[f"{k.replace('_', '-')}: {v}" for k, v in extra.items()], f"Content-Length: {len(block)}",
+    ]  # fmt: skip
+    return ("\r\n".join(head) + "\r\n\r\n").encode() + block + b"\r\n\r\n"
+
+
+def build_warc(page: dict[str, Any], captured_at: str, screenshot: tuple[str, bytes] | None = None) -> bytes:
+    """The capture as a WARC file, the web-archive standard that replay tools (pywb, ReplayWeb.page) and
+    archives read: the server's response (the body as received after decompression, so the
+    content-encoding headers are dropped), the redirect chain, and the screenshot."""
+    from http import HTTPStatus
+
+    date = captured_at.replace("+00:00", "Z")
+    info = f"software: Argus\r\nformat: WARC File Format 1.1\r\ncaptured-at: {date}\r\n".encode()
+    out = _warc_record("warcinfo", None, date, "application/warc-fields", info)
+    for hop in page.get("chain", [])[:-1]:
+        status = int(hop["status"])
+        reason = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
+        lines = [f"HTTP/1.1 {status} {reason}"] + [f"{k}: {v}" for k, v in hop["headers"].items()
+                                                   if k.lower() not in HOP_HEADERS] + ["Content-Length: 0"]  # fmt: skip
+        out += _warc_record("response", hop["url"], date, "application/http;msgtype=response",
+                            ("\r\n".join(lines) + "\r\n\r\n").encode())  # fmt: skip
+    status = int(page["status"])
+    reason = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
+    body: bytes = page["body"]
+    lines = [f"HTTP/1.1 {status} {reason}"] + [f"{k}: {v}" for k, v in page["headers"].items()
+                                               if k.lower() not in HOP_HEADERS] + [f"Content-Length: {len(body)}"]  # fmt: skip
+    out += _warc_record("response", page["final_url"], date, "application/http;msgtype=response",
+                        ("\r\n".join(lines) + "\r\n\r\n").encode() + body,
+                        WARC_Payload_Digest=f"sha256:{hashlib.sha256(body).hexdigest()}")  # fmt: skip
+    if screenshot:
+        out += _warc_record("resource", f"urn:argus:screenshot:{page['final_url']}", date, "image/png", screenshot[1])
+    return out
+
+
 async def capture_url(url: str, settings: Settings, route: EgressRoute | None = None) -> Capture:
     """Capture ``url``; with a ``route`` every request (page, browser, assets) leaves through it."""
     url = check_url(url, allow_private=settings.allow_private_targets)
@@ -550,6 +602,8 @@ async def _capture(url: str, settings: Settings, route: EgressRoute | None, prox
             warnings.append("The browser could not take a screenshot")
         if rendered["dom"]:
             files["rendered.html"] = ("text/html", rendered["dom"])
+        if rendered.get("pdf"):
+            files["page.pdf"] = ("application/pdf", rendered["pdf"])
         if rendered["blocked"]:
             warnings.append(f"Refused {len(rendered['blocked'])} non-public address(es) the page tried to load")
     elif is_html:
@@ -558,6 +612,7 @@ async def _capture(url: str, settings: Settings, route: EgressRoute | None, prox
         markup = (files.get("rendered.html") or files["page.html"])[1].decode("utf-8", errors="replace")
         title, text = visible_text(markup)
         files["text.txt"] = ("text/plain", text.encode())
+    files["page.warc"] = ("application/warc", build_warc(page, captured_at, files.get("screenshot.png")))
     manifest, digest = build({
         "kind": "web_capture", "url": url, "final_url": page["final_url"], "status": page["status"],
         "title": title, "captured_at": captured_at, "method": "server", "route": route_record(route), **browser_info,

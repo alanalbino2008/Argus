@@ -100,3 +100,16 @@ def make_client(tmp_path, monkeypatch):
 @pytest.fixture
 def client(make_client):
     return make_client()
+
+
+@pytest.fixture(autouse=True)
+def _no_live_captures_of_confirmed_accounts(monkeypatch):
+    """Confirming a person's account captures its page; tests never fetch real sites (a test that wants
+    the capture replaces this with its own fake)."""
+    from argus.api import subject_routes
+    from argus.evidence.capture import CaptureError
+
+    async def no_capture(url, settings, route=None):
+        raise CaptureError("Captures are switched off in tests")
+
+    monkeypatch.setattr(subject_routes, "capture_url", no_capture)
