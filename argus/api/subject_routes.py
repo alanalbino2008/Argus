@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from argus.api.case_routes import _case
-from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.api.deps import WorkspaceContext, audit, in_workspace, require_approval
 from argus.api.opsec_routes import route_for
 from argus.api.playbook_routes import RUNS, ScanFn, _available
 from argus.core.models import ScanConfig
@@ -948,3 +948,129 @@ async def subject_clusters(case_id: str, subject_id: str, request: Request, ws: 
     await _subject(request, ws, case_id, subject_id)
     await audit(request, ws.principal, "subject.view_groups", subject_id, details={"case": case_id})
     return {"groups": S.clusters(await request.app.state.subjects.data(subject_id) or {})}
+
+
+# ---------------------------------------------------------------------------- breach intelligence
+def _breach_identifiers(data: dict[str, Any]) -> list[tuple[str, str]]:
+    """The subject's email, username and phone identifiers (known and confirmed) to look up."""
+    known = data.get("known") or {}
+    out: list[tuple[str, str]] = []
+    for field, kind in (("emails", "email"), ("usernames", "username"), ("phones", "phone")):
+        out.extend((str(value), kind) for value in known.get(field) or [])
+    out.extend(
+        (str(c["value"]), c["kind"])
+        for c in (data.get("candidates") or {}).values()
+        if c.get("status") == "confirmed" and c.get("kind") in ("email", "username", "phone")
+    )
+    seen: set[str] = set()
+    unique: list[tuple[str, str]] = []
+    for value, kind in out:
+        key = f"{kind}:{value.lower()}"
+        if value.strip() and key not in seen:
+            seen.add(key)
+            unique.append((value, kind))
+    return unique
+
+
+def _candidate_identifier(cand: dict[str, Any]) -> str:
+    if cand.get("kind") == "profile":
+        return (S.handle_from_url(cand["value"]) or "").lower()
+    return str(cand.get("value") or "").lower()
+
+
+@router.post("/cases/{case_id}/subjects/{subject_id}/breaches")
+async def run_breaches(case_id: str, subject_id: str, request: Request, ws: WorkspaceContext = ANALYST):
+    """Look up the person's identifiers in data breaches: masked passwords and one-way hashes only, never
+    plaintext. Needs a breach provider configured. A reused password raises matching candidates' scores."""
+    from argus.intel import breaches as B
+    from argus.intel.breach_lookup import fetch_exposures
+
+    case, _subj = await _subject(request, ws, case_id, subject_id)
+    _open(case)
+    settings = request.app.state.settings
+    if settings.breach_provider == "none":
+        raise HTTPException(status_code=409, detail="No breach provider is configured (set ARGUS_BREACH_PROVIDER)")
+    route = route_for(settings, case, None)
+    data = await request.app.state.subjects.data(subject_id) or {}
+    identifiers = _breach_identifiers(data)[: settings.breach_lookups_max]
+    found: list[dict[str, Any]] = []
+    for value, kind in identifiers:
+        found += await fetch_exposures(settings, value, kind, route)
+    known_idents = {v.lower() for v, _ in identifiers}
+    learned: list[str] = []
+
+    def apply(row: SubjectRow, d: dict[str, Any]) -> None:
+        d["breaches"] = found
+        for cand in d["candidates"].values():
+            if cand.get("status") != "open" or cand.get("kind") not in ("email", "username", "profile"):
+                continue
+            ident = _candidate_identifier(cand)
+            shared = B.shared_with(found, ident, known_idents) if ident else []
+            if shared:
+                reason = f"reuses a breached password with a known account ({shared[0]})"
+                cand["agree"] = [r for r in (cand.get("agree") or []) if "reuses a breached password" not in r] + [
+                    reason
+                ]
+                cand["breach_reuse"] = shared
+                learned.append(cand["id"])
+        S.rescore(d["candidates"], d.get("known") or {})
+
+    await request.app.state.subjects.change(subject_id, apply)
+    await audit(request, ws.principal, "subject.breaches", subject_id,
+                details={"case": case_id, "identifiers": len(identifiers), "exposures": len(found),
+                         "provider": settings.breach_provider, "authorization": case.get("authorization") or ""})  # fmt: skip
+    return {"summary": B.summary(found), "scored": len(set(learned))}
+
+
+@router.get("/cases/{case_id}/subjects/{subject_id}/breaches")
+async def get_breaches(case_id: str, subject_id: str, request: Request, ws: WorkspaceContext = VIEWER):
+    """The person's breach exposures (masked; no plaintext) and shared-password reuse."""
+    from argus.intel import breaches as B
+
+    await _subject(request, ws, case_id, subject_id)
+    data = await request.app.state.subjects.data(subject_id) or {}
+    found = data.get("breaches") or []
+    await audit(request, ws.principal, "subject.view_breaches", subject_id, details={"case": case_id})
+    return {"exposures": found, "summary": B.summary(found)}
+
+
+class RevealRequest(BaseModel):
+    identifier: str = Field(max_length=200)
+    breach: str = Field(max_length=200)
+    hash: str = Field(max_length=128, description="The password_sha256 of the exposure to reveal")
+    reason: str = Field(max_length=500, description="Why this plaintext is needed (recorded)")
+
+
+@router.post("/cases/{case_id}/subjects/{subject_id}/breaches/reveal")
+async def reveal_password(case_id: str, subject_id: str, body: RevealRequest, request: Request,
+                          ws: WorkspaceContext = ANALYST):  # fmt: skip
+    """Reveal one leaked password in clear. Guarded: the case must record its legal authorisation, the
+    reason is logged, a second administrator approves it (if the workspace protects it), and it is
+    audited. The plaintext is re-fetched live and never stored."""
+    from argus.intel.breach_lookup import reveal_one
+
+    case, _subj = await _subject(request, ws, case_id, subject_id)
+    settings = request.app.state.settings
+    if settings.breach_provider != "custom":
+        raise HTTPException(status_code=409, detail="Only a custom breach provider can reveal passwords")
+    if not (case.get("authorization") or "").strip():
+        raise HTTPException(status_code=409, detail="Record the case's legal authorisation before revealing a password")
+    if not body.reason.strip():
+        raise HTTPException(status_code=422, detail="Give the reason this plaintext is needed")
+    data = await request.app.state.subjects.data(subject_id) or {}
+    match = next((e for e in data.get("breaches") or []
+                  if e.get("password_sha256") == body.hash and e["identifier"] == body.identifier.lower()), None)  # fmt: skip
+    if match is None:
+        raise HTTPException(status_code=404, detail="That exposure is not on this person")
+    await require_approval(request, ws, "breach.reveal", f"{subject_id}:{body.hash[:12]}",
+                           f"Reveal a leaked password for {body.identifier}")  # fmt: skip
+    route = route_for(settings, case, None)
+    revealed = await reveal_one(settings, body.identifier, match["kind"], body.breach, body.hash, route)
+    await audit(request, ws.principal, "breach.reveal", subject_id,
+                details={"case": case_id, "identifier": body.identifier, "breach": body.breach,
+                         "reason": body.reason[:500], "found": revealed is not None,
+                         "authorization": case.get("authorization")})  # fmt: skip
+    if revealed is None:
+        raise HTTPException(status_code=404, detail="The provider no longer returns that password")
+    return {"identifier": revealed["identifier"], "breach": revealed["breach"], "password": revealed["password"],
+            "warning": "A leaked password. Never use it to sign in; this reveal was recorded."}  # fmt: skip

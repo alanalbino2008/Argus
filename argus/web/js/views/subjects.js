@@ -144,6 +144,7 @@ function deeperView(s) {
     <details data-sj-load="groups" style="margin-top:8px"><summary class="small"><b>Groups: accounts that seem to share an owner</b></summary><div data-sj-panel="groups"><p class="muted small">Loading…</p></div></details>
     <details data-sj-load="timeline" style="margin-top:8px"><summary class="small"><b>Timeline of their online life</b></summary><div data-sj-panel="timeline"><p class="muted small">Loading…</p></div></details>
     <details data-sj-load="associates" style="margin-top:8px"><summary class="small"><b>Other people connected</b></summary><div data-sj-panel="associates"><p class="muted small">Loading…</p></div></details>
+    <details data-sj-load="breaches" style="margin-top:8px"><summary class="small"><b>${ico("shield")}Breaches & reused passwords</b></summary><div data-sj-panel="breaches"><p class="muted small">Loading…</p></div></details>
     <details data-sj-load="dossier" style="margin-top:8px"><summary class="small"><b>${ico("sparkle")}AI dossier</b></summary><div data-sj-panel="dossier"><p class="muted small">Loading…</p></div></details>`;
 }
 
@@ -229,10 +230,24 @@ function groupsPanel(g) {
     : html`<p class="muted small">No groups yet: no two accounts share a picture, links, a website, a name or bio wording.</p>`;
 }
 
+function breachesPanel(b) {
+  const s = b.summary;
+  return html`<p class="muted small">Where the person's email addresses, usernames and phone numbers appear in data breaches, and whether the same password was reused across them. Argus keeps a masked password and a one-way hash only — never the plaintext. Reused passwords are strong evidence two accounts are one person.</p>
+    ${canEdit() ? html`<button class="btn sm" data-sj="run-breaches">${ico("search")}Look up breaches</button>` : ""}
+    ${s.reuse?.length ? html`<h3 style="margin-top:12px">Reused passwords (${s.reuse.length})</h3>${s.reuse.map((g) => html`<div class="note"><b class="small">${g.masked || "same password"}</b>
+      <div class="small">${g.identifiers.join(" ↔ ")}</div><div class="muted small">in ${g.breaches.join(", ")}</div></div>`)}` : ""}
+    ${b.exposures.length ? html`<h3 style="margin-top:12px">Exposures (${b.exposures.length})</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Identifier</th><th>Breach</th><th>When</th><th>Password</th><th></th></tr></thead><tbody>
+      ${b.exposures.map((e) => html`<tr><td style="word-break:break-all">${e.identifier}</td><td>${e.breach}</td><td>${e.date || "—"}</td>
+        <td>${e.password_masked || (e.has_password ? (e.hash_only ? "hashed" : "yes") : "—")}</td>
+        <td>${canEdit() && e.password_sha256 && !e.hash_only ? html`<button class="btn sm ghost" data-sj="reveal" data-id="${e.identifier}|${e.breach}|${e.password_sha256}" title="Reveal the plaintext (records the reason, needs the case's legal authorisation and, where set, a second approver)">Reveal</button>` : ""}</td></tr>`)}</tbody></table></div>`
+      : html`<p class="muted small">No exposures loaded. ${s.breaches?.length ? "" : "Run a look-up, with a breach provider configured."}</p>`}`;
+}
+
 async function loadPanel(kind, target) {
   const path = `${base()}/${enc(current.id)}`;
   try {
     if (kind === "graph") return drawGraph(target, await api.get(`${path}/graph`));
+    if (kind === "breaches") return setHTML(target, breachesPanel(await api.get(`${path}/breaches`)));
     if (kind === "groups") setHTML(target, groupsPanel(await api.get(`${path}/clusters`)));
     if (kind === "timeline") setHTML(target, timelinePanel(await api.get(`${path}/timeline?include_open=${timelineOpen}`)));
     if (kind === "associates") setHTML(target, associatesPanel(await api.get(`${path}/associates`)));
@@ -329,6 +344,23 @@ export function initSubjects(root, changed) {
         if (sj === "accept-sugg") toast(current.search_refused || current.search_note || (current.status === "running" ? "Added to the known details; searching from them" : "Added to the known details"), current.search_refused ? "error" : "success", 6000);
         draw();
         return poll();
+      }
+      if (sj === "run-breaches") {
+        const r = await api.post(`${path}/breaches`);
+        toast(`${r.summary.exposures} exposure(s), ${r.summary.reuse.length} reused password group(s)${r.scored ? `, ${r.scored} candidate(s) scored up` : ""}`, "success", 7000);
+        return loadPanel("breaches", el.querySelector('[data-sj-panel="breaches"]'));
+      }
+      if (sj === "reveal") {
+        const [identifier, breach, hash] = id.split("|");
+        const reason = window.prompt("This reveals a leaked password in clear. Why is it needed? (recorded in the audit log)");
+        if (!reason) return;
+        try {
+          const r = await api.post(`${path}/breaches/reveal`, { identifier, breach, hash, reason });
+          window.alert(`${identifier} — ${breach}\n\nPassword: ${r.password}\n\n${r.warning}`);
+        } catch (err) {
+          toast(err.detail?.summary ? "A second administrator must approve this reveal" : err.message, "error", 8000);
+        }
+        return;
       }
       if (sj === "dossier") {
         if (!$("#sj-ai-ok")?.checked) return toast("Confirm that the material may be sent to Anthropic first", "error");

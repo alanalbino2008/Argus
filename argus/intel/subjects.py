@@ -714,6 +714,9 @@ def timeline(data: dict[str, Any], *, include_open: bool = False) -> list[dict[s
         add(facts.get("created"), f"Document created: {facts.get('title') or what}", "document")
         add(facts.get("date"), what, "record")
         add(facts.get("born"), f"Born (per {what})", "born")
+    events.extend({"date": b["date"], "title": f"In the {b['breach']} breach: {b['identifier']}",
+                   "kind": "breach", "candidate": None, "status": "confirmed", "url": None}
+                  for b in data.get("breaches") or [] if b.get("date"))  # fmt: skip
     events.sort(key=lambda e: e["date"])
     return events
 

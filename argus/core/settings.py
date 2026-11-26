@@ -86,6 +86,22 @@ class Settings(BaseSettings):
     # --- Optional intelligence sources (modules stay disabled until a key is set) ---------
     virustotal_api_key: SecretStr | None = Field(default=None, description="VirusTotal v3 API key")
     hibp_api_key: SecretStr | None = Field(default=None, description="Have I Been Pwned v3 API key")
+    breach_provider: str = Field(
+        default="none",
+        description="Credential breach provider for the People tab: 'none', 'hibp' (breach metadata only), or "
+        "'custom' (a provider that returns reused-password hashes and can reveal, under approval)",
+    )
+    breach_provider_url: str = Field(
+        default="",
+        description="Custom breach provider endpoint; the identifier is sent as the 'query' parameter "
+        "(e.g. https://api.example.com/search). Reached from the server only, through the case's route",
+    )
+    breach_provider_api_key: SecretStr | None = Field(
+        default=None, description="API key for the custom breach provider (sent as Bearer, server-side only)"
+    )
+    breach_lookups_max: int = Field(
+        default=25, ge=0, le=200, description="At most this many breach-provider look-ups per person search"
+    )
     ransomware_feed_url: str | None = Field(
         default="https://api.ransomware.live/v2",
         description="Ransomware leak-site research feed (ransomware.live API); empty turns it off",

@@ -34,6 +34,7 @@ ACTIONS = {
     "case.delete": "Delete a case",
     "case.export": "Export a case's evidence bundle",
     "exposure.reveal": "Reveal leaked email addresses in clear",
+    "breach.reveal": "Reveal a leaked password in clear",
     "key.create_admin": "Create an admin API key",
     "audit.stream_stop": "Stop or remove an audit log stream to a SIEM",
     "approval.policy": "Remove an action from the approval policy",

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.119.0] — Breach intelligence (no plaintext stored)
+
+### Added
+- **Breaches on the People tab**: a person's emails, usernames and phones are looked up in data breaches
+  (`POST/GET .../subjects/{id}/breaches`). Argus keeps only the breach, the identifier, a **masked** password
+  and a **SHA-256** — never plaintext.
+- **Password-reuse correlation**: a candidate that reuses a breached password with a known account gains a
+  strong agreement in its score; reuse groups are shown, and breaches join the person's timeline.
+- **Providers** (`ARGUS_BREACH_PROVIDER`): `hibp` (breach metadata), or `custom` (DeHashed/LeakCheck shape,
+  enabling the hash and reveal). Server-side, through the case route, off by default.
+- **Gated plaintext reveal** (`.../breaches/reveal`): only with a custom provider, the case's recorded legal
+  authorisation, a logged reason, two-person approval (`breach.reveal`), and an audit entry; re-fetched live,
+  never stored, never in bulk or in the dossier/report.
+
+### Security
+- Plaintext passwords are never persisted. Argus never tests credentials or signs in anywhere.
+
 ## [1.118.0] — Closing the gaps
 
 ### Added
