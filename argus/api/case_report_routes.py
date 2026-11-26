@@ -38,8 +38,8 @@ def _slug(title: str) -> str:
 
 @router.get("/cases/{case_id}/report.html")
 async def case_report(case_id: str, request: Request, ws: WorkspaceContext = VIEWER):
-    """The case in one HTML file: summary, network chart, timeline, evidence (hashes, custody, integrity),
-    scans and notes. Opens offline in any browser; loads nothing and runs no scripts.
+    """The case in one HTML file: summary, the people researched (what was known and what was confirmed),
+    network chart, timeline, evidence (hashes, custody, integrity), scans and notes. Opens offline in any browser; loads nothing and runs no scripts.
 
     Its SHA-256 is returned in ``X-Argus-Report-SHA256`` and recorded in the audit log, so a copy
     handed over can later be shown to be the one Argus produced.
@@ -58,13 +58,15 @@ async def case_report(case_id: str, request: Request, ws: WorkspaceContext = VIE
         captures.append({**c, "custody": await repo.custody(c["id"]), "integrity": await repo.verify(c["id"])})
     timeline = await _timeline(request, case_id, facts=True)
     scans = await _scans(request, items)
+    subjects = request.app.state.subjects
+    people = [p for p in [await subjects.get(s["id"], case_id) for s in await subjects.for_case(case_id)] if p]
     generated_at = datetime.now(timezone.utc)
     signer = await report_signer(request)
     page = await anyio.to_thread.run_sync(
         lambda: case_report_html(
             case, items=items, captures=captures, network=network, timeline=timeline,
             scans=scans, by=ws.principal.name, generated_at=generated_at,
-            signing={"tags": signer.tags(), "key_id": signer.key_id},
+            signing={"tags": signer.tags(), "key_id": signer.key_id}, people=people,
         )
     )  # fmt: skip
     data = signer.sign(page).encode()

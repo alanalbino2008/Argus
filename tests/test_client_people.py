@@ -50,3 +50,24 @@ def test_a_person_researched_end_to_end_from_python(sj):  # noqa: F811
     argus.remove_person(case_id, pid)
     assert argus.people(case_id) == []
 
+
+def test_the_case_report_shows_what_was_known_and_confirmed_not_ruled_out(sj):  # noqa: F811
+    c, _scans, case_id = sj
+    argus = ArgusClient(http=c)
+    pid = argus.add_person(case_id, "Jane Doe", **KNOWN)["id"]
+    c.portal.call(_set_photo, c.app.state.subjects, pid, PHOTO_HASH)
+    argus.search_person(case_id, pid, rounds=1)
+    argus.wait_for_person(case_id, pid, poll=0.05, timeout=10)
+    open_ = {x["value"]: x for x in argus.candidates(case_id, pid)}
+    argus.confirm_candidate(case_id, pid, open_["https://github.com/jdoe"]["id"], note="Photo checked <by hand>")
+    argus.reject_candidate(case_id, pid, open_["https://reddit.com/user/jdoe"]["id"])
+    page = argus.case_report(case_id).decode()
+    section = page[page.index("<h2>People researched</h2>") : page.index("<h2>Network</h2>")]
+    assert "jane@example.org" in section and "Acme Logistics" in section and "1984" in section
+    assert "https://github.com/jdoe" in section and "the same profile photo" in section
+    assert "Photo checked &lt;by hand&gt;" in section  # escaped
+    assert (
+        "reddit.com" not in section and "1 ruled out (not listed" in section and "made directly" in section
+    )  # other people's accounts stay out
+    assert "only its fingerprint is kept" in section and PHOTO_HASH not in section
+    assert "people researched" in page

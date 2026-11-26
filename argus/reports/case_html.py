@@ -52,7 +52,7 @@ dl.meta{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:1
 .figure b{display:block;font-size:22px}.figure span{color:var(--muted);font-size:12px}
 table{width:100%;border-collapse:collapse;margin:8px 0}th,td{text-align:left;vertical-align:top;padding:6px 8px;
 border-bottom:1px solid var(--rule)}th{font-size:12px;color:var(--muted);font-weight:600;background:var(--soft)}
-td.when{white-space:nowrap;width:1%}.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
+td.when{white-space:nowrap;width:1%}.against{color:#b45309}.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;
 font-weight:600;border:1px solid currentColor;white-space:nowrap}.ok{color:#15803d}.bad{color:#b91c1c}
 .card{border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin:12px 0;break-inside:avoid}
 .prose{white-space:pre-wrap}svg{width:100%;height:auto;border:1px solid var(--rule);border-radius:8px;background:var(--soft)}
@@ -302,6 +302,57 @@ def _notes(items: list[dict[str, Any]]) -> str:
     return f"<h2>Notes</h2>{cards}"
 
 
+KNOWN_LABELS = (("names", "Names"), ("usernames", "Usernames"), ("emails", "Email addresses"), ("phones", "Phone numbers"),
+                ("profiles", "Accounts"), ("websites", "Websites"))  # fmt: skip
+
+
+def _confirmed_row(c: dict[str, Any]) -> str:
+    where = f" · {e(c['url'])}" if c.get("url") else ""
+    against = f"<div class='small against'>Against: {e('; '.join(c['conflict']))}</div>" if c.get("conflict") else ""
+    note = f"<div>{e(c['note'])}</div>" if c.get("note") else ""
+    return (
+        f"<tr><td><b>{e(c.get('label'))}</b><div class='small muted'>{e(c.get('platform') or c.get('kind'))}{where}</div></td>"
+        f"<td>{e(c.get('score'))}/100</td><td class='small'>{e('; '.join(c.get('agree') or []) or '-')}{against}</td>"
+        f"<td class='small'>{e(c.get('decided_by') or '')}<div class='muted'>{_when(c.get('decided_at'))}</div>{note}</td></tr>"
+    )
+
+
+def _person(p: dict[str, Any]) -> str:
+    known = p.get("known") or {}
+    rows = [(label, ", ".join(known.get(key) or [])) for key, label in KNOWN_LABELS if known.get(key)]
+    rows += [(label, str(known[key])) for key, label in (("city", "Town or city"), ("employer", "Employer"),
+                                                         ("birth_year", "Year of birth")) if known.get(key)]  # fmt: skip
+    if known.get("photo_hash"):
+        rows.append(("Photo", "A known photo was compared with profile pictures (only its fingerprint is kept)"))
+    meta = "".join(f"<dt>{e(label)}</dt><dd>{e(value)}</dd>" for label, value in rows)
+    cands = p.get("candidates") or []
+    confirmed = [c for c in cands if c.get("status") == "confirmed"]
+    open_count = sum(1 for c in cands if c.get("status") == "open")
+    rejected = sum(1 for c in cands if c.get("status") == "rejected")
+    found = "".join(_confirmed_row(c) for c in confirmed)
+    run = p.get("run") or {}
+    last = (f"Last search {_when(run.get('started_at'))} by {e(run.get('by'))}, {e(run.get('status'))}, "
+            f"{len(run.get('steps') or [])} searches "
+            f"{'made directly' if (run.get('route') or 'direct') == 'direct' else 'through the ' + e(run['route']) + ' route'}"
+            f"{' (passive sources only)' if run.get('passive_only') else ''}." if run else "Not searched yet.")  # fmt: skip
+    watch = " Watched weekly for new accounts." if p.get("watch") else ""
+    table = (f"<h3>Confirmed as theirs ({len(confirmed)})</h3><table><thead><tr><th>Found</th><th>Score</th>"
+             f"<th>Why</th><th>Confirmed by</th></tr></thead><tbody>{found}</tbody></table>" if found
+             else "<p class='muted small'>Nothing found has been confirmed as theirs yet.</p>")  # fmt: skip
+    return f"""<div class="card"><h3>{e(p.get("name"))}</h3>
+<dl class="meta">{meta or "<dt>Known</dt><dd>Nothing recorded</dd>"}</dl>
+<p class="small">{last}{watch} {open_count} not yet reviewed; {rejected} ruled out (not listed, as they belong to other people).</p>
+{table}</div>"""
+
+
+def _people(people: list[dict[str, Any]] | None) -> str:
+    if not people:
+        return ""
+    return ("<h2>People researched</h2><p>What was known about each person, and what the investigators confirmed "
+            "as theirs from the searches made from it, with the reasons. Scores are aids to judgement, not "
+            "identifications.</p>" + "".join(_person(p) for p in people))  # fmt: skip
+
+
 def _signature_note(signing: dict[str, str] | None) -> str:
     if not signing:
         return ""
@@ -323,6 +374,7 @@ def case_report_html(
     by: str,
     generated_at: datetime,
     signing: dict[str, str] | None = None,
+    people: list[dict[str, Any]] | None = None,
 ) -> str:
     """The report page. With ``signing`` (``tags`` and ``key_id`` from a :class:`ReportSigner`), it carries
     the signature tags (empty: the caller signs the result) and says how to check it."""
@@ -334,9 +386,11 @@ def case_report_html(
         "scans": len(scans),
         "notes": sum(1 for i in items if i.get("kind") == "note"),
     }
+    if people:
+        counts["people researched"] = len(people)
     summary = f"<h2>Summary</h2><div class='prose'>{e(case.get('summary'))}</div>" if case.get("summary") else ""
     body = "".join((
-        _header(case, by, generated_at), _figures(counts), summary, _network(network), _timeline(timeline),
+        _header(case, by, generated_at), _figures(counts), summary, _people(people), _network(network), _timeline(timeline),
         _evidence(captures), _scans(scans), _notes(items),
     ))  # fmt: skip
     csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"

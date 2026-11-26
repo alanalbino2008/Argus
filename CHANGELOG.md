@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.104.0] — Phase 104: People in the case report
+
+### Added
+- The case report has a **People researched** section: what was known about each person, the latest
+  search (when, by whom, route, passive-only), and what was confirmed as theirs with the score, the
+  reasons for and against, who confirmed it and their note. Candidates ruled out or not yet reviewed
+  are counted, not listed: ruled-out accounts belong to other people.
+
 ## [1.103.0] — Phase 103: People in the Python client
 
 ### Added
