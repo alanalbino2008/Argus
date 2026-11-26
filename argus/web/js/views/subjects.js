@@ -118,6 +118,22 @@ function candidateRow(c) {
       ${canEdit() && c.status === "rejected" ? html` <button class="btn sm ghost" data-sj="reopen" data-id="${c.id}">Undo</button>` : ""}</td></tr>`;
 }
 
+function suggestionsView(s) {
+  const list = (s.suggestions || []).filter((x) => x.status === "pending");
+  if (!list.length) return "";
+  return html`<div class="note" style="margin:12px 0" id="sj-suggestions">
+    <b>${ico("sparkle")}Found on confirmed accounts (${list.length})</b>
+    <p class="muted small" style="margin:4px 0 8px">Not added yet: a bio can mention a friend's account or an old job. Tick what is theirs; Argus adds it to the known details and searches from it.</p>
+    ${list.map((x) => html`<label class="list-row" style="cursor:pointer;align-items:flex-start">
+      ${canEdit() ? html`<input type="checkbox" value="${x.id}" data-sugg checked style="margin-top:3px">` : ""}
+      <div class="list-main"><div class="list-title"><span class="muted">${x.label}:</span> <span style="word-break:break-all">${x.value}</span></div>
+      <div class="list-sub">${x.why}, on ${x.from}</div></div></label>`)}
+    ${canEdit() ? html`<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn sm primary" data-sj="accept-sugg">${ico("check")}Add ticked and search</button>
+      <button class="btn sm ghost" data-sj="dismiss-sugg">Dismiss ticked</button></div>` : ""}
+  </div>`;
+}
+
 function subjectCard(s) {
   const running = s.status === "running";
   const shown = s.candidates.filter((c) => filter === "all" || c.status === filter);
@@ -135,6 +151,7 @@ function subjectCard(s) {
       <label><input type="checkbox" id="sj-run-confirm"> Legitimate purpose (${caseRef.purpose})</label>
       <label>Follow what is found <select class="select" id="sj-rounds" style="max-width:170px"><option value="1">known details only</option><option value="2" selected>one step further</option><option value="3">two steps further</option></select></label>
       <label><input type="checkbox" id="sj-fresh"> Search everything again</label></div>` : ""}
+    ${suggestionsView(s)}
     ${runView(s.run)}
     <div class="card-head" style="margin-top:16px"><h3>Candidates</h3>
       <div class="segmented" role="tablist" aria-label="Candidates shown">${[["open", `To review (${s.counts.open})`], ["confirmed", `Theirs (${s.counts.confirmed})`], ["rejected", `Not theirs (${s.counts.rejected})`], ["all", "All"]].map(([k, label]) => html`<button class="${filter === k ? "active" : ""}" data-sj="filter" data-id="${k}">${label}</button>`)}</div></div>
@@ -190,12 +207,21 @@ export function initSubjects(root, changed) {
       }
       if (sj === "confirm") {
         current = await api.post(`${path}/candidates/${enc(id)}/confirm`, { search: true });
-        toast(current.search_refused ? `Added to the known details and the case. ${current.search_refused}` : "Added to the known details and the case; searching from it", "success", 6000);
+        const found = (current.suggestions || []).filter((x) => x.candidate === id && x.status === "pending").length;
+        toast(`Added to the known details and the case.${current.search_refused ? ` ${current.search_refused}` : current.status === "running" ? " Searching from it." : ""}${found ? ` ${found} more detail${found === 1 ? "" : "s"} found on it to review.` : ""}`, "success", 7000);
         onChanged({ quiet: true });
         draw();
         return poll();
       }
       if (sj === "reject") { current = await api.post(`${path}/candidates/${enc(id)}/reject`, {}); return draw(); }
+      if (sj === "accept-sugg" || sj === "dismiss-sugg") {
+        const ids = [...el.querySelectorAll("[data-sugg]:checked")].map((b) => b.value);
+        if (!ids.length) return toast("Tick the details first", "error");
+        current = await api.post(`${path}/suggestions/${sj === "accept-sugg" ? "accept" : "dismiss"}`, { ids, search: true });
+        if (sj === "accept-sugg") toast(current.search_refused || current.search_note || (current.status === "running" ? "Added to the known details; searching from them" : "Added to the known details"), current.search_refused ? "error" : "success", 6000);
+        draw();
+        return poll();
+      }
       if (sj === "reopen") { current = await api.post(`${path}/candidates/${enc(id)}/reopen`); return draw(); }
     } catch (err) { toast(err.message, "error", 8000); }
   });

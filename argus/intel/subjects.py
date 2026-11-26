@@ -381,8 +381,9 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
         facts: dict[str, Any] = {}
         if kind == "profile":
             facts = {k: v for k, v in _profile_facts(entity).items() if isinstance(v, (str, int, float, list))}
-            if md.get("public_email"):
-                facts.setdefault("public_email", md["public_email"])
+            for field in ("public_email", "public_phone"):
+                if md.get(field):
+                    facts.setdefault(field, md[field])
         elif kind == "record":
             if not md.get("born") and entity.id not in linked_orgs:
                 continue  # a bare name: nothing to weigh it by
@@ -482,3 +483,96 @@ def add_to_known(known: dict[str, Any], cand: dict[str, Any]) -> dict[str, Any]:
 
 CASE_ITEM_TYPES = {"profile": "account", "username": "username", "email": "email", "phone": "phone",
                    "record": "person"}  # fmt: skip
+
+
+# ---------------------------------------------------------------------------- learning from confirmed accounts
+BIO_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+BIO_URL = re.compile(r"\b(?:https?://|www\.)[^\s<>\"')|]+", re.I)
+BIO_SOCIAL = re.compile(
+    r"(?<![\w./])(?:(?:www|m)\.)?(?:tiktok\.com|instagram\.com|x\.com|twitter\.com|facebook\.com|t\.me|"
+    r"snapchat\.com|youtube\.com|threads\.net|linkedin\.com|pinterest\.com)/[^\s<>\"')|,]+",
+    re.I,
+)
+SUGGESTION_LABELS = {"names": "Name", "city": "Town or city", "employer": "Employer", "websites": "Website",
+                     "profiles": "Account", "emails": "Email address", "phones": "Phone number"}  # fmt: skip
+
+
+def _real_name(name: str) -> bool:
+    words = name.split()
+    return 2 <= len(words) <= 5 and not any(c.isdigit() for c in name) and len(name) <= 80
+
+
+def suggestions(cand: dict[str, Any], known: dict[str, Any]) -> list[dict[str, Any]]:
+    """What a confirmed account shows about the person that is not known yet, for the investigator to
+    tick: another name, the town, the employer, websites and other accounts it links to, and contact
+    details it shows publicly. Suggestions only: a bio can mention a friend's account or an old job."""
+    from argus.modules.identity.web_mentions import social_profile
+
+    facts = cand.get("facts") or {}
+    have = known_keys(known)
+    names = known.get("names") or []
+    out: list[dict[str, Any]] = []
+
+    def add(field: str, value: Any, why: str) -> None:
+        value = str(value or "").strip()
+        if not value or len(value) > 300:
+            return
+        if field in LISTS and key_of(field[:-1], value) in have:
+            return
+        if any(s["field"] == field and s["value"].lower() == value.lower() for s in out):
+            return
+        sid = "s_" + hashlib.sha256(f"{cand['id']}|{field}|{value.lower()}".encode()).hexdigest()[:12]
+        out.append({"id": sid, "field": field, "label": SUGGESTION_LABELS[field], "value": value, "why": why,
+                    "from": cand.get("label") or cand["value"], "candidate": cand["id"], "status": "pending"})  # fmt: skip
+
+    shown = str(facts.get("display_name") or "").strip()
+
+    def plain(n: str) -> str:
+        return re.sub(r"[^a-z]", "", n.lower())
+
+    if shown and _real_name(shown) and plain(shown) not in {plain(n) for n in names}:
+        add("names", shown, "the name the account shows")
+    if facts.get("location") and not known.get("city"):
+        add("city", str(facts["location"]).split(",")[0], "where the account says they are")
+    if facts.get("company") and not known.get("employer"):
+        add(
+            "employer",
+            str(facts["company"]).split(",")[0],
+            "a company the register record links them to"
+            if cand.get("kind") == "record"
+            else "the employer the account shows",
+        )
+    text = " ".join(str(facts.get(k) or "") for k in ("bio", "public_email", "email", "website"))
+    links = [str(u) for u in _urls(facts.get("links"))] + [str(facts.get("website") or "")]
+    bio = str(facts.get("bio") or "")
+    links += [
+        u if u.lower().startswith("http") else f"https://{u}" for u in BIO_URL.findall(bio) + BIO_SOCIAL.findall(bio)
+    ]
+    own = _norm_url(cand["value"]) if cand.get("kind") == "profile" else ""
+    for link in links:
+        link = link.strip().rstrip(".,;")
+        if not link or (own and _norm_url(link) == own):
+            continue
+        found = social_profile(link if "//" in link else f"https://{link}")
+        if found:
+            add("profiles", found[1], f"linked from the account ({found[0]})")
+        elif _host(link) and _host(link) not in GENERIC_HOSTS and "." in _host(link):
+            add("websites", link if "//" in link else f"https://{link}", "the website the account links to")
+    for address in BIO_EMAIL.findall(text):
+        add("emails", address.lower(), "an address the account shows publicly")
+    for field in ("public_phone", "phone"):
+        if facts.get(field) and sum(c.isdigit() for c in str(facts[field])) >= 7:
+            add("phones", norm_phone(str(facts[field])), "a number the account shows publicly")
+    return out[:12]
+
+
+def accept_suggestions(known: dict[str, Any], picked: list[dict[str, Any]]) -> dict[str, Any]:
+    """Add the ticked suggestions to the known details (lists extended, empty fields filled)."""
+    data = {**known}
+    for s in picked:
+        field = s["field"]
+        if field in LISTS:
+            data[field] = [*(data.get(field) or []), s["value"]]
+        elif not data.get(field):
+            data[field] = s["value"]
+    return clean_known(data)

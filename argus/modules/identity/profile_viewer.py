@@ -111,6 +111,7 @@ def facts_from(platform: str, data: dict[str, Any]) -> tuple[str, dict[str, Any]
         "display_name": _text(p.get("displayName")), "bio": _text(p.get("bio") or (p.get("business") or {}).get("intro")),
         "location": _text(p.get("location")), "website": _text(website), "avatar_url": p.get("avatarUrl"),
         "followers": metrics.get("followers"), "verified": bool(p.get("verified") or p.get("blueVerified")),
+        "public_email": _text(contact.get("email")), "public_phone": _text(contact.get("phone")),
     }  # fmt: skip
 
 

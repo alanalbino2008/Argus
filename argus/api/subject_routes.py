@@ -405,27 +405,36 @@ class SubjectRun:
             await self._change(record)
 
     async def _follow(self) -> bool:
-        """Queue searches from new candidates that match very well, if rounds are left. True if any."""
+        """Queue searches for details that became known meanwhile, and from new candidates that match very well
+        if rounds are left. True if any."""
 
         def apply(row: SubjectRow, data: dict[str, Any]) -> bool:
             run = self._mine(row, data)
             if run is None:
                 return False
             last = max((s["round"] for s in run["steps"]), default=1)
-            if last >= self.rounds or len(run["steps"]) >= MAX_SEARCHES:
-                return False
             searched = set(data.get("searched") or []) | {s["key"] for s in run["steps"]}
             added = 0
+            # Details that became known while this ran (a confirmation, an accepted suggestion): search them too.
+            for search in S.searches(data.get("known") or {}, searched):
+                if len(run["steps"]) >= MAX_SEARCHES:
+                    break
+                searched.add(search["key"])
+                run["steps"].append({**search, "round": last, "status": "pending", "detail": ""})
+                added += 1
+            if last >= self.rounds or len(run["steps"]) >= MAX_SEARCHES:
+                data["run"] = run
+                return bool(added)
             for cand in data["candidates"].values():
                 if cand.get("status") != "open" or (cand.get("score") or 0) < S.AUTO_FOLLOW:
                     continue
                 if cand["id"] not in self.new_ids:
                     continue
-                search = S.follow_up(cand)
-                if search is None or search["key"] in searched or len(run["steps"]) >= MAX_SEARCHES:
+                follow = S.follow_up(cand)
+                if follow is None or follow["key"] in searched or len(run["steps"]) >= MAX_SEARCHES:
                     continue
-                searched.add(search["key"])
-                run["steps"].append({**search, "round": last + 1, "status": "pending", "detail": ""})
+                searched.add(follow["key"])
+                run["steps"].append({**follow, "round": last + 1, "status": "pending", "detail": ""})
                 added += 1
             data["run"] = run
             return bool(added)
@@ -540,6 +549,10 @@ async def confirm_candidate(case_id: str, subject_id: str, candidate_id: str, bo
         cand.update(status="confirmed", decided_by=ws.principal.name, decided_at=_now(), note=body.note)
         data["known"] = S.add_to_known(data.get("known") or {}, cand)
         _settle(data)
+        dismissed = set(data.get("dismissed_suggestions") or [])
+        pending = {x["id"] for x in data.get("suggestions") or []}
+        new = [x for x in S.suggestions(cand, data["known"]) if x["id"] not in dismissed and x["id"] not in pending]
+        data["suggestions"] = [*(data.get("suggestions") or []), *new][-50:]
         return dict(cand)
 
     subject, cand = await request.app.state.subjects.change(subject_id, apply)
@@ -555,14 +568,80 @@ async def confirm_candidate(case_id: str, subject_id: str, candidate_id: str, bo
     )  # fmt: skip
     await audit(request, ws.principal, "subject.confirm", subject_id,
                 details={"case": case_id, "candidate": candidate_id, "kind": cand["kind"], "score": cand.get("score")})  # fmt: skip
-    follow = S.follow_up(cand)
-    searched = set((await request.app.state.subjects.data(subject_id) or {}).get("searched") or [])
-    if body.search and follow is not None and follow["key"] not in searched and subject["status"] != "running":
-        try:
-            subject = await start(request.app, case, subject, ws.principal, ws.id, rounds=1, fresh=False,
-                                  reason="confirmed", request=request)  # fmt: skip
-        except HTTPException as exc:
-            subject = {**subject, "search_refused": exc.detail}
+    if body.search:
+        subject = await _search_new(request, case, subject, ws, reason="confirmed")
+    return subject
+
+
+async def _search_new(request: Request, case: dict[str, Any], subject: dict[str, Any], ws: WorkspaceContext,
+                      reason: str) -> dict[str, Any]:  # fmt: skip
+    """Search whatever is known but not searched yet. A search already running picks it up itself."""
+    data = await request.app.state.subjects.data(subject["id"]) or {}
+    if not S.searches(data.get("known") or {}, set(data.get("searched") or [])):
+        return subject
+    if subject["status"] == "running":
+        return {**subject, "search_note": "The search already running will search it too"}
+    try:
+        return await start(request.app, case, subject, ws.principal, ws.id, rounds=1, fresh=False, reason=reason,
+                           request=request)  # fmt: skip
+    except HTTPException as exc:
+        return {**subject, "search_refused": exc.detail}
+
+
+class SuggestionDecision(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=50)
+    search: bool = Field(default=True, description="Accepting: search from them straight away")
+
+
+@router.post("/cases/{case_id}/subjects/{subject_id}/suggestions/accept")
+async def accept_suggestions(case_id: str, subject_id: str, body: SuggestionDecision, request: Request,
+                             ws: WorkspaceContext = ANALYST):  # fmt: skip
+    """Add the ticked suggestions (found on confirmed accounts) to what is known, and search from them."""
+    case, _ = await _subject(request, ws, case_id, subject_id)
+    _open(case)
+    wanted = set(body.ids)
+
+    def apply(row: SubjectRow, data: dict[str, Any]) -> list[dict[str, Any]]:
+        picked = [x for x in data.get("suggestions") or [] if x["id"] in wanted]
+        if not picked:
+            return []
+        data["known"] = S.accept_suggestions(data.get("known") or {}, picked)
+        data["suggestions"] = [x for x in data.get("suggestions") or [] if x["id"] not in wanted]
+        _settle(data)
+        return picked
+
+    try:
+        subject, picked = await request.app.state.subjects.change(subject_id, apply)
+    except S.KnownDetailsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not picked:
+        raise HTTPException(status_code=404, detail="No such suggestions")
+    await audit(request, ws.principal, "subject.learn", subject_id,
+                details={"case": case_id, "fields": sorted({x["field"] for x in picked}), "count": len(picked)})  # fmt: skip
+    if body.search:
+        subject = await _search_new(request, case, subject, ws, reason="learned")
+    return subject
+
+
+@router.post("/cases/{case_id}/subjects/{subject_id}/suggestions/dismiss")
+async def dismiss_suggestions(case_id: str, subject_id: str, body: SuggestionDecision, request: Request,
+                              ws: WorkspaceContext = ANALYST):  # fmt: skip
+    """Not useful: they are not suggested again."""
+    case, _ = await _subject(request, ws, case_id, subject_id)
+    _open(case)
+    wanted = set(body.ids)
+
+    def apply(row: SubjectRow, data: dict[str, Any]) -> int:
+        before = len(data.get("suggestions") or [])
+        data["suggestions"] = [x for x in data.get("suggestions") or [] if x["id"] not in wanted]
+        data["dismissed_suggestions"] = list(dict.fromkeys([*(data.get("dismissed_suggestions") or []), *wanted]))[
+            -500:
+        ]
+        return before - len(data["suggestions"])
+
+    subject, removed = await request.app.state.subjects.change(subject_id, apply)
+    if not removed:
+        raise HTTPException(status_code=404, detail="No such suggestions")
     return subject
 
 

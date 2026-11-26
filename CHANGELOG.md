@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.111.0] — Learning from confirmed accounts
+
+### Added
+- **Suggested details**: confirming an account lists what it shows that is not known yet (another
+  name, town, employer, websites, linked accounts, publicly shown email and phone), with where each
+  came from. **Add ticked and search** adds them to the known details and searches from them;
+  **Dismiss ticked** removes them for good (`.../suggestions/accept`, `.../suggestions/dismiss`).
+- A search that is running also searches details that became known while it ran.
+- The profile viewer keeps the contact email and phone a business profile shows publicly.
+
+### Fixed
+- Confirming an account now searches the account itself straight away even when its handle had
+  already been searched.
+
 ## [1.110.0] — Snapchat and Telegram in more depth
 
 ### Added
