@@ -5,7 +5,7 @@ stolen key used in one of them. Each workspace can be held to:
 
 * **scans per day** (every scan: by hand, scheduled monitors, playbooks), counted over the last 24 hours;
 * **evidence storage** in megabytes (captures and uploads);
-* **watches** (brand and fingerprint watches together);
+* **watches** (brand, fingerprint and known-details person watches together);
 * **API keys** (active ones).
 
 Defaults come from the server's settings (``ARGUS_QUOTA_*``, 0 = no limit), and a platform
@@ -29,13 +29,14 @@ from argus.storage.db import (
     EvidenceFileRow,
     FingerprintWatchRow,
     InvestigationRow,
+    SubjectRow,
     WorkspaceQuotaRow,
 )
 
 RESOURCES = {
     "scans_per_day": "scans in the last 24 hours",
     "evidence_mb": "MB of evidence",
-    "watches": "brand and fingerprint watches",
+    "watches": "brand, fingerprint and person watches",
     "api_keys": "active API keys",
 }
 WARN_AT = 0.8
@@ -100,7 +101,9 @@ class Quotas:
                                        .where(BrandWatchRow.workspace_id == workspace_id))  # fmt: skip
                 fingerprint = await s.scalar(select(func.count()).select_from(FingerprintWatchRow)
                                              .where(FingerprintWatchRow.workspace_id == workspace_id))  # fmt: skip
-                return float((brand or 0) + (fingerprint or 0))
+                people = await s.scalar(select(func.count()).select_from(SubjectRow)
+                                        .where(SubjectRow.workspace_id == workspace_id, SubjectRow.watch.is_(True)))  # fmt: skip
+                return float((brand or 0) + (fingerprint or 0) + (people or 0))
             now = _now()
             return float(await s.scalar(select(func.count()).select_from(ApiKeyRow).where(
                 ApiKeyRow.workspace_id == workspace_id, ApiKeyRow.revoked_at.is_(None),

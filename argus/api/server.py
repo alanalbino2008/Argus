@@ -112,6 +112,7 @@ from argus.api.scim_routes import register_errors as register_scim_errors
 from argus.api.scim_routes import router as scim_router
 from argus.api.security_routes import router as security_router
 from argus.api.session_routes import router as session_router
+from argus.api.subject_routes import router as subject_router
 from argus.api.supplier_routes import router as supplier_router
 from argus.api.taxii_routes import router as taxii_router
 from argus.api.team_routes import router as team_router
@@ -329,6 +330,9 @@ async def lifespan(app: FastAPI):
     app.state.credits = CreditRepository(db)
     app.state.teams = TeamRepository(db)
     app.state.playbooks = PlaybookRepository(db)
+    from argus.storage.subject_repo import SubjectRepository
+
+    app.state.subjects = SubjectRepository(db)
     app.state.saved_queries = SavedQueryRepository(db)
     app.state.annotations = AnnotationRepository(db)
     app.state.fingerprint_watches = FingerprintWatchRepository(db)
@@ -341,6 +345,10 @@ async def lifespan(app: FastAPI):
         stale = await app.state.playbooks.interrupt_running(settings.instance_id)
         if stale:
             logger.warning("%d playbook run(s) were left unfinished by the last shutdown: marked interrupted", stale)
+        stale = await app.state.subjects.interrupt_running(settings.instance_id)
+        if stale:
+            logger.warning("%d known-details search(es) were left unfinished by the last shutdown: marked interrupted",
+                           stale)  # fmt: skip
 
     if vault.locked():
         app.state.vault.on_unlock.append(recover_playbooks)
@@ -426,6 +434,11 @@ async def lifespan(app: FastAPI):
         else None
     )
     app.state.account_watcher = AccountWatcher(app.state.account_watches, app.state.cases, settings, app.state.audit)
+    from argus.api.subject_routes import watch_forever as subject_watch_forever
+
+    subject_watch_task = (
+        asyncio.create_task(subject_watch_forever(app), name="subject-watch") if settings.monitors_enabled else None
+    )
     watch_task = (
         asyncio.create_task(app.state.account_watcher.run_forever(), name="account-watcher")
         if settings.account_watch_enabled and settings.monitors_enabled
@@ -504,6 +517,7 @@ async def lifespan(app: FastAPI):
                 exposure_task,
                 remediation_task,
                 watch_task,
+                subject_watch_task,
                 fingerprint_task,
                 brand_task,
                 licence_task,
@@ -758,6 +772,7 @@ async def _approval_required(request: Request, exc: ApprovalRequired) -> JSONRes
 
 app.include_router(case_report_router)
 app.include_router(playbook_router)
+app.include_router(subject_router)
 app.include_router(vault_router)
 app.include_router(backup_router)
 app.include_router(legal_router)

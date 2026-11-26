@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.101.0] — Phase 101: Known details about a person
+
+### Added
+- **Subjects**: a person in a case with everything already known about them (names, usernames,
+  emails, phones, account links, websites, town, employer, year of birth, photo fingerprint),
+  encrypted at rest. `GET/POST /api/cases/{case}/subjects` and the routes under it.
+- **One search from all of it**: each known detail not searched before is searched with the matching
+  playbook's sources, through the case's route (passive-only for anonymous cases), counted against
+  quotas and audited. Candidates matching very well (80+) are followed up to the chosen depth
+  (at most 40 searches a run).
+- **Candidates scored against what is known**: same name, photo, town, employer, links to a known
+  account or website, a known email or phone shown; contradictions (different name, town, year of
+  birth) count against and are shown. Verdicts: likely, possible, weak, probably not.
+- **Confirm / reject**: a confirmed candidate becomes a known detail and a case entity, everything
+  is re-scored, and its handle is searched; a rejected one is never suggested again.
+
+### Security
+- A legitimate purpose must be confirmed to add a person and to search; a year of birth making the
+  person under 18 is refused; the year of birth is only used to rule matches out.
+
 ## [1.100.0] — Phase 100: Per-workspace quotas
 
 ### Added

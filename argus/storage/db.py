@@ -855,6 +855,30 @@ class PlaybookRunRow(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SubjectRow(Base):
+    """A person being researched in a case: what is known about them, and the candidates found from it."""
+
+    __tablename__ = "subjects"
+    __table_args__ = (
+        Index("ix_subjects_case", "case_id", "created_at"),
+        Index("ix_subjects_watch", "watch", "next_watch_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(32))
+    case_id: Mapped[str] = mapped_column(String(32), ForeignKey("cases.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(EncryptedText(300, label="subjects.name"))
+    data: Mapped[dict[str, Any]] = mapped_column(
+        EncryptedJSON(label="subjects.data")
+    )  # known, candidates, searched, run
+    status: Mapped[str] = mapped_column(String(16))  # idle | running
+    watch: Mapped[bool] = mapped_column(Boolean, default=False)
+    next_watch_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class SavedQueryRow(Base):
     """A named Argus Query Language query, optionally checked after every scan (alerting on new matches)."""
 

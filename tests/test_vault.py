@@ -81,6 +81,7 @@ def test_every_sensitive_table_is_covered():
     assert covered["case_items"] == {"title", "body", "data"}
     assert covered["evidence_files"] == {"data"} and "manifest" in covered["evidence_captures"]
     assert covered["entities"] == {"value", "label", "data"} and covered["investigations"] == {"target", "data"}
+    assert covered["subjects"] == {"name", "data"}
     assert {"audit_events", "playbook_runs", "account_watches", "account_snapshots", "alerts", "report_files"} <= set(
         covered
     )
