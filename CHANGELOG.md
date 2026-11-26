@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.102.0] — Phase 102: The People tab and the weekly watch
+
+### Added
+- **People tab** in each case: enter everything known about a person, add a photo (only its
+  fingerprint is kept), search from all of it, follow each search as it runs, and review the
+  candidates (best first, with the reasons for and against) with **Theirs** / **Not theirs** / **Undo**.
+- **Weekly watch** for a person: searches again every 7 days from everything known and raises one
+  alert when new likely or possible candidates appear. The alert names neither the person nor the
+  accounts (alerts travel to chat and email). Watches count towards the workspace's watches quota,
+  are claimed so each runs once in a cluster, and stop when the case is closed.
+
 ## [1.101.0] — Phase 101: Known details about a person
 
 ### Added
