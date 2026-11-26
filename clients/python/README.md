@@ -32,7 +32,7 @@ with ArgusClient("https://argus.example.com", api_key=os.environ["ARGUS_API_KEY"
   * `NotFound` (404, also for anything in another workspace);
   * `ValidationError` (422);
   * `RateLimited` (429).
-* **Anything else**: `argus.get(path, **params)`, `argus.post(path, body)`, `argus.patch(…)` and
+* **Anything else**: `argus.get(path, **params)`, `argus.post(path, body)`, `argus.patch(…)`, `argus.put(…)` and
   `argus.delete(…)` call any endpoint in the [reference](../../docs/API.md).
 
 * **Cheap polling**: answers that carry an `ETag` (campaigns, TAXII) are remembered and asked for
@@ -49,6 +49,32 @@ for obj in argus.taxii_objects("lookalikes", added_after=last_seen):  # follows 
 
 Collections: `tagged`, `lookalikes`, `fingerprint-servers` and `campaigns`. A TAXII client such as
 OpenCTI or MISP can read the same feed at `/taxii2/<workspace>/` with the same API key.
+
+## Researching a person from what is known
+
+```python
+person = argus.add_person(
+    case_id,
+    "Jane Doe",
+    names=["Jane Doe"],
+    usernames=["jdoe"],
+    emails=["jane@example.org"],
+    city="Leeds",
+    employer="Acme Logistics",
+)
+argus.person_photo(case_id, person["id"], open("jane.jpg", "rb").read())  # only a fingerprint is kept
+argus.search_person(case_id, person["id"], rounds=2)  # follows very good matches one step further
+person = argus.wait_for_person(case_id, person["id"])
+for c in argus.candidates(case_id, person["id"], verdicts=("likely", "possible")):
+    print(c["score"], c["verdict"], c["label"], "; ".join(c["agree"]), "; ".join(c["conflict"]))
+argus.confirm_candidate(case_id, person["id"], candidate_id, search=True, note="Same photo, checked")
+argus.reject_candidate(case_id, person["id"], other_id)  # never suggested again
+argus.add_known(case_id, person["id"], phones="+44 7700 900123")  # adds to what is known
+argus.watch_person(case_id, person["id"])  # searches again every week, alerts on new candidates
+```
+
+Adding a person and searching confirm a legitimate purpose for researching them. Scores are
+possibilities, never identifications: confirm only what you have checked.
 
 ## Watch health
 

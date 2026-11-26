@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.102.0"
+__version__ = "1.103.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
@@ -93,6 +93,14 @@ def _retry_after(response: httpx.Response) -> float | None:
         return float(response.headers["Retry-After"])
     except (KeyError, ValueError):
         return None
+
+
+KNOWN_LISTS = ("names", "usernames", "emails", "phones", "profiles", "websites")
+
+
+def _known(known: dict[str, Any]) -> dict[str, Any]:
+    """Known details as the server takes them: a single value is accepted where a list is expected."""
+    return {k: ([v] if k in KNOWN_LISTS and isinstance(v, str) else v) for k, v in known.items()}
 
 
 class ArgusClient:
@@ -154,7 +162,8 @@ class ArgusClient:
         return headers
 
     def request(self, method: str, path: str, *, json: Any = None, params: Mapping[str, Any] | None = None,
-                raw: bool = False, accept: str | None = None, approval: str | None = None) -> Any:  # fmt: skip
+                raw: bool = False, accept: str | None = None, approval: str | None = None,
+                files: Mapping[str, Any] | None = None) -> Any:  # fmt: skip
         """Call any endpoint. Returns parsed JSON (or the raw response with ``raw=True``)."""
         url = f"{self.base_url}{path}"
         clean = {k: v for k, v in (params or {}).items() if v is not None}
@@ -168,7 +177,10 @@ class ArgusClient:
         if remembered:
             headers["If-None-Match"] = remembered[0]
         for attempt in range(self.max_retries + 1):
-            response = self._http.request(method, url, json=json, params=clean, headers=headers)
+            if files is not None:  # a file upload (multipart form)
+                response = self._http.request(method, url, files=files, params=clean, headers=headers)
+            else:
+                response = self._http.request(method, url, json=json, params=clean, headers=headers)
             if response.status_code in (429, 503) and attempt < self.max_retries:
                 wait = _retry_after(response)
                 time.sleep(min(self.max_wait, wait if wait is not None else 2.0**attempt))
@@ -205,6 +217,9 @@ class ArgusClient:
 
     def patch(self, path: str, body: Any) -> Any:
         return self.request("PATCH", path, json=body)
+
+    def put(self, path: str, body: Any) -> Any:
+        return self.request("PUT", path, json=body)
 
     def delete(self, path: str) -> None:
         self.request("DELETE", path)
@@ -611,6 +626,101 @@ class ArgusClient:
     def playbook_run(self, case_id: str, run_id: str) -> dict[str, Any]:
         """A playbook run: its status, each step, and what stood out."""
         return self.get(f"/api/cases/{case_id}/playbooks/{run_id}")
+
+    # ------------------------------------------------------------------ people: known details (Phases 101-102)
+    def people(self, case_id: str) -> list[dict[str, Any]]:
+        """The people researched in a case, with their known details and how many candidates wait."""
+        return self.get(f"/api/cases/{case_id}/subjects")
+
+    def add_person(self, case_id: str, name: str, **known: Any) -> dict[str, Any]:
+        """Add a person with what is known (``names``, ``usernames``, ``emails``, ``phones``, ``profiles``,
+        ``websites`` as lists; ``city``, ``employer``, ``birth_year``). Calling this confirms a legitimate
+        purpose for researching them."""
+        return self.post(f"/api/cases/{case_id}/subjects", {"name": name, "known": _known(known), "confirmed": True})
+
+    def person(self, case_id: str, person_id: str) -> dict[str, Any]:
+        """A person, their known details, the latest search and every candidate (best first)."""
+        return self.get(f"/api/cases/{case_id}/subjects/{person_id}")
+
+    def update_person(self, case_id: str, person_id: str, *, name: str | None = None,
+                      known: Mapping[str, Any] | None = None) -> dict[str, Any]:  # fmt: skip
+        """Rename, and/or replace the known details entirely (see ``add_known`` to add to them)."""
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if known is not None:
+            body["known"] = _known(dict(known))
+        return self.put(f"/api/cases/{case_id}/subjects/{person_id}", body)
+
+    def add_known(self, case_id: str, person_id: str, **details: Any) -> dict[str, Any]:
+        """Add to what is known: list fields are extended (a single value is fine), the others replaced."""
+        known = dict(self.person(case_id, person_id)["known"])
+        for field, value in details.items():
+            if field in KNOWN_LISTS:
+                values = [value] if isinstance(value, str) else list(value)
+                known[field] = list(known.get(field) or []) + [v for v in values if v not in (known.get(field) or [])]
+            else:
+                known[field] = value
+        return self.update_person(case_id, person_id, known=known)
+
+    def person_photo(
+        self, case_id: str, person_id: str, image: bytes, *, filename: str = "photo.jpg"
+    ) -> dict[str, Any]:
+        """A known photo of the person: only its fingerprint is kept, to recognise the same picture on a profile."""
+        return self.request("POST", f"/api/cases/{case_id}/subjects/{person_id}/photo",
+                            files={"file": (filename, image, "application/octet-stream")})  # fmt: skip
+
+    def search_person(self, case_id: str, person_id: str, *, rounds: int = 2, fresh: bool = False) -> dict[str, Any]:
+        """Search from everything known (only what was not searched before, unless ``fresh``); ``rounds`` is how
+        far to follow very good matches (1: known details only). Confirms a legitimate purpose. Runs in the
+        background: follow it with ``wait_for_person()``."""
+        return self.post(f"/api/cases/{case_id}/subjects/{person_id}/run",
+                         {"confirmed": True, "rounds": rounds, "fresh": fresh})  # fmt: skip
+
+    def wait_for_person(self, case_id: str, person_id: str, *, timeout: float = 3600.0,
+                        poll: float = 5.0) -> dict[str, Any]:  # fmt: skip
+        """Block until the person's search finishes; returns the person with every candidate."""
+        deadline = time.monotonic() + timeout
+        while True:
+            found = self.person(case_id, person_id)
+            if found["status"] != "running":
+                return found
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"The search for {person_id} was still running after {timeout}s")
+            time.sleep(poll)
+
+    def stop_person_search(self, case_id: str, person_id: str) -> dict[str, Any]:
+        return self.post(f"/api/cases/{case_id}/subjects/{person_id}/run/cancel")
+
+    def candidates(self, case_id: str, person_id: str, *, status: str | None = "open",
+                   verdicts: tuple[str, ...] | None = None, min_score: int = 0) -> list[dict[str, Any]]:  # fmt: skip
+        """A person's candidates, best first: by ``status`` (open, confirmed, rejected; None for all), verdict
+        (likely, possible, weak, unlikely) and score. Each says why it scored as it did (``agree``,
+        ``conflict``). Scores are possibilities, never identifications."""
+        return [c for c in self.person(case_id, person_id)["candidates"]
+                if (status is None or c.get("status") == status) and (verdicts is None or c.get("verdict") in verdicts)
+                and (c.get("score") or 0) >= min_score]  # fmt: skip
+
+    def confirm_candidate(self, case_id: str, person_id: str, candidate_id: str, *, search: bool = False,
+                          note: str = "") -> dict[str, Any]:  # fmt: skip
+        """It is theirs: it becomes a known detail and a case entity (``search``: search from it now)."""
+        return self.post(f"/api/cases/{case_id}/subjects/{person_id}/candidates/{candidate_id}/confirm",
+                         {"search": search, "note": note})  # fmt: skip
+
+    def reject_candidate(self, case_id: str, person_id: str, candidate_id: str, *, note: str = "") -> dict[str, Any]:
+        """Not theirs: it is never suggested for this person again."""
+        return self.post(f"/api/cases/{case_id}/subjects/{person_id}/candidates/{candidate_id}/reject", {"note": note})
+
+    def reopen_candidate(self, case_id: str, person_id: str, candidate_id: str) -> dict[str, Any]:
+        """Undo a rejection."""
+        return self.post(f"/api/cases/{case_id}/subjects/{person_id}/candidates/{candidate_id}/reopen")
+
+    def watch_person(self, case_id: str, person_id: str, *, on: bool = True) -> dict[str, Any]:
+        """Search again every week from everything known, with an alert when new candidates turn up."""
+        return self.put(f"/api/cases/{case_id}/subjects/{person_id}/watch", {"on": on})
+
+    def remove_person(self, case_id: str, person_id: str) -> None:
+        self.delete(f"/api/cases/{case_id}/subjects/{person_id}")
 
     def case_network(self, case_id: str) -> dict[str, Any]:
         """A case's people and organisations, their relationships, and the network analysis."""

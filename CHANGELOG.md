@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.103.0] — Phase 103: People in the Python client
+
+### Added
+- `people`, `add_person`, `person`, `update_person`, `add_known`, `person_photo`, `search_person`,
+  `wait_for_person`, `stop_person_search`, `candidates` (by status, verdict, minimum score),
+  `confirm_candidate`, `reject_candidate`, `reopen_candidate`, `watch_person`, `remove_person`.
+- `put()` for any endpoint, and file uploads with `request(..., files=...)`.
+
 ## [1.102.0] — Phase 102: The People tab and the weekly watch
 
 ### Added
