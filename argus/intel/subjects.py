@@ -44,13 +44,15 @@ AUTO_FOLLOW = 80  # candidates this good are searched in turn
 LIKELY, POSSIBLE = 70, 40
 GRADE_POINTS = {"verified": 60, "strong": 45, "probable": 25, "possible": 10}
 CANDIDATE_TYPES = {EntityType.SOCIAL_PROFILE: "profile", EntityType.USERNAME: "username", EntityType.EMAIL: "email",
-                   EntityType.PHONE: "phone", EntityType.PERSON: "record"}  # fmt: skip
+                   EntityType.PHONE: "phone", EntityType.PERSON: "record", EntityType.URL: "page"}  # fmt: skip
+PAGE_CATEGORIES = {"mention", "image_match"}  # pages about the person; not every address a website search lists
 
 # What each kind of known detail is searched with: the same sources as the matching playbook.
 SEARCHES: dict[str, dict[str, Any]] = {
     "username": {"type": EntityType.USERNAME, "modules": ("username_hunter", "github_hunter", "profile_enricher",
                                                           "git_identity", "developer_footprint", "web_mentions",
-                                                          "profile_history", "social_pages", "profile_viewer"), "depth": 1,
+                                                          "profile_history", "social_pages", "profile_viewer",
+                                                          "archived_accounts", "person_documents"), "depth": 1,
                  "variants": True},
     "email": {"type": EntityType.EMAIL, "modules": ("email_recon", "hibp", "pgp_keyserver", "username_hunter",
                                                     "github_hunter", "profile_enricher", "web_mentions",
@@ -58,11 +60,14 @@ SEARCHES: dict[str, dict[str, Any]] = {
     "phone": {"type": EntityType.PHONE, "modules": ("phone_recon", "web_mentions"), "depth": 1},
     "name": {"type": EntityType.PERSON, "modules": ("companies_house", "offshore_leaks", "sanctions_screen",
                                                     "name_guesser", "public_records", "web_mentions", "social_pages",
-                                                    "profile_history", "profile_viewer"), "depth": 1},
+                                                    "profile_history", "profile_viewer", "person_documents",
+                                                    "gazette_insolvency", "court_records"), "depth": 1},
     "profile": {"type": EntityType.SOCIAL_PROFILE, "modules": ("profile_enricher", "profile_history", "social_pages",
                                                                "profile_viewer"),
                 "depth": 1},
-    "website": {"type": EntityType.DOMAIN, "modules": ("whois_lookup", "site_crawler", "profile_enricher"), "depth": 1},
+    "website": {"type": EntityType.DOMAIN, "modules": ("whois_lookup", "site_crawler", "profile_enricher",
+                                                       "infrastructure_pivot", "site_history"), "depth": 1},
+    "photo": {"type": EntityType.URL, "modules": ("reverse_image",), "depth": 1, "hints": {"image_search": True}},
 }  # fmt: skip
 
 HANDLE_HOSTS_SKIP = {
@@ -204,6 +209,8 @@ def clean_known(data: dict[str, Any]) -> dict[str, Any]:
     if offset and not re.fullmatch(r"[+-](0\d|1[0-4]):(00|30|45)", offset):
         raise KnownDetailsError("The time zone must be a UTC offset such as +01:00 or -05:00")
     out["utc_offset"] = offset or None
+    out["photo_urls"] = [str(u) for u in (data.get("photo_urls") or []) if str(u).startswith("https://")
+                         and len(str(u)) <= 2000][:5]  # fmt: skip
     out["photo_hash"] = data.get("photo_hash") if re.fullmatch(r"[0-9a-f]{16}", str(data.get("photo_hash") or "")) \
         else None  # fmt: skip
     return out
@@ -265,6 +272,8 @@ def searches(known: dict[str, Any], searched: set[str]) -> list[dict[str, Any]]:
         add("email", value, "known")
     for value in known.get("phones") or []:
         add("phone", value, "known")
+    for url in known.get("photo_urls") or []:
+        add("photo", url, "a confirmed profile picture")
     for url in known.get("websites") or []:
         host = _host(url)
         if host and host not in GENERIC_HOSTS:
@@ -306,10 +315,15 @@ def score(candidate: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
         conflict += result["conflict"]
     else:
         names = known.get("names") or []
-        shown = candidate["value"] if kind == "record" else str(facts.get("display_name") or "")
+        shown = str(facts.get("display_name") or (candidate["value"] if kind == "record" else ""))
         if names and shown and similarity(shown, names[0], kind="person") >= 0.9:
             agree.append(f"the same name ({names[0]})")
+    if facts.get("same_picture"):
+        agree.append("uses the same picture (reverse image search)")
     text = _facts_text(facts)
+    city = str(known.get("city") or "").strip().lower()
+    if kind != "profile" and len(city) >= 3 and re.search(r"\b" + re.escape(city) + r"\b", text):
+        agree.append(f"mentions the known town ({known['city']})")
     for email in known.get("emails") or []:
         if email.lower() in text:
             agree.append(f"shows a known email address ({email})")
@@ -378,6 +392,10 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
         if kind is None:
             continue
         md = entity.metadata or {}
+        if entity.type == EntityType.PERSON:
+            out += _record_candidates(entity, search, investigation_id)
+        if kind == "page" and md.get("category") not in PAGE_CATEGORIES:
+            continue
         facts: dict[str, Any] = {}
         if kind == "profile":
             facts = {k: v for k, v in _profile_facts(entity).items() if isinstance(v, (str, int, float, list))}
@@ -388,12 +406,22 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
             if not md.get("born") and entity.id not in linked_orgs:
                 continue  # a bare name: nothing to weigh it by
             facts = {"born": md.get("born"), "company": ", ".join(linked_orgs.get(entity.id, [])[:5])}
+        elif kind == "page":
+            doc = md.get("document") or {}
+            authors = [a for a in doc.get("authors") or [] if len(str(a).split()) >= 2]
+            facts = {"bio": " ".join(x for x in (str(md.get("snippet") or ""), " ".join(doc.get("emails") or [])) if x),
+                     "display_name": authors[0] if authors else "", "company": doc.get("company") or "",
+                     "created": doc.get("created"), "links": doc.get("links") or [], "title": doc.get("title")}  # fmt: skip
         elif md.get("gravatar_name"):  # an address whose public profile shows a name
             facts = {"display_name": md["gravatar_name"]}
         if md.get("guessed"):
             facts["guessed"] = True
         if md.get("timezone"):
             facts["timezone"] = md["timezone"]
+        if md.get("same_picture"):
+            facts["same_picture"] = True
+        if md.get("archived"):
+            facts["archived"] = md["archived"]
         history = md.get("history") or {}
         if history.get("names_shown"):
             facts["archived_names"] = history["names_shown"][:5]
@@ -403,8 +431,45 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
         out.append({
             "id": candidate_id(key_of(kind, value)), "key": key_of(kind, value), "kind": kind, "value": value,
             "label": entity.label or value, "platform": _platform(entity, value) if kind == "profile" else "",
-            "url": value if kind == "profile" else None, "grade": _link_grade(entity),
+            "url": value if kind in ("profile", "page") else None, "grade": _grade(entity, kind),
             "avatar_hash": md.get("avatar_hash"), "facts": _trim(facts), "source": entity.source_module,
+            "found_from": [{"kind": search["kind"], "value": search["value"], "investigation_id": investigation_id}],
+        })  # fmt: skip
+    return out
+
+
+def _grade(entity: Entity, kind: str) -> str:
+    md = entity.metadata or {}
+    if md.get("same_picture"):
+        return "strong"  # the same picture: someone could have copied it, so not "verified"
+    if kind == "page":
+        return "possible"  # a page naming them: a namesake's as easily as theirs
+    if md.get("archived") and entity.source_module == "archived_accounts":
+        return "possible"  # a handle once used there: maybe by someone else
+    return _link_grade(entity)
+
+
+def _record_candidates(entity: Entity, search: dict[str, Any], investigation_id: str) -> list[dict[str, Any]]:
+    """Insolvency notices and court cases in the person's name: each a record to check."""
+    md = entity.metadata or {}
+    out = []
+    items = [("Insolvency notice", n) for n in md.get("insolvency_notices") or []]
+    items += [("Court case", c) for c in md.get("court_cases") or []]
+    for label, item in items[:15]:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "")
+        about = str(item.get("about") or item.get("name") or item.get("case_name") or item.get("caption") or "")
+        when = str(item.get("date") or item.get("filed") or item.get("date_filed") or "")[:10]
+        value = url or f"{label}: {about} {when}".strip()
+        key = key_of("record", value)
+        out.append({
+            "id": candidate_id(key), "key": key, "kind": "record", "value": value,
+            "label": f"{label}: {about[:120]}{f' ({when})' if when else ''}", "platform": "",
+            "url": url or None, "grade": "possible", "avatar_hash": None, "source": entity.source_module,
+            "facts": _trim({"display_name": entity.value, "bio": f"{about} {item.get('summary') or ''}".strip(),
+                            "date": when, "record": label,
+                            "court": item.get("court"), "type": item.get("type")}),
             "found_from": [{"kind": search["kind"], "value": search["value"], "investigation_id": investigation_id}],
         })  # fmt: skip
     return out
@@ -476,13 +541,16 @@ def add_to_known(known: dict[str, Any], cand: dict[str, Any]) -> dict[str, Any]:
     zone = (cand.get("facts") or {}).get("timezone")
     if isinstance(zone, dict) and zone.get("usual_offset") and not known.get("utc_offset"):
         known["utc_offset"] = zone["usual_offset"]
+    picture = (cand.get("facts") or {}).get("avatar_url")
+    if cand["kind"] == "profile" and isinstance(picture, str) and picture.startswith("https://"):
+        known["photo_urls"] = list(dict.fromkeys([*(known.get("photo_urls") or []), picture]))[:5]
     if cand["kind"] == "profile" and not known.get("photo_hash") and cand.get("avatar_hash"):
         known["photo_hash"] = cand["avatar_hash"]
     return known
 
 
 CASE_ITEM_TYPES = {"profile": "account", "username": "username", "email": "email", "phone": "phone",
-                   "record": "person"}  # fmt: skip
+                   "record": "document", "page": "document"}  # fmt: skip
 
 
 # ---------------------------------------------------------------------------- learning from confirmed accounts

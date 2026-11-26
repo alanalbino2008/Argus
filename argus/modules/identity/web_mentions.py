@@ -124,10 +124,9 @@ def social_profile(url: str) -> tuple[str, str] | None:
         segments = segments[:1]
     if platform == "Facebook" and segments[0] in ("profile.php", "pages", "public", "login", "watch", "marketplace"):
         return None
-    return (
-        platform,
-        f"https://{'www.' if platform in ('LinkedIn', 'Facebook', 'Instagram', 'Pinterest') else ''}{host}/{'/'.join(segments)}",
-    )
+    host = "x.com" if platform == "X" else host  # twitter.com and x.com are one account
+    www = "www." if platform in ("LinkedIn", "Facebook", "Instagram", "Pinterest") else ""
+    return platform, f"https://{www}{host}/{'/'.join(segments)}"
 
 
 def display_name(title: str) -> str:

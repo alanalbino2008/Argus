@@ -451,7 +451,8 @@ class SubjectRun:
             target=step["value"], target_type=spec["type"], max_depth=spec["depth"], enabled_modules=modules,
             passive_only=self.case["opsec_mode"] == "anonymous", handle_variants=bool(spec.get("variants")),
             allow_private_targets=settings.allow_private_targets,
-            hints=S.hints((await self.app.state.subjects.data(self.subject_id) or {}).get("known") or {}),
+            hints={**S.hints((await self.app.state.subjects.data(self.subject_id) or {}).get("known") or {}),
+                   **(spec.get("hints") or {})},
         )  # fmt: skip
         purpose = f"{self.case['purpose']} (known details)"[:500]
         scan: ScanFn = self.app.state.playbook_scan

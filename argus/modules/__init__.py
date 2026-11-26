@@ -14,6 +14,12 @@ from argus.modules.discovery.passive_dns import PassiveDnsModule
 from argus.modules.discovery.site_crawler import SiteCrawlerModule
 from argus.modules.discovery.wayback import WaybackModule
 from argus.modules.discovery.web_recon import WebReconModule
+from argus.modules.identity.deep_person import (
+    ArchivedAccountsModule,
+    PersonDocumentsModule,
+    ReverseImageModule,
+    SiteHistoryModule,
+)
 from argus.modules.identity.email_recon import EmailReconModule
 from argus.modules.identity.git_identity import GitIdentityModule
 from argus.modules.identity.github_hunter import GitHubHunterModule
@@ -73,6 +79,10 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     ProfileHistoryModule,
     SocialPagesModule,
     ProfileViewerModule,
+    ReverseImageModule,
+    ArchivedAccountsModule,
+    SiteHistoryModule,
+    PersonDocumentsModule,
     GitHubOrgModule,
     PgpKeyserverModule,
     PhoneReconModule,

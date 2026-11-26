@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.112.0] — Deeper sources about a person
+
+### Added
+- **Reverse image search of confirmed profile pictures** (`reverse_image`, TinEye): accounts using the
+  same picture become strong candidates; confirmed accounts' picture addresses are kept as known details.
+- **Deleted and renamed accounts** (`archived_accounts`): Internet Archive copies of a username's profile
+  on 18 networks, with the months archived.
+- **Websites in depth**: related sites by shared analytics IDs and infrastructure (`infrastructure_pivot`),
+  and archived "about", CV and contact pages (`site_history`).
+- **Documents** found by web search (`person_documents`): hidden author, company, date, and the emails
+  and links inside; read from the Internet Archive first, never fetched from the site in anonymous cases.
+- **Records**: UK insolvency notices and US court cases in the person's name, each a record to check.
+- Pages and records are candidates too, scored by name, the known town and employer.
+
+### Changed
+- Links to twitter.com and x.com are treated as the same account.
+
 ## [1.111.0] — Learning from confirmed accounts
 
 ### Added
