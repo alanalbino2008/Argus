@@ -31,7 +31,11 @@ async def test_two_replicas_share_one_limit(db):
     assert await replica_a.allow("198.51.100.1")  # another caller has its own budget
     async with db.session() as s:
         rows = (await s.scalars(select(RateLimitCounterRow))).all()
-    assert {r.count for r in rows if r.name == "vault_unlock_test"} == {5, 1}  # refusals are not counted
+    per_caller: dict[str, int] = {}
+    for r in rows:
+        if r.name == "vault_unlock_test":  # a caller's calls can fall into two time buckets: add them up
+            per_caller[r.key] = per_caller.get(r.key, 0) + r.count
+    assert sorted(per_caller.values()) == [1, 5]  # refusals are not counted
     assert all("203.0.113.9" not in r.key for r in rows)  # addresses are stored hashed
 
 
