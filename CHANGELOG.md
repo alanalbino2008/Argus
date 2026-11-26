@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.118.0] — Closing the gaps
+
+### Added
+- **Imported data on the case timeline** (first and last appearance of every known number, address or
+  counterparty) and **in a person's graph** (their known numbers as they appear in imports).
+- **Mobile cells on the map**: cells given as MCC-MNC-LAC-CI in imported call records are placed as approximate
+  areas from OpenCellID (`ARGUS_OPENCELLID_API_KEY`), through the case's route; audited.
+- **PDF bank statements** (with text) are imported; each transaction is marked to check against the original.
+- **Analytics IDs** on candidates' websites (`site_trackers`, from archived home pages): accounts whose websites
+  share an ID are grouped, and score higher with a confirmed account.
+- **Preserve likely candidates' pages** after each search (per person option, up to 10, off by default).
+- Opening a person's graph, timeline, connected people, groups and dossier is audited.
+
 ## [1.117.0] — One timeline and the map; data imports
 
 ### Added

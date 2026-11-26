@@ -13,7 +13,7 @@ const TILE = 256;
 const KIND = {
   event: ["accent", "Event"], account: ["warn", "Account change"], capture: ["ok", "Capture"], upload: ["ok", "Evidence added"],
   scan: ["", "Scan"], photo: ["", "Photo taken"], fact: ["accent", "Found in a scan"], change: ["warn", "Change between scans"],
-  person: ["accent", "Person (People tab)"],
+  person: ["accent", "Person (People tab)"], import: ["warn", "Imported data"],
 };
 // Facts keep the precision their source gave: a year is not "1 January at 00:00".
 const PRECISION = { year: "year only", month: "month only", day: "date" };

@@ -53,7 +53,7 @@ SEARCHES: dict[str, dict[str, Any]] = {
     "username": {"type": EntityType.USERNAME, "modules": ("username_hunter", "github_hunter", "profile_enricher",
                                                           "git_identity", "developer_footprint", "web_mentions",
                                                           "profile_history", "social_pages", "profile_viewer",
-                                                          "archived_accounts", "person_documents"), "depth": 1,
+                                                          "archived_accounts", "person_documents", "site_trackers"), "depth": 1,
                  "variants": True},
     "email": {"type": EntityType.EMAIL, "modules": ("email_recon", "hibp", "pgp_keyserver", "username_hunter",
                                                     "github_hunter", "profile_enricher", "web_mentions",
@@ -62,7 +62,7 @@ SEARCHES: dict[str, dict[str, Any]] = {
     "name": {"type": EntityType.PERSON, "modules": ("companies_house", "offshore_leaks", "sanctions_screen",
                                                     "name_guesser", "public_records", "web_mentions", "social_pages",
                                                     "profile_history", "profile_viewer", "person_documents",
-                                                    "gazette_insolvency", "court_records"), "depth": 1},
+                                                    "gazette_insolvency", "court_records", "site_trackers"), "depth": 1},
     "profile": {"type": EntityType.SOCIAL_PROFILE, "modules": ("profile_enricher", "profile_history", "social_pages",
                                                                "profile_viewer"),
                 "depth": 1},
@@ -426,6 +426,9 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
             facts["timezone"] = md["timezone"]
         if md.get("same_picture"):
             facts["same_picture"] = True
+        trackers = (md.get("site_trackers") or {}).get("ids") or {}
+        if trackers:
+            facts["trackers"] = {"site": md["site_trackers"].get("site"), "ids": trackers}
         snaps = (md.get("history") or {}).get("snapshots") or {}
         if snaps:
             facts["name_history"] = [{"date": v.get("date"), "name": v.get("name")} for v in snaps.values()
@@ -852,6 +855,11 @@ def check_dossier(output: dict[str, Any], sources: dict[str, dict[str, Any]]) ->
 
 # ---------------------------------------------------------------------------- clusters and the person's graph
 STRONG_LINKS = {"the same profile picture", "one links to the other"}
+STRONG_PREFIXES = ("the same analytics ID",)  # one tracking account: one operator
+
+
+def _strong(reason: str) -> bool:
+    return reason in STRONG_LINKS or reason.startswith(STRONG_PREFIXES)
 
 
 def _bio_words(facts: dict[str, Any]) -> set[str]:
@@ -886,6 +894,10 @@ def _pair_reasons(a: dict[str, Any], b: dict[str, Any]) -> list[str]:
     words = _bio_words(fa) & _bio_words(fb)
     if len(words) >= 3:
         reasons.append(f"similar bios ({', '.join(sorted(words)[:4])})")
+    ta = set(((fa.get("trackers") or {}).get("ids") or {}).keys())
+    tb = set(((fb.get("trackers") or {}).get("ids") or {}).keys())
+    if ta & tb:
+        reasons.append(f"the same analytics ID on their websites ({sorted(ta & tb)[0]})")
     ea = {str(fa.get(k) or "").lower() for k in ("public_email", "email") if fa.get(k)}
     eb = {str(fb.get(k) or "").lower() for k in ("public_email", "email") if fb.get(k)}
     if ea & eb:
@@ -912,7 +924,7 @@ def clusters(data: dict[str, Any]) -> list[dict[str, Any]]:
             reasons = _pair_reasons(a, b)
             if not reasons:
                 continue
-            strong = any(r in STRONG_LINKS for r in reasons) or len(reasons) >= 2
+            strong = any(_strong(r) for r in reasons) or len(reasons) >= 2
             links.append({"a": a["id"], "b": b["id"], "reasons": reasons, "strong": strong})
             if strong:  # a single weak signal (a shared website or similar bios) is shown, not grouped
                 parent[find(a["id"])] = find(b["id"])
@@ -943,7 +955,7 @@ def cluster_reasons(data: dict[str, Any]) -> dict[str, list[str]]:
         if cand.get("status") != "open":
             continue
         for other in confirmed:
-            reasons = [r for r in _pair_reasons(cand, other) if r in STRONG_LINKS]
+            reasons = [r for r in _pair_reasons(cand, other) if _strong(r)]
             if reasons:
                 out.setdefault(cand["id"], []).append(
                     f"shares {reasons[0]} with a confirmed account ({other.get('label')})"
@@ -1049,7 +1061,7 @@ def case_timeline_entries(subject_id: str, name: str, data: dict[str, Any]) -> l
         if found is None:
             continue
         at, precision = found
-        out.append({"at": at, "precision": precision, "kind": "person", "title": f"{name}: {e['title']}",
+        out.append({"at": at.isoformat(), "precision": precision, "kind": "person", "title": f"{name}: {e['title']}",
                     "detail": e.get("url") or "", "ref": {"type": "subject", "id": subject_id, "candidate": e["candidate"]},
                     "by": None})  # fmt: skip
     return out

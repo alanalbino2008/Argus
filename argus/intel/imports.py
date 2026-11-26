@@ -7,7 +7,7 @@ Formats:
 * **Call detail records** (CSV or XLSX): one row per call or message, with the caller, the called number,
   the time, and often the duration, type and cell. Column names vary by operator; common ones are
   recognised (``A Party``, ``Calling Number``, ``From``, ``Start Time``, ``Duration``, ``Cell ID``...).
-* **Transactions** (CSV or XLSX): bank or payment statements: date, amount (or paid in / paid out),
+* **Transactions** (CSV, XLSX, or a PDF statement with text): bank or payment statements: date, amount (or paid in / paid out),
   counterparty or description, account and reference.
 * **Contact lists** (CSV or XLSX): names with phone numbers or email addresses, such as an address-book
   export from a phone or an XRY contacts export.
@@ -367,18 +367,91 @@ def records_from_ufdr(data: bytes) -> list[dict[str, Any]]:
     return out
 
 
+# ---------------------------------------------------------------------------- PDF bank statements
+PDF_LINE = re.compile(
+    r"^\s*(?P<date>\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3}\s*(?:\d{2,4})?)\s+"
+    r"(?P<text>.*?)\s+(?P<amounts>(?:\(?-?[£$€]?\d{1,3}(?:[,.]\d{3})*[.,]\d{2}\)?(?:\s*(?:CR|DR))?\s*){1,3})$"
+)
+AMOUNT = re.compile(r"\(?-?[£$€]?\d{1,3}(?:[,.]\d{3})*[.,]\d{2}\)?(?:\s*(?:CR|DR))?")
+CREDIT_WORDS = (
+    "credit",
+    "received",
+    "salary",
+    "wages",
+    "refund",
+    "interest paid",
+    "transfer from",
+    "deposit",
+    "paid in",
+)
+
+
+def records_from_pdf_statement(data: bytes) -> list[dict[str, Any]]:
+    """Transactions read from the text of a PDF statement: a line starting with a date and ending in an amount
+    (and usually the balance). With a balance, the sign comes from how it moved; otherwise from the wording.
+    Scanned (image-only) statements have no text to read."""
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+        text = "\n".join((page.extract_text() or "") for page in reader.pages[:200])
+    except Exception as exc:
+        raise ImportError_(f"The PDF could not be read ({type(exc).__name__}); is it password-protected?") from exc
+    if not text.strip():
+        raise ImportError_("The PDF has no text (a scanned statement): export it as CSV from the bank instead")
+    out: list[dict[str, Any]] = []
+    balance: float | None = None
+    year = None
+    for line in text.splitlines():
+        match = PDF_LINE.match(line)
+        if not match:
+            continue
+        amounts = AMOUNT.findall(match.group("amounts"))
+        values = [_money(a.replace("CR", "").replace("DR", "")) for a in amounts]
+        if not values or values[0] is None:
+            continue
+        date = match.group("date").strip()
+        if re.fullmatch(r"\d{1,2}\s+[A-Za-z]{3}", date) and year:
+            date = f"{date} {year}"
+        when = parse_when(date)
+        if when:
+            year = when[:4]
+        amount = abs(values[0])
+        if len(values) >= 2 and values[-1] is not None:
+            new_balance = values[-1]
+            sign = 1 if balance is not None and new_balance > balance else -1 if balance is not None else None
+            balance = new_balance
+        else:
+            sign = None
+        words = (match.group("text") + " " + match.group("amounts")).lower()
+        if sign is None:
+            sign = 1 if "cr" in match.group("amounts").lower() or any(w in words for w in CREDIT_WORDS) else -1
+        out.append({"type": "transaction", "when": when, "amount": round(sign * amount, 2),
+                    "counterparty": match.group("text").strip()[:200] or None, "account": None, "reference": None,
+                    "detail": "read from a PDF: check against the original"})  # fmt: skip
+    if not out:
+        raise ImportError_(
+            "No transactions were recognised in the PDF (lines starting with a date and ending in an amount)"
+        )
+    return out
+
+
 def parse(data: bytes, filename: str, kind: str = "auto") -> tuple[str, list[dict[str, Any]]]:
     """(the kind read, its records). Raises :class:`ImportError_` with a readable reason."""
     if kind not in KINDS:
         raise ImportError_(f"Unknown kind {kind!r}")
     lower = filename.lower()
+    if data.startswith(b"%PDF") or lower.endswith(".pdf"):
+        if kind not in ("auto", "transactions"):
+            raise ImportError_("Only bank or payment statements are read from PDFs")
+        return "transactions", records_from_pdf_statement(data)
     if kind == "ufdr" or (kind == "auto" and lower.endswith(".ufdr")):
         return "ufdr", records_from_ufdr(data)
     return records_from_table(table(data, filename), kind)
 
 
 # ---------------------------------------------------------------------------- what the records say
-def _phone_key(value: str) -> str:
+def phone_key(value: str) -> str:
     digits = re.sub(r"\D", "", value or "")
     return digits[-9:] if len(digits) >= 7 else ""
 
@@ -409,15 +482,15 @@ def analyse(records: list[dict[str, Any]], known: list[dict[str, Any]]) -> dict[
     others: dict[str, list[dict[str, Any]]] = {}
     names = []
     for k in known:
-        if k["kind"] == "phone" and _phone_key(k["value"]):
-            phones.setdefault(_phone_key(k["value"]), []).append(k)
+        if k["kind"] == "phone" and phone_key(k["value"]):
+            phones.setdefault(phone_key(k["value"]), []).append(k)
         elif k["kind"] in ("person", "organisation"):
             names.append(k)
         else:
             others.setdefault(k["value"].strip().lower().lstrip("@"), []).append(k)
 
     def matches_of(ident: str, name: str | None) -> list[dict[str, Any]]:
-        found = list(phones.get(_phone_key(ident), [])) if _phone_key(ident) else []
+        found = list(phones.get(phone_key(ident), [])) if phone_key(ident) else []
         found += others.get(ident.lower().lstrip("@"), [])
         if name:
             found += [k for k in names if similarity(name, k["value"], kind="person") >= 0.9]

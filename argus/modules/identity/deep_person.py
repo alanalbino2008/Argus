@@ -330,3 +330,47 @@ class PersonDocumentsModule(BaseModule):
                                  metadata={"origin": f"in a document ({entity.value})"})  # fmt: skip
             yield mail
             yield Relation.create(entity.id, mail.id, RelationType.ASSOCIATED_WITH, label="Written in the document")
+
+
+# ---------------------------------------------------------------------------- analytics IDs on their websites
+class SiteTrackersModule(BaseModule):
+    name = "site_trackers"
+    description = ("Analytics, advertising and tag-manager IDs on the websites a profile links to (from the archived "
+                   "home page): accounts whose sites share an ID are probably run by the same person")  # fmt: skip
+    supported_entity_types: ClassVar[list[EntityType]] = [EntityType.SOCIAL_PROFILE]
+    third_party_safe = True  # the Internet Archive only
+    enrichment = True
+    attack_techniques = ("T1594",)
+    rate_limits: ClassVar[dict[str, float]] = {"web.archive.org": 1.0, "archive.org": 1.0}
+
+    def _site(self, entity: Entity) -> str | None:
+        from argus.intel.profiles import GENERIC_HOSTS, _host
+
+        site = str((entity.metadata.get("profile") or {}).get("website") or "").strip()
+        host = _host(site) if site else ""
+        return host if host and "." in host and host not in GENERIC_HOSTS else None
+
+    def can_handle(self, entity: Entity) -> bool:
+        return (super().can_handle(entity) and entity.depth <= 1 and self._site(entity) is not None
+                and "site_trackers" not in entity.metadata)  # fmt: skip
+
+    async def run(self, entity: Entity, session: HttpClient, config: ScanConfig) -> AsyncIterator[Entity | Relation]:
+        from argus.intel.pivots import extract_trackers
+
+        host = self._site(entity)
+        if host is None:
+            return
+        entity.metadata["site_trackers"] = {}
+        async with session.get(f"https://archive.org/wayback/available?url={quote(host, safe='')}") as resp:
+            data = await resp.json() if resp.status == 200 else {}
+        closest = ((data or {}).get("archived_snapshots") or {}).get("closest") or {}
+        if not (closest.get("available") and closest.get("timestamp")):
+            return
+        async with session.get(f"https://web.archive.org/web/{closest['timestamp']}id_/http://{host}/") as resp:
+            if resp.status != 200:
+                return
+            page = (await resp.text(errors="ignore"))[:2_000_000]
+        found = extract_trackers(page)
+        entity.metadata["site_trackers"] = {"site": host, "ids": found, "archived": str(closest["timestamp"])[:8]}
+        if False:  # an async generator: nothing is yielded, the profile is annotated
+            yield entity

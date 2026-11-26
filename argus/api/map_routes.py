@@ -123,6 +123,9 @@ async def _timeline(request: Request, case_id: str, facts: bool) -> list[dict[st
     items, captures = await repo.items(case_id), await repo.captures(case_id)
     entries = build_timeline(items, captures, await _scans(request, items), await _photos_of(request, captures))
     entries += await _people_entries(request, case_id)
+    from argus.api.import_routes import case_import_analyses, timeline_entries
+
+    entries += timeline_entries(await case_import_analyses(request.app, case_id))
     entries.sort(key=lambda e: e["at"])
     if facts:
         entries = sorted(entries + await _fact_entries(request, items), key=lambda e: e["at"])

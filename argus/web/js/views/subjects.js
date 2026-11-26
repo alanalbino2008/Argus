@@ -195,11 +195,11 @@ function dossierPanel(d) {
       <div class="muted small">By ${d.by}, ${formatDate(d.generated_at)}${d.model ? ` · ${d.model}` : ""}</div></div>` : ""}`;
 }
 
-const NODE_COLOR = { subject: "#4f5bd5", known: "#0d74ce", confirmed: "#30a46c", open: "#ad7f00", rejected: "#9ca3af", shared: "#8e4ec6", associate: "#e54666" };
+const NODE_COLOR = { subject: "#4f5bd5", known: "#0d74ce", confirmed: "#30a46c", open: "#ad7f00", rejected: "#9ca3af", shared: "#8e4ec6", associate: "#e54666", import: "#ef5f00" };
 let personCy = null;
 
 function drawGraph(target, g) {
-  setHTML(target, html`<div class="muted small" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 0">${Object.entries({ subject: "The person", known: "Known", confirmed: "Theirs", open: "To review", shared: "Shared website", associate: "Other people" }).map(([k, label]) => html`<span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${NODE_COLOR[k]}"></i> ${label}</span>`)}</div>
+  setHTML(target, html`<div class="muted small" style="display:flex;gap:12px;flex-wrap:wrap;margin:4px 0">${Object.entries({ subject: "The person", known: "Known", confirmed: "Theirs", open: "To review", shared: "Shared website", associate: "Other people", import: "In imported data" }).map(([k, label]) => html`<span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${NODE_COLOR[k]}"></i> ${label}</span>`)}</div>
     <div data-sj-cy style="height:460px;border:1px solid var(--border);border-radius:8px"></div>
     <p class="muted small">Dashed lines: what two accounts share (picture, links, website, name, bio). Click an account to open it.</p>`);
   if (typeof cytoscape === "undefined") return;
@@ -252,6 +252,7 @@ function subjectCard(s) {
         <button class="btn sm ghost" data-sj="watch" title="Search again every week and raise an alert when new candidates turn up">${ico("eye")}${s.watch ? "Stop watching" : "Watch weekly"}</button>
         <button class="btn sm ghost icon" data-sj="delete" aria-label="Remove this person">${ico("trash")}</button></span>` : ""}</div>
     ${knownSummary(s)}
+    ${canEdit() ? html`<label class="small" title="After each search, the pages of new likely candidates (up to 10) are preserved as evidence, before anyone confirms them"><input type="checkbox" data-sj-opt="capture_likely" ${s.options?.capture_likely ? "checked" : ""}> Preserve likely candidates' pages after each search</label>` : ""}
     ${s.watch ? html`<p class="muted small">${ico("eye")}Watched: next search ${formatDate(s.next_watch_at)}.${s.last_watch ? ` Last: ${s.last_watch.outcome}${s.last_watch.detail ? ` (${s.last_watch.detail})` : ""}.` : ""}</p>` : ""}
     ${canEdit() && !running ? html`<div class="small" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
       <label><input type="checkbox" id="sj-run-confirm"> Legitimate purpose (${caseRef.purpose})</label>
@@ -352,6 +353,13 @@ export function initSubjects(root, changed) {
     loadPanel(box.dataset.sjLoad, box.querySelector("[data-sj-panel]"));
   }, true);
   root.addEventListener("change", async (e) => {
+    if (e.target.matches("[data-sj-opt]") && current) {
+      try {
+        current = await api.put(`${base()}/${enc(current.id)}/options`, { [e.target.dataset.sjOpt]: e.target.checked });
+        toast(e.target.checked ? "Likely candidates' pages will be preserved after each search" : "Only confirmed accounts are preserved", "success");
+      } catch (err) { toast(err.message, "error", 8000); }
+      return;
+    }
     if (e.target.matches("[data-sj-open]")) {
       timelineOpen = e.target.checked;
       return loadPanel("timeline", el.querySelector('[data-sj-panel="timeline"]'));

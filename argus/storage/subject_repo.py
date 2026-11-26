@@ -45,7 +45,7 @@ def as_dict(row: SubjectRow, *, candidates: bool = True) -> dict[str, Any]:
         "status": row.status, "run": data.get("run"), "counts": counts,
         "likely": sum(1 for c in cands if c.get("status") == "open" and c.get("verdict") == "likely"),
         "watch": bool(row.watch), "next_watch_at": _iso(row.next_watch_at), "last_watch": data.get("last_watch"),
-        "suggestions": data.get("suggestions") or [],
+        "suggestions": data.get("suggestions") or [], "options": data.get("options") or {},
         "created_by": row.created_by, "created_at": _iso(row.created_at), "updated_at": _iso(row.updated_at),
     }  # fmt: skip
     if candidates:

@@ -38,6 +38,7 @@ function analysisView(a) {
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><h2>${a.import.label}: ${a.import.filename}</h2><span class="muted small">evidence ${a.evidence.id}</span></div>
     <p class="small">${a.records} records${a.from ? ` from ${when(a.from)} to ${when(a.to)}` : ""} · ${Object.entries(a.types).map(([k, n]) => `${n} ${k}`).join(", ")}</p>
+    ${canEdit() && ["cdr", "ufdr"].includes(a.import.kind) ? html`<button class="btn sm" data-imp-cells="${a.evidence.id}" title="Look up the mobile cells used (MCC-MNC-LAC-CI) and put their approximate areas on the case map">${ico("search")}Place the cells on the map</button>` : ""}
     ${Object.keys(a.hours_utc || {}).length ? html`<div role="img" aria-label="Records by hour" style="display:flex;align-items:flex-end;gap:2px;height:50px">${Array.from({ length: 24 }, (_, h) => html`<div title="${h}:00: ${(a.hours_utc[String(h)] || 0)}" style="flex:1;background:var(--accent);opacity:.75;height:${Math.round(((a.hours_utc[String(h)] || 0) / max) * 100)}%;min-height:1px"></div>`)}</div><div class="muted small">Records by hour of the day, 00:00 to 23:00 (the time zone of the records)</div>` : ""}
     <h3 style="margin-top:12px">Already in the case (${a.in_case.length})</h3>
     ${a.in_case.length ? html`<div style="overflow-x:auto"><table class="table"><thead>${head}</thead><tbody>${a.in_case.map(partyRow)}</tbody></table></div>`
@@ -70,6 +71,14 @@ function draw() {
 }
 
 export function initImports(root) {
+  on(root, "click", "[data-imp-cells]", async (e, btn) => {
+    e.preventDefault();
+    btn.disabled = true;
+    try {
+      const r = await api.post(`/api/cases/${enc(caseRef.id)}/imports/${enc(btn.dataset.impCells)}/cells`);
+      toast(`${r.placed} cell area(s) added to the map${r.unknown ? `; ${r.unknown} not known to OpenCellID` : ""}`, "success", 7000);
+    } catch (err) { toast(err.message, "error", 8000); } finally { btn.disabled = false; }
+  });
   on(root, "click", "[data-imp]", async (e, row) => {
     try {
       opened = await api.get(`/api/cases/${enc(caseRef.id)}/imports/${enc(row.dataset.imp)}`);

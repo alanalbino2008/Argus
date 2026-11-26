@@ -41,7 +41,8 @@ logger = logging.getLogger("argus.subjects")
 router = APIRouter(prefix="/api", tags=["subjects"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
 ANALYST = Depends(in_workspace(Role.ANALYST))
-MAX_SEARCHES = 40  # per run, however many details and follow-ups there are
+MAX_SEARCHES = 40
+MAX_LIKELY_CAPTURES = 10  # per run, however many details and follow-ups there are
 MAX_PHOTO = 5 * 1024 * 1024
 WATCH_DAYS = 7
 
@@ -325,6 +326,24 @@ class SubjectRun:
         await self._change(apply)
         if self.reason == "watch" and status == "completed":
             await self._alert()
+        if status == "completed":
+            await self._capture_likely()
+
+    async def _capture_likely(self) -> None:
+        """With the option on, preserve the pages of this search's new likely candidates."""
+        data = await self.app.state.subjects.data(self.subject_id) or {}
+        if not (data.get("options") or {}).get("capture_likely"):
+            return
+        subject = await self.app.state.subjects.get(self.subject_id)
+        picked = [c for c in (data.get("candidates") or {}).values()
+                  if c["id"] in self.new_ids and c.get("status") == "open" and c.get("verdict") == "likely"
+                  and str(c.get("url") or "").startswith(("https://", "http://")) and not c.get("capture")][:MAX_LIKELY_CAPTURES]  # fmt: skip
+        for cand in picked:
+            await _mark_capture(self.app, self.subject_id, cand["id"], {"status": "capturing", "at": _now()})
+            task = asyncio.create_task(_capture_confirmed(self.app, self.case, subject or {"id": self.subject_id,
+                                       "name": ""}, cand, self.principal, self.workspace_id, likely=True))  # fmt: skip
+            CAPTURES.add(task)
+            task.add_done_callback(CAPTURES.discard)
 
     async def _alert(self) -> None:
         """A watch found new candidates worth looking at: one alert, naming neither the person nor the accounts
@@ -625,13 +644,15 @@ async def _mark_capture(app: Any, subject_id: str, candidate_id: str, state: dic
 
 
 async def _capture_confirmed(app: Any, case: dict[str, Any], subject: dict[str, Any], cand: dict[str, Any],
-                             principal: Principal, workspace_id: str) -> None:  # fmt: skip
+                             principal: Principal, workspace_id: str, *, likely: bool = False) -> None:  # fmt: skip
     """Preserve a confirmed account's page as evidence, through the case's route, before it can change."""
     try:
         route = route_for(app.state.settings, case, None)
         capture = await capture_url(cand["url"], app.state.settings, route)
         stored = await app.state.cases.add_capture(case["id"], workspace_id, capture, by=principal.name,
-                                                   note=f"Captured when confirmed as belonging to {subject['name']}")  # fmt: skip
+                                                   note=(f"Captured as a likely match for {subject['name']} (not confirmed)"
+                                                         if likely else
+                                                         f"Captured when confirmed as belonging to {subject['name']}"))  # fmt: skip
     except (CaptureError, HTTPException, QuotaExceeded) as exc:
         detail = getattr(exc, "detail", None) or str(exc)
         await _mark_capture(
@@ -649,7 +670,7 @@ async def _capture_confirmed(app: Any, case: dict[str, Any], subject: dict[str, 
     try:
         await app.state.audit.record(principal, "evidence.capture", stored["id"], "success", None,
                                      {"case": case["id"], "url": cand["url"], "digest": stored["digest"],
-                                      "subject": subject["id"], "reason": "confirmed account",
+                                      "subject": subject["id"], "reason": "likely candidate" if likely else "confirmed account",
                                       "authorization": case.get("authorization") or ""}, workspace_id)  # fmt: skip
     except Exception:
         logger.exception("Failed to write audit event evidence.capture")
@@ -792,6 +813,26 @@ def _now() -> str:
 _dossier_limiter = SlidingWindowLimiter(limit=6, window=60, name="subject_dossier")
 
 
+class SubjectOptions(BaseModel):
+    capture_likely: bool = Field(
+        description="After each search, preserve the pages of new likely candidates (up to 10)"
+    )
+
+
+@router.put("/cases/{case_id}/subjects/{subject_id}/options")
+async def set_subject_options(case_id: str, subject_id: str, body: SubjectOptions, request: Request,
+                              ws: WorkspaceContext = ANALYST):  # fmt: skip
+    case, _ = await _subject(request, ws, case_id, subject_id)
+    _open(case)
+
+    def apply(row: SubjectRow, data: dict[str, Any]) -> None:
+        data["options"] = {**(data.get("options") or {}), "capture_likely": body.capture_likely}
+
+    updated, _ = await request.app.state.subjects.change(subject_id, apply)
+    await audit(request, ws.principal, "subject.options", subject_id, details={"case": case_id, **body.model_dump()})
+    return updated
+
+
 @router.get("/cases/{case_id}/subjects/{subject_id}/timeline")
 async def subject_timeline(case_id: str, subject_id: str, request: Request, include_open: bool = False,
                            ws: WorkspaceContext = VIEWER):  # fmt: skip
@@ -799,6 +840,7 @@ async def subject_timeline(case_id: str, subject_id: str, request: Request, incl
     confirmed findings contradict each other."""
     await _subject(request, ws, case_id, subject_id)
     data = await request.app.state.subjects.data(subject_id) or {}
+    await audit(request, ws.principal, "subject.view_timeline", subject_id, details={"case": case_id})
     return {
         "events": S.timeline(data, include_open=include_open),
         "contradictions": S.contradictions(data),
@@ -811,6 +853,7 @@ async def subject_associates(case_id: str, subject_id: str, request: Request, ws
     """Other people connected to the person through confirmed findings. They are listed, not researched."""
     await _subject(request, ws, case_id, subject_id)
     data = await request.app.state.subjects.data(subject_id) or {}
+    await audit(request, ws.principal, "subject.view_associates", subject_id, details={"case": case_id})
     return {"associates": S.associates(data),
             "note": "Other people, connected through confirmed findings. They are not the subject of this research: "
                     "look into one only with its own legitimate purpose."}  # fmt: skip
@@ -868,6 +911,7 @@ async def subject_dossier(case_id: str, subject_id: str, body: DossierRequest, r
 @router.get("/cases/{case_id}/subjects/{subject_id}/dossier")
 async def get_subject_dossier(case_id: str, subject_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     await _subject(request, ws, case_id, subject_id)
+    await audit(request, ws.principal, "subject.view_dossier", subject_id, details={"case": case_id})
     return (await request.app.state.subjects.data(subject_id) or {}).get("dossier")
 
 
@@ -878,11 +922,29 @@ async def subject_graph(case_id: str, subject_id: str, request: Request, include
     websites, and connected people."""
     _, subject = await _subject(request, ws, case_id, subject_id)
     data = await request.app.state.subjects.data(subject_id) or {}
-    return S.graph(subject["name"], data, include_rejected=include_rejected)
+    await audit(request, ws.principal, "subject.view_graph", subject_id, details={"case": case_id})
+    graph = S.graph(subject["name"], data, include_rejected=include_rejected)
+    from argus.api.import_routes import case_import_analyses
+    from argus.intel.imports import phone_key
+
+    tags = (f"known about {subject['name']}", f"confirmed for {subject['name']}")
+    for capture, result in await case_import_analyses(request.app, case_id):
+        for party in result["in_case"]:
+            if not any(m["where"] in tags for m in party["in_case"]):
+                continue
+            node_id = f"imp:{capture['id']}:{party['identifier']}"
+            graph["nodes"].append({"id": node_id, "label": f"{party['identifier']}: {party['count']} in "
+                                   f"{capture['data_import']['filename']}", "type": "import", "status": "import"})  # fmt: skip
+            target = next((n["id"] for n in graph["nodes"] if n.get("status") == "known" and
+                           phone_key(n["label"]) and phone_key(n["label"]) == phone_key(party["identifier"])), "person")  # fmt: skip
+            graph["edges"].append({"source": target, "target": node_id, "label": capture["data_import"]["label"],
+                                   "kind": "import"})  # fmt: skip
+    return graph
 
 
 @router.get("/cases/{case_id}/subjects/{subject_id}/clusters")
 async def subject_clusters(case_id: str, subject_id: str, request: Request, ws: WorkspaceContext = VIEWER):
     """Groups of candidates that share a picture, links, a website, a name, bio wording or an address."""
     await _subject(request, ws, case_id, subject_id)
+    await audit(request, ws.principal, "subject.view_groups", subject_id, details={"case": case_id})
     return {"groups": S.clusters(await request.app.state.subjects.data(subject_id) or {})}

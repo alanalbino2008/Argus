@@ -243,6 +243,9 @@ class Settings(BaseSettings):
         description="SocialFetch API key: public profiles behind sign-in walls (LinkedIn, X, Facebook, Instagram), "
         "read by SocialFetch as a logged-out visitor. Optional; your own key, paid in SocialFetch credits",
     )
+    opencellid_api_key: SecretStr | None = Field(
+        default=None, description="OpenCellID API key: the approximate area of mobile cells in imported call records"
+    )
     socialfetch_max_lookups: int = Field(
         default=20, ge=0, le=500, description="At most this many SocialFetch lookups per scan (each costs credits)"
     )

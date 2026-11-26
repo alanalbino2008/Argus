@@ -19,6 +19,7 @@ from argus.modules.identity.deep_person import (
     PersonDocumentsModule,
     ReverseImageModule,
     SiteHistoryModule,
+    SiteTrackersModule,
 )
 from argus.modules.identity.email_recon import EmailReconModule
 from argus.modules.identity.git_identity import GitIdentityModule
@@ -83,6 +84,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     ArchivedAccountsModule,
     SiteHistoryModule,
     PersonDocumentsModule,
+    SiteTrackersModule,
     GitHubOrgModule,
     PgpKeyserverModule,
     PhoneReconModule,
