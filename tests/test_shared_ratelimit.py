@@ -97,9 +97,14 @@ def test_the_server_shares_its_limits(make_client):
     for _ in range(3):
         assert c.get("/api/campaigns").status_code == 200
     rows = c.portal.call(_rows, c.app.state.db)
-    assert ("campaign_read", 3) in rows
+    # The three calls may fall into two time buckets: count them per caller.
+    per_caller: dict[str, int] = {}
+    for name, key, count in rows:
+        if name == "campaign_read":
+            per_caller[key] = per_caller.get(key, 0) + count
+    assert 3 in per_caller.values()
 
 
 async def _rows(db):
     async with db.session() as s:
-        return [(r.name, r.count) for r in (await s.scalars(select(RateLimitCounterRow))).all()]
+        return [(r.name, r.key, r.count) for r in (await s.scalars(select(RateLimitCounterRow))).all()]
