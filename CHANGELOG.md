@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.113.0] — A person's timeline, the people around them, and an AI dossier
+
+### Added
+- **Timeline of their online life** from confirmed findings: accounts created, first and last archived,
+  renamed, channel posts, documents, notices, court cases; with **contradictions** between confirmed
+  findings (towns, years of birth, time zones) (`GET .../subjects/{id}/timeline`).
+- **Other people connected** through confirmed findings: OpenAlex co-authors (now collected), fellow
+  company officers, accounts a Telegram channel mentions. Listed, never searched (`GET .../associates`).
+- **AI dossier** (`dossier` analyst task, 10 credits via Argus Connect): summary, established, likely,
+  conflicts, gaps and next steps, every line citing known details, confirmed findings, open candidates or
+  the timeline; unknown references removed, and open-candidate-only lines never shown as established.
+  Ruled-out candidates and other people are only counted. Consent each time; audited.
+
 ## [1.112.0] — Deeper sources about a person
 
 ### Added

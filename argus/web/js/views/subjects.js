@@ -22,6 +22,7 @@ let editing = false;
 let filter = "open";
 let timer = null;
 let onChanged = () => {};
+let timelineOpen = false;
 
 const base = () => `/api/cases/${enc(caseRef.id)}/subjects`;
 
@@ -134,6 +135,56 @@ function suggestionsView(s) {
   </div>`;
 }
 
+const DOSSIER_SECTIONS = [["established", "Established"], ["likely", "Likely, not confirmed"], ["conflicts", "Conflicts"]];
+
+function deeperView(s) {
+  return html`<details data-sj-load="timeline" style="margin-top:12px"><summary class="small"><b>Timeline of their online life</b></summary><div data-sj-panel="timeline"><p class="muted small">Loading…</p></div></details>
+    <details data-sj-load="associates" style="margin-top:8px"><summary class="small"><b>Other people connected</b></summary><div data-sj-panel="associates"><p class="muted small">Loading…</p></div></details>
+    <details data-sj-load="dossier" style="margin-top:8px"><summary class="small"><b>${ico("sparkle")}AI dossier</b></summary><div data-sj-panel="dossier"><p class="muted small">Loading…</p></div></details>`;
+}
+
+function timelinePanel(t) {
+  return html`${t.contradictions.length ? html`<div class="note" style="margin:8px 0"><b class="error-text">Contradictions</b>
+      ${t.contradictions.map((c) => html`<div class="small"><b>${c.what}:</b> ${c.detail}</div>`)}
+      <div class="muted small">Either one finding is wrong, or one of them is not this person.</div></div>` : ""}
+    ${t.events.length ? html`<div class="list">${t.events.map((e) => html`<div class="list-row"><div class="list-main">
+      <div class="list-title">${e.title}</div><div class="list-sub">${e.date}${e.status === "open" ? " · not confirmed" : ""}</div></div>
+      ${safeUrl(e.url) ? html`<a href="${e.url}" target="_blank" rel="noopener noreferrer" class="small">${ico("external")}Open</a>` : ""}</div>`)}</div>`
+      : html`<p class="muted small">Nothing dated yet. Dates come from confirmed accounts (when created, first and last archived, renamed), documents and records.</p>`}
+    <label class="small"><input type="checkbox" data-sj-open ${timelineOpen ? "checked" : ""}> Include candidates not yet confirmed</label>`;
+}
+
+function associatesPanel(a) {
+  return html`<p class="muted small">${a.note}</p>
+    ${a.associates.length ? html`<div class="list">${a.associates.map((p) => html`<div class="list-row"><div class="list-main">
+      <div class="list-title">${p.name}</div><div class="list-sub">${p.relations.join(", ")} · via ${p.via.join(", ")}</div></div></div>`)}</div>`
+      : html`<p class="muted small">None yet. Co-authors, fellow company officers and accounts their Telegram channel mentions appear here once the accounts they come from are confirmed.</p>`}`;
+}
+
+function dossierPanel(d) {
+  const r = d?.result;
+  const findings = (list) => html`<ul class="small" style="margin:4px 0 8px">${list.map((f) => html`<li>${f.finding}
+    <span class="pill ${f.confidence === "confirmed" ? "ok" : f.confidence === "likely" ? "accent" : ""}" style="text-transform:none">${f.confidence}${f.downgraded ? " (only open candidates behind it)" : ""}</span>
+    ${f.unsupported ? html`<span class="error-text">no source given</span>` : html`<span class="muted">${f.sources.map((x) => `[${x.ref}] ${x.label}`).join("; ")}</span>`}</li>`)}</ul>`;
+  return html`<p class="muted small">Written by the AI analyst from what is known and found about this person, each line citing its sources: known details [K], confirmed findings [C], open candidates [P] and the timeline [T]. It is a draft to check, not a finding.</p>
+    ${canEdit() ? html`<label class="small"><input type="checkbox" id="sj-ai-ok"> Send this person's material to Anthropic, the company that makes Claude${caseRef.opsec_mode === "anonymous" ? html`, <b>including what you know about the subject of this anonymous case</b>` : ""}</label>
+      <div style="margin:6px 0"><button class="btn sm" data-sj="dossier">${ico("sparkle")}${r ? "Write it again" : "Write the dossier"}</button></div>` : ""}
+    ${r ? html`<div class="note"><p>${r.summary}</p>
+      ${DOSSIER_SECTIONS.filter(([k]) => r[k]?.length).map(([k, label]) => html`<b class="small">${label}</b>${findings(r[k])}`)}
+      ${r.gaps?.length ? html`<b class="small">Gaps</b><ul class="small">${r.gaps.map((g) => html`<li>${g}</li>`)}</ul>` : ""}
+      ${r.next_steps?.length ? html`<b class="small">Next steps</b><ul class="small">${r.next_steps.map((x) => html`<li><b>${x.action}</b>: ${x.why} <span class="muted">(${x.how})</span></li>`)}</ul>` : ""}
+      <div class="muted small">By ${d.by}, ${formatDate(d.generated_at)}${d.model ? ` · ${d.model}` : ""}</div></div>` : ""}`;
+}
+
+async function loadPanel(kind, target) {
+  const path = `${base()}/${enc(current.id)}`;
+  try {
+    if (kind === "timeline") setHTML(target, timelinePanel(await api.get(`${path}/timeline?include_open=${timelineOpen}`)));
+    if (kind === "associates") setHTML(target, associatesPanel(await api.get(`${path}/associates`)));
+    if (kind === "dossier") setHTML(target, dossierPanel(await api.get(`${path}/dossier`)));
+  } catch (err) { setHTML(target, html`<p class="error-text">${err.message}</p>`); }
+}
+
 function subjectCard(s) {
   const running = s.status === "running";
   const shown = s.candidates.filter((c) => filter === "all" || c.status === filter);
@@ -153,6 +204,7 @@ function subjectCard(s) {
       <label><input type="checkbox" id="sj-fresh"> Search everything again</label></div>` : ""}
     ${suggestionsView(s)}
     ${runView(s.run)}
+    ${deeperView(s)}
     <div class="card-head" style="margin-top:16px"><h3>Candidates</h3>
       <div class="segmented" role="tablist" aria-label="Candidates shown">${[["open", `To review (${s.counts.open})`], ["confirmed", `Theirs (${s.counts.confirmed})`], ["rejected", `Not theirs (${s.counts.rejected})`], ["all", "All"]].map(([k, label]) => html`<button class="${filter === k ? "active" : ""}" data-sj="filter" data-id="${k}">${label}</button>`)}</div></div>
     <p class="muted small">Each is scored against what is known: the same name, photo, town or employer, links to a known account, a known address shown on it. These are possibilities, never identifications: confirm only what you have checked.</p>
@@ -222,10 +274,33 @@ export function initSubjects(root, changed) {
         draw();
         return poll();
       }
+      if (sj === "dossier") {
+        if (!$("#sj-ai-ok")?.checked) return toast("Confirm that the material may be sent to Anthropic first", "error");
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Writing… (up to a minute)";
+        try {
+          const d = await api.post(`${path}/dossier`, { ai_acknowledged: true });
+          const panel = el.querySelector('[data-sj-panel="dossier"]');
+          if (panel) setHTML(panel, dossierPanel(d));
+        } finally {
+          if (btn.isConnected) { btn.disabled = false; btn.textContent = label; }
+        }
+        return;
+      }
       if (sj === "reopen") { current = await api.post(`${path}/candidates/${enc(id)}/reopen`); return draw(); }
     } catch (err) { toast(err.message, "error", 8000); }
   });
+  root.addEventListener("toggle", (e) => {
+    const box = e.target;
+    if (!(box instanceof HTMLDetailsElement) || !box.open || !box.dataset.sjLoad || !current) return;
+    loadPanel(box.dataset.sjLoad, box.querySelector("[data-sj-panel]"));
+  }, true);
   root.addEventListener("change", async (e) => {
+    if (e.target.matches("[data-sj-open]")) {
+      timelineOpen = e.target.checked;
+      return loadPanel("timeline", el.querySelector('[data-sj-panel="timeline"]'));
+    }
     if (!e.target.matches("[data-sj-photo]") || !current) return;
     const file = e.target.files[0];
     if (!file) return;

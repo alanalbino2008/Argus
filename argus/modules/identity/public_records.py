@@ -98,6 +98,13 @@ class PublicRecordsModule(BaseModule):
     def can_handle(self, entity: Entity) -> bool:
         return super().can_handle(entity) and entity.depth == 0 and len(entity.value.split()) >= 2
 
+    async def _coauthors(self, session: HttpClient, url: str, name: str) -> list[str]:
+        author = url.rsplit("/", 1)[-1]
+        if not re.fullmatch(r"A\d{3,15}", author):
+            return []
+        async with session.get(f"https://api.openalex.org/works?filter=author.id:{author}&per-page=25") as resp:
+            return coauthors(await resp.json(), name) if resp.status == 200 else []
+
     async def run(self, entity: Entity, session: HttpClient, config: ScanConfig) -> AsyncIterator[Entity | Relation]:
         name = entity.value.strip()
         words = name.split()
@@ -110,6 +117,9 @@ class PublicRecordsModule(BaseModule):
         async with session.get(f"https://api.openalex.org/authors?search={quote(name)}&per-page=20") as resp:
             if resp.status == 200:
                 found += [("OpenAlex", r) for r in openalex_records(await resp.json(), name)]
+        for platform, record in found:
+            if platform == "OpenAlex":
+                record["coauthors"] = await self._coauthors(session, record["url"], name)
         url = (f"https://www.wikidata.org/w/api.php?action=wbsearchentities&search={quote(name)}"
                "&language=en&type=item&limit=10&format=json")  # fmt: skip
         async with session.get(url) as resp:
@@ -125,10 +135,22 @@ class PublicRecordsModule(BaseModule):
             p: sum(1 for q, _ in found if q == p) for p in ("ORCID", "OpenAlex", "Wikidata")
         }
         for platform, record in found:
-            profile = _profile(self.name, record["url"], platform, depth, record["facts"])
+            extra = {"coauthors": record["coauthors"]} if record.get("coauthors") else {}
+            profile = _profile(self.name, record["url"], platform, depth, record["facts"], **extra)
             yield profile
             yield Relation.create(entity.id, profile.id, RelationType.HAS_ACCOUNT, confidence=0.6,
                                   label=f"{platform} record in the same name")  # fmt: skip
+
+
+def coauthors(data: Any, name: str) -> list[str]:
+    """The people an author published with most often (from their works' author lists)."""
+    counts: dict[str, int] = {}
+    for work in (data or {}).get("results") or []:
+        for authorship in work.get("authorships") or []:
+            other = str((authorship.get("author") or {}).get("display_name") or "").strip()
+            if other and not _same(other, name):
+                counts[other] = counts.get(other, 0) + 1
+    return [n for n, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))][:15]
 
 
 class DeveloperFootprintModule(BaseModule):

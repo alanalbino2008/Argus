@@ -28,6 +28,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
+from itertools import pairwise
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -383,10 +384,14 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
     out = []
     entities = {e.id: e for e in graph.get_all_entities()}
     linked_orgs: dict[str, list[str]] = {}
+    officers: dict[str, list[str]] = {}  # organisation -> the people linked to it
     for rel in graph.get_all_relations():
         a, b = entities.get(rel.source_id), entities.get(rel.target_id)
         if a and b and a.type == EntityType.PERSON and b.type == EntityType.ORGANIZATION:
             linked_orgs.setdefault(a.id, []).append(b.value)
+            officers.setdefault(b.value, []).append(a.value)
+    co_officers = {pid: sorted({f"{name} ({org})" for org in orgs for name in officers.get(org, [])
+                                if name != entities[pid].value}) for pid, orgs in linked_orgs.items()}  # fmt: skip
     for entity in entities.values():
         kind = CANDIDATE_TYPES.get(entity.type)
         if kind is None:
@@ -420,6 +425,19 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
             facts["timezone"] = md["timezone"]
         if md.get("same_picture"):
             facts["same_picture"] = True
+        snaps = (md.get("history") or {}).get("snapshots") or {}
+        if snaps:
+            facts["name_history"] = [{"date": v.get("date"), "name": v.get("name")} for v in snaps.values()
+                                     if isinstance(v, dict) and v.get("name")]  # fmt: skip
+        channel = md.get("telegram_channel") or {}
+        if channel:
+            facts["channel"] = {"first_shown": channel.get("first_shown"), "last_post": channel.get("last_post"),
+                                "subscribers": channel.get("subscribers")}  # fmt: skip
+            facts["mentions"] = channel.get("mentions") or []
+        if md.get("coauthors"):
+            facts["coauthors"] = md["coauthors"][:15]
+        if kind == "record" and entity.id in linked_orgs:
+            facts["co_officers"] = co_officers.get(entity.id, [])[:15]
         if md.get("archived"):
             facts["archived"] = md["archived"]
         history = md.get("history") or {}
@@ -644,3 +662,186 @@ def accept_suggestions(known: dict[str, Any], picked: list[dict[str, Any]]) -> d
         elif not data.get(field):
             data[field] = s["value"]
     return clean_known(data)
+
+
+# ---------------------------------------------------------------------------- timeline, associates, dossier
+def _day(value: Any) -> str | None:
+    match = re.match(r"(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?", str(value or ""))
+    if not match:
+        return None
+    return "-".join(p for p in match.groups() if p)
+
+
+def timeline(data: dict[str, Any], *, include_open: bool = False) -> list[dict[str, Any]]:
+    """The person's online life from what was found: when accounts were created, first and last archived,
+    renamed, posted, and when documents and records are dated. Confirmed findings by default."""
+    events: list[dict[str, Any]] = []
+    wanted = {"confirmed"} | ({"open"} if include_open else set())
+    for cand in (data.get("candidates") or {}).values():
+        if cand.get("status") not in wanted:
+            continue
+        facts = cand.get("facts") or {}
+        what = cand.get("label") or cand["value"]
+
+        def add(date: Any, title: str, kind: str, cand: dict[str, Any] = cand) -> None:
+            day = _day(date)
+            if day:
+                events.append({"date": day, "title": title, "kind": kind, "candidate": cand["id"],
+                               "status": cand.get("status"), "url": cand.get("url")})  # fmt: skip
+
+        add(facts.get("created_at"), f"Account created: {what}", "created")
+        archived = facts.get("archived") or {}
+        add(archived.get("first"), f"First archived copy: {what}", "archived")
+        if archived.get("last") and archived.get("last") != archived.get("first"):
+            add(archived.get("last"), f"Last archived copy: {what}", "archived")
+        if not archived:
+            add(facts.get("first_archived"), f"First archived copy: {what}", "archived")
+        names = [n for n in facts.get("name_history") or [] if n.get("date")]
+        ordered = sorted(names, key=lambda n: n["date"])
+        for older, newer in pairwise(ordered):
+            if older["name"] != newer["name"]:
+                add(newer["date"], f'Shown as "{newer["name"]}" (was "{older["name"]}"): {what}', "renamed")
+        for n in names[:1]:
+            add(n["date"], f'Shown as "{n["name"]}": {what}', "name")
+        channel = facts.get("channel") or {}
+        add(channel.get("last_post"), f"Latest post in their Telegram channel: {what}", "posted")
+        add(facts.get("created"), f"Document created: {facts.get('title') or what}", "document")
+        add(facts.get("date"), what, "record")
+        add(facts.get("born"), f"Born (per {what})", "born")
+    events.sort(key=lambda e: e["date"])
+    return events
+
+
+def contradictions(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Where confirmed findings disagree with each other or with what is known: towns, years of birth,
+    time zones. Either one of them is wrong, or one of them is not this person."""
+    known = data.get("known") or {}
+    confirmed = [c for c in (data.get("candidates") or {}).values() if c.get("status") == "confirmed"]
+    out: list[dict[str, Any]] = []
+    places: dict[str, list[str]] = {}
+    for c in confirmed:
+        loc = str((c.get("facts") or {}).get("location") or "").split(",")[0].strip()
+        if loc:
+            places.setdefault(loc.lower(), []).append(c.get("label") or c["value"])
+    if known.get("city"):
+        places.setdefault(str(known["city"]).lower(), []).append("known details")
+    if len(places) > 1:
+        out.append(
+            {"what": "different towns", "detail": "; ".join(f"{p.title()}: {', '.join(v)}" for p, v in places.items())}
+        )
+    years = {}
+    for c in confirmed:
+        year = _born_year((c.get("facts") or {}).get("born"))
+        if year:
+            years[c.get("label") or c["value"]] = year
+    if known.get("birth_year"):
+        years["known details"] = int(known["birth_year"])
+    if years and max(years.values()) - min(years.values()) > 1:
+        out.append({"what": "different years of birth", "detail": "; ".join(f"{k}: {v}" for k, v in years.items())})
+    zones = {}
+    for c in confirmed:
+        zone = (c.get("facts") or {}).get("timezone")
+        if isinstance(zone, dict) and zone.get("usual_offset"):
+            zones[c.get("label") or c["value"]] = zone["usual_offset"]
+    if known.get("utc_offset"):
+        zones["known details"] = known["utc_offset"]
+    if zones and max(_minutes(z) for z in zones.values()) - min(_minutes(z) for z in zones.values()) >= 180:
+        out.append({"what": "different time zones", "detail": "; ".join(f"{k}: UTC{v}" for k, v in zones.items())})
+    return out
+
+
+def associates(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Other people connected to the person through confirmed findings: co-authors, fellow company
+    officers, accounts their channel mentions. Listed, never researched: they are not the subject."""
+    found: dict[str, dict[str, Any]] = {}
+    for c in (data.get("candidates") or {}).values():
+        if c.get("status") != "confirmed":
+            continue
+        facts = c.get("facts") or {}
+        via = c.get("label") or c["value"]
+        for relation, names in (("co-author", facts.get("coauthors")), ("fellow company officer", facts.get("co_officers")),
+                                ("mentioned in their Telegram channel", [f"@{m}" for m in facts.get("mentions") or []])):  # fmt: skip
+            for name in names or []:
+                entry = found.setdefault(str(name).lower(), {"name": str(name), "relations": [], "via": []})
+                if relation not in entry["relations"]:
+                    entry["relations"].append(relation)
+                if via not in entry["via"]:
+                    entry["via"].append(via)
+    return sorted(found.values(), key=lambda a: (-len(a["via"]), a["name"]))[:60]
+
+
+def dossier_material(name: str, data: dict[str, Any]) -> tuple[str, dict[str, dict[str, Any]]]:
+    """The person's material for the AI analyst, each part with a reference the dossier cites."""
+    known = data.get("known") or {}
+    sources: dict[str, dict[str, Any]] = {}
+    lines = [f"PERSON: {name}", "", "KNOWN DETAILS (entered or accepted by the investigator):"]
+    n = 0
+    for key, label in (("names", "Name"), ("usernames", "Username"), ("emails", "Email"), ("phones", "Phone"),
+                       ("profiles", "Account"), ("websites", "Website")):  # fmt: skip
+        for value in known.get(key) or []:
+            n += 1
+            sources[f"K{n}"] = {"kind": "known", "label": f"{label}: {value}"}
+            lines.append(f"[K{n}] {label}: {value}")
+    for key, label in (("city", "Town"), ("employer", "Employer"), ("birth_year", "Year of birth"),
+                       ("utc_offset", "Usual time zone (UTC)")):  # fmt: skip
+        if known.get(key):
+            n += 1
+            sources[f"K{n}"] = {"kind": "known", "label": f"{label}: {known[key]}"}
+            lines.append(f"[K{n}] {label}: {known[key]}")
+    cands = list((data.get("candidates") or {}).values())
+
+    def describe(c: dict[str, Any]) -> str:
+        facts = c.get("facts") or {}
+        shown = {k: facts[k] for k in ("display_name", "location", "company", "bio", "website", "born", "created_at",
+                                       "positions", "education") if facts.get(k)}  # fmt: skip
+        parts = [f"{c.get('label') or c['value']} ({c['kind']}, score {c.get('score')}/100)"]
+        if c.get("url"):
+            parts.append(f"address: {c['url']}")
+        if c.get("agree"):
+            parts.append("for: " + "; ".join(c["agree"]))
+        if c.get("conflict"):
+            parts.append("against: " + "; ".join(c["conflict"]))
+        if shown:
+            parts.append("shows: " + "; ".join(f"{k}={str(v)[:300]}" for k, v in shown.items()))
+        return " | ".join(parts)
+
+    lines += ["", "CONFIRMED BY THE INVESTIGATOR:"]
+    for i, c in enumerate([c for c in cands if c.get("status") == "confirmed"][:40], 1):
+        sources[f"C{i}"] = {"kind": "confirmed", "label": c.get("label") or c["value"], "candidate": c["id"]}
+        lines.append(f"[C{i}] {describe(c)}")
+    lines += ["", "OPEN CANDIDATES (not reviewed; possibilities only):"]
+    open_ = sorted([c for c in cands if c.get("status") == "open" and c.get("verdict") in ("likely", "possible")],
+                   key=lambda c: -(c.get("score") or 0))[:30]  # fmt: skip
+    for i, c in enumerate(open_, 1):
+        sources[f"P{i}"] = {"kind": "open", "label": c.get("label") or c["value"], "candidate": c["id"]}
+        lines.append(f"[P{i}] {describe(c)}")
+    rejected = sum(1 for c in cands if c.get("status") == "rejected")
+    lines += ["", f"RULED OUT BY THE INVESTIGATOR: {rejected} (not listed)", "", "TIMELINE (confirmed findings):"]
+    for i, e in enumerate(timeline(data)[:60], 1):
+        sources[f"T{i}"] = {"kind": "timeline", "label": f"{e['date']}: {e['title']}"}
+        lines.append(f"[T{i}] {e['date']}: {e['title']}")
+    clashes = contradictions(data)
+    if clashes:
+        lines += ["", "CONTRADICTIONS FOUND:"] + [f"- {c['what']}: {c['detail']}" for c in clashes]
+    lines += ["", f"OTHER PEOPLE CONNECTED (not to be described): {len(associates(data))}"]
+    return "\n".join(lines), sources
+
+
+def check_dossier(output: dict[str, Any], sources: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Citations resolved; a finding citing nothing real is marked unsupported; an open candidate is never
+    presented as established."""
+
+    def resolve(findings: list[dict[str, Any]], section: str) -> list[dict[str, Any]]:
+        out = []
+        for f in findings:
+            cited = [{"ref": r, **sources[r]} for r in f.get("sources") or [] if r in sources]
+            item = {**f, "sources": cited, "unsupported": not cited}
+            if section == "established" and cited and all(c["kind"] == "open" for c in cited):
+                item["confidence"] = "possible"  # only open candidates behind it: not established
+                item["downgraded"] = True
+            out.append(item)
+        return out
+
+    return {**output, "established": resolve(output.get("established") or [], "established"),
+            "likely": resolve(output.get("likely") or [], "likely"),
+            "conflicts": resolve(output.get("conflicts") or [], "conflicts")}  # fmt: skip

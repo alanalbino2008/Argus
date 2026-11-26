@@ -309,7 +309,7 @@ def test_argus_connect_runs_the_analyst_for_credits(broker, claude, monkeypatch)
     assert declined.status_code == 422
     balance = c.post("/api/connect/balance", json={"licence": licence}).json()
     assert balance["credits"]["available"] == 40  # the declined request was refunded
-    assert balance["prices"]["ai"]["lookups"] == {"brief": 10, "extract": 10, "report": 20}
+    assert balance["prices"]["ai"]["lookups"] == {"brief": 10, "extract": 10, "report": 20, "dossier": 10}
     ledger = c.get(f"/api/accounts/{_account_id(c, licence)}/credits").json()["ledger"]
     assert {e["detail"] for e in ledger} >= {"ai/brief", "ai/report", "ai/report failed"}
     assert "case material" not in json.dumps(ledger)

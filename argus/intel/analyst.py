@@ -37,8 +37,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 from argus.core.settings import Settings
 
-TASKS = ("brief", "extract", "report")
-BASE_CREDITS = {"brief": 10, "extract": 10, "report": 20}
+TASKS = ("brief", "extract", "report", "dossier")
+BASE_CREDITS = {"brief": 10, "extract": 10, "report": 20, "dossier": 10}
 CHARS_PER_STEP = 50_000  # every 50,000 characters beyond the first 50,000 costs 2 more credits
 PER_DOCUMENT = 60_000  # the most text read from one document
 ENTITY_TYPES = ("person", "organisation", "username", "account", "email", "phone", "domain", "ip", "address",
@@ -226,6 +226,13 @@ TASK_PROMPTS = {
     "ORGANISATIONS AND OTHER ENTITIES. Mark possible_minor true for anyone who may be under 18. Dates: "
     "YYYY-MM-DD, or YYYY-MM or YYYY when that is all the source gives. List at most 80 entities and 60 "
     "events, the most significant first.",
+    "dossier": "Write a dossier on the one person in the PERSON material: what the investigator knows about "
+    "them and what the searches found. Give: a short summary; the identity facts that are established (from "
+    "known details and confirmed accounts), each with its sources and confidence; what is likely but not "
+    "confirmed (open candidates), each with its sources; the conflicts between sources (different towns, "
+    "names, years or time zones), each with its sources; the gaps; and the next steps worth taking. Cite with "
+    "the references given, like [K1], [C3], [P2] or [T4]. Confirmed means the investigator confirmed it; "
+    "never call an open candidate confirmed. Leave out the other people named, except as a count.",
     "report": "Draft a written report on this case for the investigator to edit, in Markdown. Use these "
     "sections: Summary; Background and purpose; Findings (each finding with its sources and confidence); "
     "Timeline (when there are dated events); People and organisations; Limitations and open questions; "
@@ -252,6 +259,15 @@ class Brief(BaseModel):
     gaps: list[str]
     next_steps: list[Step]
     cautions: list[str]
+
+
+class Dossier(BaseModel):
+    summary: str
+    established: list[Finding]
+    likely: list[Finding]
+    conflicts: list[Finding]
+    gaps: list[str]
+    next_steps: list[Step]
 
 
 class Extracted(BaseModel):
@@ -290,6 +306,20 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "next_steps": {"type": "array", "items": _strict({"action": _STR, "why": _STR, "how": _STR})},
         "cautions": {"type": "array", "items": _STR},
     }),
+    "dossier": _strict({
+        "summary": _STR,
+        "established": {"type": "array", "items": _strict({
+            "finding": _STR, "sources": {"type": "array", "items": _STR},
+            "confidence": {"type": "string", "enum": ["confirmed", "likely", "possible"]}})},
+        "likely": {"type": "array", "items": _strict({
+            "finding": _STR, "sources": {"type": "array", "items": _STR},
+            "confidence": {"type": "string", "enum": ["confirmed", "likely", "possible"]}})},
+        "conflicts": {"type": "array", "items": _strict({
+            "finding": _STR, "sources": {"type": "array", "items": _STR},
+            "confidence": {"type": "string", "enum": ["confirmed", "likely", "possible"]}})},
+        "gaps": {"type": "array", "items": _STR},
+        "next_steps": {"type": "array", "items": _strict({"action": _STR, "why": _STR, "how": _STR})},
+    }),
     "extract": _strict({
         "entities": {"type": "array", "items": _strict({
             "type": {"type": "string", "enum": list(ENTITY_TYPES)}, "value": _STR, "details": _STR,
@@ -297,7 +327,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "events": {"type": "array", "items": _strict({"title": _STR, "date": _STR, "source": _STR, "quote": _STR})},
     }),
 }  # fmt: skip
-MAX_TOKENS = {"brief": 16000, "extract": 32000, "report": 64000}
+MAX_TOKENS = {"brief": 16000, "extract": 32000, "report": 64000, "dossier": 16000}
 
 
 # ---------------------------------------------------------------------------- calling Claude
@@ -377,7 +407,8 @@ async def run_task(task: str, material: str, *, key: str, settings: Settings) ->
     if task in SCHEMAS:
         if cut_off:
             raise AnalystError(502, "The analyst's answer was too long and was cut off; try again with fewer documents")
-        model_type = Brief if task == "brief" else Extraction
+        models: dict[str, type[BaseModel]] = {"brief": Brief, "dossier": Dossier}
+        model_type = models.get(task, Extraction)
         try:
             output: Any = model_type.model_validate(json.loads(text)).model_dump()
         except (ValueError, ValidationError) as exc:

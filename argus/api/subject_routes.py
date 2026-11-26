@@ -33,6 +33,7 @@ from argus.intel.avatars import fingerprint
 from argus.security.auth import Principal, Role
 from argus.security.network import validate_scan_target
 from argus.security.quotas import QuotaExceeded
+from argus.security.ratelimit import SlidingWindowLimiter
 from argus.storage.db import SubjectRow
 
 logger = logging.getLogger("argus.subjects")
@@ -700,3 +701,82 @@ async def reopen_candidate(case_id: str, subject_id: str, candidate_id: str, req
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------- timeline, associates, AI dossier
+_dossier_limiter = SlidingWindowLimiter(limit=6, window=60, name="subject_dossier")
+
+
+@router.get("/cases/{case_id}/subjects/{subject_id}/timeline")
+async def subject_timeline(case_id: str, subject_id: str, request: Request, include_open: bool = False,
+                           ws: WorkspaceContext = VIEWER):  # fmt: skip
+    """The person's online life from confirmed findings (and open candidates, if asked), and where
+    confirmed findings contradict each other."""
+    await _subject(request, ws, case_id, subject_id)
+    data = await request.app.state.subjects.data(subject_id) or {}
+    return {"events": S.timeline(data, include_open=include_open), "contradictions": S.contradictions(data)}
+
+
+@router.get("/cases/{case_id}/subjects/{subject_id}/associates")
+async def subject_associates(case_id: str, subject_id: str, request: Request, ws: WorkspaceContext = VIEWER):
+    """Other people connected to the person through confirmed findings. They are listed, not researched."""
+    await _subject(request, ws, case_id, subject_id)
+    data = await request.app.state.subjects.data(subject_id) or {}
+    return {"associates": S.associates(data),
+            "note": "Other people, connected through confirmed findings. They are not the subject of this research: "
+                    "look into one only with its own legitimate purpose."}  # fmt: skip
+
+
+class DossierRequest(BaseModel):
+    ai_acknowledged: bool = Field(
+        description="Confirms this person's material may be sent to Anthropic for the dossier"
+    )
+
+
+@router.post("/cases/{case_id}/subjects/{subject_id}/dossier")
+async def subject_dossier(case_id: str, subject_id: str, body: DossierRequest, request: Request,
+                          ws: WorkspaceContext = ANALYST):  # fmt: skip
+    """An AI-written dossier on the person: established facts, likely ones, conflicts, gaps and next steps,
+    every line citing the known details, confirmed findings or open candidates it rests on."""
+    from argus.accounts.connect_client import ai, ai_access
+    from argus.intel.analyst import AnalystError
+
+    case, subject = await _subject(request, ws, case_id, subject_id)
+    if not body.ai_acknowledged:
+        raise HTTPException(status_code=428, detail="Confirm that this person's material may be sent to Anthropic "
+                                                    "for the dossier")  # fmt: skip
+    if ai_access() is None:
+        raise HTTPException(status_code=503, detail="The AI analyst is not set up (an Argus account or your own "
+                                                    "Claude key is needed)")  # fmt: skip
+    if not await _dossier_limiter.allow(ws.principal.key_id):
+        raise HTTPException(status_code=429, detail="Too many dossiers at once; try again in a minute")
+    data = await request.app.state.subjects.data(subject_id) or {}
+    if not any(c.get("status") == "confirmed" for c in (data.get("candidates") or {}).values()) and not any(
+        (data.get("known") or {}).get(k) for k in S.LISTS
+    ):
+        raise HTTPException(status_code=422, detail="Nothing is known or confirmed about this person yet")
+    material, sources = S.dossier_material(subject["name"], data)
+    details = {"case": case_id, "via": ai_access(), "characters": len(material),
+               "anonymous_case": case["opsec_mode"] == "anonymous"}  # fmt: skip
+    try:
+        answer = await ai("dossier", material)
+    except AnalystError as exc:
+        await audit(request, ws.principal, "subject.dossier", subject_id, outcome="failure",
+                    details={**details, "error": exc.detail[:200]})  # fmt: skip
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+    dossier = {"result": S.check_dossier(answer["output"], sources), "model": answer.get("model"),
+               "via": answer.get("via"), "credits": answer.get("credits"), "by": ws.principal.name,
+               "generated_at": _now()}  # fmt: skip
+
+    def keep(row: SubjectRow, d: dict[str, Any]) -> None:
+        d["dossier"] = dossier
+
+    await request.app.state.subjects.change(subject_id, keep)
+    await audit(request, ws.principal, "subject.dossier", subject_id, details={**details, "model": answer.get("model")})
+    return dossier
+
+
+@router.get("/cases/{case_id}/subjects/{subject_id}/dossier")
+async def get_subject_dossier(case_id: str, subject_id: str, request: Request, ws: WorkspaceContext = VIEWER):
+    await _subject(request, ws, case_id, subject_id)
+    return (await request.app.state.subjects.data(subject_id) or {}).get("dossier")
