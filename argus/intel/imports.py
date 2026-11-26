@@ -32,8 +32,21 @@ from defusedxml import ElementTree as SafeET
 from argus.intel.names import similarity
 
 MAX_RECORDS = 200_000
-MAX_XML = 200 * 1024 * 1024
+MAX_XML = 64 * 1024 * 1024  # most bytes read from one member of a spreadsheet/UFDR archive (decompressed)
+MAX_COLS = 4096  # columns kept from a worksheet row (a crafted cell reference cannot force a huge range)
+MAX_PDF_LINE = 400  # a longer line is not a statement row; skipping it also avoids regex backtracking
 KINDS = ("auto", "cdr", "transactions", "contacts", "ufdr")
+
+
+def _member(z: zipfile.ZipFile, name: str) -> bytes:
+    """Read a ZIP member, decompressing at most ``MAX_XML`` bytes. The declared size in the archive is
+    not trusted (it can be understated to smuggle a decompression bomb past a size check), so the limit
+    is enforced on the real decompressed stream."""
+    with z.open(name) as stream:
+        data = stream.read(MAX_XML + 1)
+    if len(data) > MAX_XML:
+        raise ImportError_("A part of the file is too large to read safely")
+    return data
 
 
 class ImportError_(ValueError):
@@ -168,36 +181,39 @@ def read_xlsx(data: bytes) -> list[list[str]]:
         names = z.namelist()
         shared: list[str] = []
         if "xl/sharedStrings.xml" in names:
-            if z.getinfo("xl/sharedStrings.xml").file_size > MAX_XML:
-                raise ImportError_("The spreadsheet is too large")
-            root = SafeET.fromstring(z.read("xl/sharedStrings.xml"))
+            root = SafeET.fromstring(_member(z, "xl/sharedStrings.xml"))
             shared = ["".join(t.text or "" for t in si.iter(f"{{{ns['m']}}}t")) for si in root.findall("m:si", ns)]
         sheets = sorted(n for n in names if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n))
         if not sheets:
             raise ImportError_("The spreadsheet has no worksheet")
-        if z.getinfo(sheets[0]).file_size > MAX_XML:
-            raise ImportError_("The spreadsheet is too large")
-        root = SafeET.fromstring(z.read(sheets[0]))
+        root = SafeET.fromstring(_member(z, sheets[0]))
     rows: list[list[str]] = []
     for row in root.iter(f"{{{ns['m']}}}row"):
         cells: dict[int, str] = {}
         for c in row.findall("m:c", ns):
             ref = c.get("r") or ""
-            letters = re.match(r"[A-Z]+", ref)
+            letters = re.match(r"[A-Z]{1,3}", ref)  # at most column "XFD" (16384); longer is malformed
             col = 0
             for ch in letters.group(0) if letters else "":
                 col = col * 26 + ord(ch) - 64
+            index = (col - 1) if letters else len(cells)
+            if not 0 <= index < MAX_COLS:
+                continue
             v = c.find("m:v", ns)
             inline = c.find("m:is", ns)
-            if c.get("t") == "s" and v is not None and v.text is not None:
-                value = shared[int(v.text)] if int(v.text) < len(shared) else ""
+            if c.get("t") == "s":  # a shared-string index; a non-numeric index is treated as empty
+                value = (
+                    shared[int(v.text)]
+                    if v is not None and str(v.text or "").strip().isdigit() and int(v.text) < len(shared)
+                    else ""
+                )
             elif inline is not None:
                 value = "".join(t.text or "" for t in inline.iter(f"{{{ns['m']}}}t"))
             else:
                 value = v.text if v is not None and v.text is not None else ""
-            cells[max(col - 1, len(cells)) if not letters else col - 1] = value
+            cells[index] = value
         if cells:
-            rows.append([cells.get(i, "") for i in range(max(cells) + 1)])
+            rows.append([cells.get(i, "") for i in range(min(max(cells) + 1, MAX_COLS))])
         if len(rows) > MAX_RECORDS:
             break
     return [r for r in rows if any(str(x).strip() for x in r)]
@@ -322,10 +338,7 @@ def records_from_ufdr(data: bytes) -> list[dict[str, Any]]:
             n for n in z.namelist() if n.lower().endswith(".xml")]  # fmt: skip
         if not reports:
             raise ImportError_("The UFDR file has no report.xml")
-        info = z.getinfo(reports[0])
-        if info.file_size > MAX_XML:
-            raise ImportError_("The report is larger than 200 MB; export a smaller extraction")
-        root = SafeET.fromstring(z.read(info))
+        root = SafeET.fromstring(_member(z, reports[0]))
     out: list[dict[str, Any]] = []
     for model in (el for el in root.iter() if isinstance(el.tag, str) and el.tag.rsplit("}", 1)[-1] == "model"):
         mtype = model.get("type")
@@ -403,6 +416,8 @@ def records_from_pdf_statement(data: bytes) -> list[dict[str, Any]]:
     balance: float | None = None
     year = None
     for line in text.splitlines():
+        if len(line) > MAX_PDF_LINE:
+            continue
         match = PDF_LINE.match(line)
         if not match:
             continue

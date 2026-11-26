@@ -32,6 +32,7 @@ import hashlib
 import html.parser
 import json
 import os
+import re
 import secrets
 import shutil
 import signal
@@ -542,6 +543,18 @@ def _warc_record(kind: str, uri: str | None, date: str, content_type: str, block
     return ("\r\n".join(head) + "\r\n\r\n").encode() + block + b"\r\n\r\n"
 
 
+def _header_lines(headers: dict[str, Any]) -> list[str]:
+    """HTTP header lines for a WARC record, with CR/LF stripped so a captured header value cannot inject
+    extra lines or forge a record boundary in the evidence file."""
+    out = []
+    for key, value in headers.items():
+        name = re.sub(r"[\r\n:]", "", str(key)).strip()
+        clean = re.sub(r"[\r\n]+", " ", str(value))
+        if name and name.lower() not in HOP_HEADERS:
+            out.append(f"{name}: {clean}")
+    return out
+
+
 def build_warc(page: dict[str, Any], captured_at: str, screenshot: tuple[str, bytes] | None = None) -> bytes:
     """The capture as a WARC file, the web-archive standard that replay tools (pywb, ReplayWeb.page) and
     archives read: the server's response (the body as received after decompression, so the
@@ -554,15 +567,13 @@ def build_warc(page: dict[str, Any], captured_at: str, screenshot: tuple[str, by
     for hop in page.get("chain", [])[:-1]:
         status = int(hop["status"])
         reason = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
-        lines = [f"HTTP/1.1 {status} {reason}"] + [f"{k}: {v}" for k, v in hop["headers"].items()
-                                                   if k.lower() not in HOP_HEADERS] + ["Content-Length: 0"]  # fmt: skip
+        lines = [f"HTTP/1.1 {status} {reason}", *_header_lines(hop["headers"]), "Content-Length: 0"]
         out += _warc_record("response", hop["url"], date, "application/http;msgtype=response",
                             ("\r\n".join(lines) + "\r\n\r\n").encode())  # fmt: skip
     status = int(page["status"])
     reason = HTTPStatus(status).phrase if status in HTTPStatus._value2member_map_ else ""
     body: bytes = page["body"]
-    lines = [f"HTTP/1.1 {status} {reason}"] + [f"{k}: {v}" for k, v in page["headers"].items()
-                                               if k.lower() not in HOP_HEADERS] + [f"Content-Length: {len(body)}"]  # fmt: skip
+    lines = [f"HTTP/1.1 {status} {reason}", *_header_lines(page["headers"]), f"Content-Length: {len(body)}"]
     out += _warc_record("response", page["final_url"], date, "application/http;msgtype=response",
                         ("\r\n".join(lines) + "\r\n\r\n").encode() + body,
                         WARC_Payload_Digest=f"sha256:{hashlib.sha256(body).hexdigest()}")  # fmt: skip

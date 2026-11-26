@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.119.1] — Hardening the untrusted-file readers
+
+### Security
+- **XLSX**: a crafted cell reference can no longer force a huge row (column cap); a non-numeric shared-string
+  index is treated as empty instead of raising.
+- **ZIP-based formats (XLSX, UFDR, DOCX)**: member reads are bounded on the decompressed stream, so an
+  archive that understates a member's size cannot smuggle a decompression bomb past the check.
+- **PDFs**: over-long lines are skipped before the statement pattern runs (regex-backtracking DoS guard);
+  content-stream decompression is bounded in total.
+- **WARC evidence**: captured response headers are stripped of CR/LF, so a hostile site's header cannot
+  inject lines or forge a record boundary in the evidence file.
+
 ## [1.119.0] — Breach intelligence (no plaintext stored)
 
 ### Added
