@@ -15,11 +15,16 @@ from argus.modules.discovery.site_crawler import SiteCrawlerModule
 from argus.modules.discovery.wayback import WaybackModule
 from argus.modules.discovery.web_recon import WebReconModule
 from argus.modules.identity.email_recon import EmailReconModule
+from argus.modules.identity.git_identity import GitIdentityModule
 from argus.modules.identity.github_hunter import GitHubHunterModule
 from argus.modules.identity.github_org import GitHubOrgModule
+from argus.modules.identity.name_guesser import NameGuesserModule
 from argus.modules.identity.pgp_keyserver import PgpKeyserverModule
 from argus.modules.identity.phone_recon import PhoneReconModule
 from argus.modules.identity.profile_enricher import ProfileEnricherModule
+from argus.modules.identity.profile_history import ProfileHistoryModule
+from argus.modules.identity.public_records import DeveloperFootprintModule, PublicRecordsModule
+from argus.modules.identity.social_pages import SocialPagesModule
 from argus.modules.identity.username_hunter import UsernameHunterModule
 from argus.modules.identity.web_mentions import WebMentionsModule
 from argus.modules.infrastructure.dns_recon import DnsReconModule
@@ -60,6 +65,12 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     ProfileEnricherModule,
     EmailReconModule,
     GitHubHunterModule,
+    GitIdentityModule,
+    NameGuesserModule,
+    PublicRecordsModule,
+    DeveloperFootprintModule,
+    ProfileHistoryModule,
+    SocialPagesModule,
     GitHubOrgModule,
     PgpKeyserverModule,
     PhoneReconModule,

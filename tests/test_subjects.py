@@ -153,6 +153,8 @@ def test_what_a_run_searches():
     assert [(s["kind"], s["value"]) for s in found] == [
         ("name", "Jane Doe"),
         ("username", "jdoe"),
+        ("profile", "https://github.com/jdoe"),
+        ("profile", "https://gitlab.com/jane-d"),
         ("username", "jane-d"),
         ("email", "jane@example.org"),
     ]
@@ -215,7 +217,10 @@ def test_one_run_from_everything_known_then_review(sj):
     # Reject the namesake: never suggested again, even after searching from scratch.
     reddit = cands["https://reddit.com/user/jdoe"]
     c.post(f"/api/cases/{case_id}/subjects/{sid}/candidates/{reddit['id']}/reject", json={})
-    assert run(c, case_id, sid).status_code == 409  # everything known already searched
+    assert run(c, case_id, sid).status_code == 202  # only the newly confirmed profile (its archived copies)
+    wait(c, case_id, sid)
+    assert scans.targets[-1] == "https://github.com/jdoe"
+    assert run(c, case_id, sid).status_code == 409  # now everything known has been searched
     assert run(c, case_id, sid, fresh=True, rounds=1).status_code == 202
     again = wait(c, case_id, sid)
     statuses = {cand["value"]: cand["status"] for cand in again["candidates"]}

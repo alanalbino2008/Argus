@@ -63,6 +63,7 @@ function knownForm(s) {
       <div><label class="small" for="sj-city">Town or city</label><input class="input" id="sj-city" maxlength="200" value="${k.city || ""}"></div>
       <div><label class="small" for="sj-employer">Employer</label><input class="input" id="sj-employer" maxlength="200" value="${k.employer || ""}"></div>
       <div><label class="small" for="sj-born">Year of birth</label><input class="input" id="sj-born" inputmode="numeric" maxlength="4" value="${k.birth_year || ""}" placeholder="Only used to rule matches out"></div>
+      <div><label class="small" for="sj-tz">Usual time zone</label><input class="input" id="sj-tz" maxlength="6" value="${k.utc_offset || ""}" placeholder="UTC offset, e.g. +01:00"></div>
     </div>
     ${s ? "" : html`<label class="small"><input type="checkbox" id="sj-confirm" required> There is a legitimate purpose for researching this person (the case's: ${caseRef.purpose}). They are not a child.</label>`}
     <p class="error-text" id="sj-error"></p>
@@ -76,13 +77,14 @@ function readForm() {
   const born = $("#sj-born").value.trim();
   return { name: $("#sj-name").value.trim(),
     known: { ...Object.fromEntries(LISTS.map(([key]) => [key, lines(key)])), city: $("#sj-city").value.trim(),
-      employer: $("#sj-employer").value.trim(), birth_year: born ? Number(born) : null } };
+      employer: $("#sj-employer").value.trim(), birth_year: born ? Number(born) : null,
+      utc_offset: $("#sj-tz").value.trim() || null } };
 }
 
 function knownSummary(s) {
   const k = s.known;
   const chips = [...LISTS.flatMap(([key]) => (k[key] || []).map((v) => [key, v])),
-    ...(k.city ? [["city", k.city]] : []), ...(k.employer ? [["employer", k.employer]] : []), ...(k.birth_year ? [["born", `born ${k.birth_year}`]] : [])];
+    ...(k.city ? [["city", k.city]] : []), ...(k.employer ? [["employer", k.employer]] : []), ...(k.birth_year ? [["born", `born ${k.birth_year}`]] : []), ...(k.utc_offset ? [["time zone", `UTC${k.utc_offset}`]] : [])];
   return html`<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">${chips.length ? chips.map(([key, v]) => html`<span class="pill" title="${key}" style="text-transform:none">${v}</span>`) : html`<span class="muted small">Nothing known yet.</span>`}
     ${k.photo_hash ? html`<span class="pill ok" title="Only a fingerprint of the photo is kept, to recognise the same picture on a profile">${ico("eye")}Photo</span>` : ""}</div>`;
 }

@@ -54,6 +54,7 @@ class Known(BaseModel):
     city: str = Field(default="", max_length=200)
     employer: str = Field(default="", max_length=200)
     birth_year: int | None = Field(default=None, description="Only used to rule matches out")
+    utc_offset: str | None = Field(default=None, max_length=6, description="Their usual time zone, e.g. +01:00")
 
 
 class SubjectCreate(BaseModel):
@@ -441,6 +442,7 @@ class SubjectRun:
             target=step["value"], target_type=spec["type"], max_depth=spec["depth"], enabled_modules=modules,
             passive_only=self.case["opsec_mode"] == "anonymous", handle_variants=bool(spec.get("variants")),
             allow_private_targets=settings.allow_private_targets,
+            hints=S.hints((await self.app.state.subjects.data(self.subject_id) or {}).get("known") or {}),
         )  # fmt: skip
         purpose = f"{self.case['purpose']} (known details)"[:500]
         scan: ScanFn = self.app.state.playbook_scan

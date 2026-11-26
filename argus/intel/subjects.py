@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 from argus.core.graph import IntelligenceGraph
 from argus.core.models import Entity, EntityType
 from argus.intel.identity import _link_grade, _profile_facts
+from argus.intel.names import similarity
 from argus.intel.profiles import GENERIC_HOSTS, _host, _norm_url, _urls, compare
 
 LISTS = ("names", "usernames", "emails", "phones", "profiles", "websites")
@@ -47,12 +48,19 @@ CANDIDATE_TYPES = {EntityType.SOCIAL_PROFILE: "profile", EntityType.USERNAME: "u
 
 # What each kind of known detail is searched with: the same sources as the matching playbook.
 SEARCHES: dict[str, dict[str, Any]] = {
-    "username": {"type": EntityType.USERNAME, "modules": ("username_hunter", "github_hunter", "profile_enricher"),
-                 "depth": 1, "variants": True},
+    "username": {"type": EntityType.USERNAME, "modules": ("username_hunter", "github_hunter", "profile_enricher",
+                                                          "git_identity", "developer_footprint", "web_mentions",
+                                                          "profile_history", "social_pages"), "depth": 1,
+                 "variants": True},
     "email": {"type": EntityType.EMAIL, "modules": ("email_recon", "hibp", "pgp_keyserver", "username_hunter",
-                                                    "github_hunter", "profile_enricher", "web_mentions"), "depth": 2},
+                                                    "github_hunter", "profile_enricher", "web_mentions",
+                                                    "git_identity"), "depth": 2},
     "phone": {"type": EntityType.PHONE, "modules": ("phone_recon", "web_mentions"), "depth": 1},
-    "name": {"type": EntityType.PERSON, "modules": ("companies_house", "offshore_leaks", "sanctions_screen"), "depth": 1},
+    "name": {"type": EntityType.PERSON, "modules": ("companies_house", "offshore_leaks", "sanctions_screen",
+                                                    "name_guesser", "public_records", "web_mentions", "social_pages",
+                                                    "profile_history"), "depth": 1},
+    "profile": {"type": EntityType.SOCIAL_PROFILE, "modules": ("profile_enricher", "profile_history", "social_pages"),
+                "depth": 1},
     "website": {"type": EntityType.DOMAIN, "modules": ("whois_lookup", "site_crawler", "profile_enricher"), "depth": 1},
 }  # fmt: skip
 
@@ -191,6 +199,10 @@ def clean_known(data: dict[str, Any]) -> dict[str, Any]:
         if this_year - year < ADULT_AGE:
             raise KnownDetailsError("Argus is not used to research children: this person would be under 18")
         out["birth_year"] = year
+    offset = str(data.get("utc_offset") or "").strip()
+    if offset and not re.fullmatch(r"[+-](0\d|1[0-4]):(00|30|45)", offset):
+        raise KnownDetailsError("The time zone must be a UTC offset such as +01:00 or -05:00")
+    out["utc_offset"] = offset or None
     out["photo_hash"] = data.get("photo_hash") if re.fullmatch(r"[0-9a-f]{16}", str(data.get("photo_hash") or "")) \
         else None  # fmt: skip
     return out
@@ -206,6 +218,25 @@ def known_keys(known: dict[str, Any]) -> set[str]:
         if handle:
             keys.add(key_of("username", handle))
     return keys
+
+
+PROVIDER_DOMAINS = {"gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com",
+                    "me.com", "proton.me", "protonmail.com", "aol.com", "gmx.com", "mail.com"}  # fmt: skip
+
+
+def hints(known: dict[str, Any]) -> dict[str, Any]:
+    """What modules can use from the known details: the year of birth, and the person's own domains
+    (their websites, and the domains of their non-webmail addresses) to guess addresses at."""
+    domains = [_host(u) for u in known.get("websites") or []]
+    domains += [e.rsplit("@", 1)[-1].lower() for e in known.get("emails") or [] if "@" in e]
+    own = [d for d in dict.fromkeys(domains) if d and d not in PROVIDER_DOMAINS and d not in GENERIC_HOSTS]
+    out: dict[str, Any] = {"domains": own[:5]}
+    for field in ("city", "employer"):
+        if known.get(field):
+            out[field] = str(known[field])
+    if known.get("birth_year"):
+        out["birth_year"] = int(known["birth_year"])
+    return out
 
 
 def searches(known: dict[str, Any], searched: set[str]) -> list[dict[str, Any]]:
@@ -225,6 +256,7 @@ def searches(known: dict[str, Any], searched: set[str]) -> list[dict[str, Any]]:
     for value in known.get("usernames") or []:
         add("username", value, "known")
     for url in known.get("profiles") or []:
+        add("profile", url, "known")
         handle = handle_from_url(url)
         if handle:
             add("username", handle, f"handle in {url}")
@@ -271,9 +303,10 @@ def score(candidate: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
                                             "avatar_hash": candidate.get("avatar_hash")})  # fmt: skip
         agree += result["agree"]
         conflict += result["conflict"]
-    elif kind == "record":
+    else:
         names = known.get("names") or []
-        if names and candidate["value"].strip().lower() == names[0].strip().lower():
+        shown = candidate["value"] if kind == "record" else str(facts.get("display_name") or "")
+        if names and shown and similarity(shown, names[0], kind="person") >= 0.9:
             agree.append(f"the same name ({names[0]})")
     text = _facts_text(facts)
     for email in known.get("emails") or []:
@@ -287,6 +320,17 @@ def score(candidate: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
         agree.append(f"names the known employer ({known['employer']})")
     if kind == "profile" and employer and employer in str(facts.get("company") or "").lower():
         agree.append(f"names the known employer ({known['employer']})")
+    names = known.get("names") or []
+    archived = [n for n in facts.get("archived_names") or [] if str(n) != str(facts.get("display_name") or "")]
+    if names and any(similarity(str(n), names[0], kind="person") >= 0.9 for n in archived):
+        agree.append(f"showed the same name in an archived copy ({names[0]})")
+    zone = (facts.get("timezone") or {}).get("usual_offset") if isinstance(facts.get("timezone"), dict) else None
+    if known.get("utc_offset") and zone:
+        apart = abs(_minutes(zone) - _minutes(known["utc_offset"]))
+        if apart <= 60:
+            agree.append(f"works in the same time zone (UTC{zone})")
+        elif apart >= 180:
+            conflict.append(f"works in UTC{zone}, not UTC{known['utc_offset']}")
     birth = known.get("birth_year")
     found_birth = _born_year(facts.get("born") or facts.get("birth_year"))
     if birth and found_birth:
@@ -307,6 +351,12 @@ def score(candidate: dict[str, Any], known: dict[str, Any]) -> dict[str, Any]:
     else:
         verdict = "weak"
     return {"score": points, "verdict": verdict, "agree": agree, "conflict": conflict}
+
+
+def _minutes(offset: str) -> int:
+    sign = -1 if offset.startswith("-") else 1
+    hours, _, minutes = offset.lstrip("+-").partition(":")
+    return sign * (int(hours) * 60 + int(minutes or 0))
 
 
 def _platform(entity: Entity, url: str) -> str:
@@ -336,6 +386,17 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
             if not md.get("born") and entity.id not in linked_orgs:
                 continue  # a bare name: nothing to weigh it by
             facts = {"born": md.get("born"), "company": ", ".join(linked_orgs.get(entity.id, [])[:5])}
+        elif md.get("gravatar_name"):  # an address whose public profile shows a name
+            facts = {"display_name": md["gravatar_name"]}
+        if md.get("guessed"):
+            facts["guessed"] = True
+        if md.get("timezone"):
+            facts["timezone"] = md["timezone"]
+        history = md.get("history") or {}
+        if history.get("names_shown"):
+            facts["archived_names"] = history["names_shown"][:5]
+        if history.get("first_archived"):
+            facts["first_archived"] = history["first_archived"]
         value = entity.value
         out.append({
             "id": candidate_id(key_of(kind, value)), "key": key_of(kind, value), "kind": kind, "value": value,
@@ -410,6 +471,9 @@ def add_to_known(known: dict[str, Any], cand: dict[str, Any]) -> dict[str, Any]:
         known[field] = values[:MAX_EACH]
     if cand["kind"] == "record" and not known.get("birth_year"):
         known["birth_year"] = _born_year((cand.get("facts") or {}).get("born"))
+    zone = (cand.get("facts") or {}).get("timezone")
+    if isinstance(zone, dict) and zone.get("usual_offset") and not known.get("utc_offset"):
+        known["utc_offset"] = zone["usual_offset"]
     if cand["kind"] == "profile" and not known.get("photo_hash") and cand.get("avatar_hash"):
         known["photo_hash"] = cand["avatar_hash"]
     return known

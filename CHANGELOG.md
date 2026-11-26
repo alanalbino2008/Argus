@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.108.0] — Phases 105–108: many more sources about a person
+
+### Added
+- **Phase 105, guesses from a name** (`name_guesser`): likely usernames checked on GitHub, GitLab and
+  Keybase (kept when the account shows the same name), likely addresses at the person's own domains
+  and the big providers checked against Gravatar, and PGP keys in the same name. **Public Git
+  history** (`git_identity`): the GitHub accounts an address commits as, and the addresses a username
+  commits with.
+- **Phase 106, records and the web**: ORCID, OpenAlex and Wikidata records in the same name
+  (`public_records`); Stack Overflow and npm (with package publishing addresses) for a username
+  (`developer_footprint`); web searches for names (social networks, with town or employer, CVs and
+  documents) and usernames, turning social-network results into profiles (`web_mentions`).
+- **Phase 107, hidden history**: archived copies of profiles (`profile_history`): first and last
+  copy, earlier names, and accounts once linked; usual **time zone** from commit times, a new known
+  detail (`utc_offset`) that counts for or against candidates; known profile links searched directly.
+- **Phase 108, the big social networks** (`social_pages`): the public pages of Instagram, Facebook,
+  Threads, TikTok, Snapchat, YouTube, Telegram and Pinterest (name, bio, picture fingerprint), with
+  sign-in walls recorded; X and LinkedIn through web search.
+- `ScanConfig.hints`: what is known about the subject, for modules that can use it.
+
+### Security
+- None of the new sources signs in, uses accounts or cookies, probes sign-up or password-reset pages,
+  reads breach contents or contacts the person.
+
 ## [1.104.0] — Phase 104: People in the case report
 
 ### Added

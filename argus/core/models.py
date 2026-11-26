@@ -185,6 +185,10 @@ class ScanConfig(BaseModel):
         default=False,
         description="For a username target, also search likely variants (jane.roe, jane_roe, janeroe...)",
     )
+    hints: dict[str, Any] = Field(
+        default_factory=dict,
+        description="What is already known about the subject, for modules that can use it (e.g. birth_year, domains)",
+    )
     circuit_breaker_threshold: int = Field(
         default=5, ge=1, description="Consecutive failures before a module is disabled for the rest of the scan"
     )

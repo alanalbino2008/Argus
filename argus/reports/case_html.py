@@ -321,7 +321,8 @@ def _person(p: dict[str, Any]) -> str:
     known = p.get("known") or {}
     rows = [(label, ", ".join(known.get(key) or [])) for key, label in KNOWN_LABELS if known.get(key)]
     rows += [(label, str(known[key])) for key, label in (("city", "Town or city"), ("employer", "Employer"),
-                                                         ("birth_year", "Year of birth")) if known.get(key)]  # fmt: skip
+                                                         ("birth_year", "Year of birth"), ("utc_offset", "Usual time zone (UTC)"))
+             if known.get(key)]  # fmt: skip
     if known.get("photo_hash"):
         rows.append(("Photo", "A known photo was compared with profile pictures (only its fingerprint is kept)"))
     meta = "".join(f"<dt>{e(label)}</dt><dd>{e(value)}</dd>" for label, value in rows)
