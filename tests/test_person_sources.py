@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import re
+
+import pytest
 
 from argus.core.models import Entity, EntityType, ScanConfig
 from argus.intel import subjects as S
@@ -322,3 +325,98 @@ async def test_a_profile_found_by_web_search_gets_its_public_details(monkeypatch
     assert found.metadata["public_page"] == "found" and found.metadata["avatar_hash"] == "abababababababab"
     assert found.metadata["profile"]["avatar_url"].endswith("jane.jpg")
     assert "social_pages" in S.SEARCHES["username"]["modules"] and "social_pages" in S.SEARCHES["name"]["modules"]
+
+
+# ---------------------------------------------------------------------------- Phase 109: profiles behind sign-in walls
+LINKEDIN = {"data": {"lookupStatus": "found", "profile": {
+    "fullName": "Jane Doe", "headline": "Logistics engineer", "summary": "Supply chains, Leeds.",
+    "location": "Leeds, England, United Kingdom", "profilePictureUrl": "https://media.licdn.com/jane.jpg",
+    "followerCount": 512, "currentPositions": [{"title": "Engineer", "organization": {"name": "Acme Logistics"}}],
+    "positions": [{"title": "Engineer", "organizationName": "Acme Logistics"}, {"title": "Intern", "organization": {"name": "Beta Ltd"}}],
+    "education": [{"schoolName": "University of Leeds"}]}}, "meta": {"creditsCharged": 5}}  # fmt: skip
+X_FOUND = {"data": {"lookupStatus": "found", "profile": {"displayName": "Jane Doe", "handle": "janedoe84",
+           "bio": "Nurse. Views mine.", "location": "Leeds", "website": "https://janedoe.dev",
+           "avatarUrl": "https://pbs.twimg.com/jane.jpg", "metrics": {"followers": 90}}}}  # fmt: skip
+
+
+@pytest.fixture
+def socialfetch_key(monkeypatch):
+    from argus.core.settings import get_settings
+
+    monkeypatch.setenv("ARGUS_SOCIALFETCH_API_KEY", "sfk_test_key_123")
+    monkeypatch.setenv("ARGUS_SOCIALFETCH_MAX_LOOKUPS", "3")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+async def _no_picture(session, url):
+    return "1234123412341234" if url else None
+
+
+async def test_a_walled_profile_is_read_through_the_viewing_service(socialfetch_key, monkeypatch):
+    from argus.modules.identity import profile_viewer
+    from argus.modules.identity.profile_viewer import ProfileViewerModule
+    from tests.test_phone import SearchSession
+
+    monkeypatch.setattr(profile_viewer, "fetch_fingerprint", _no_picture)
+    assert ProfileViewerModule.is_configured()
+    found = Entity.create(E.SOCIAL_PROFILE, "https://www.linkedin.com/in/jane-doe-123", depth=1, confidence=0.5,
+                          metadata={"platform": "LinkedIn", "origin": "found by web search"})  # fmt: skip
+    session = SearchSession(FakeResponse(200, LINKEDIN))
+    session.routes = {r"api\.socialfetch\.dev/v2/linkedin/profiles": FakeResponse(200, LINKEDIN)}
+    module = ProfileViewerModule()
+    assert module.can_handle(found)
+    await run(module, found, session)
+    assert session.headers[0]["x-api-key"] == "sfk_test_key_123" and session.params[0] == {"handle": "jane-doe-123"}
+    profile = found.metadata["profile"]
+    assert profile["display_name"] == "Jane Doe" and profile["company"] == "Acme Logistics"
+    assert profile["positions"] == ["Engineer at Acme Logistics", "Intern at Beta Ltd"]
+    assert profile["education"] == ["University of Leeds"] and "Leeds" in profile["location"]
+    assert found.confidence == 0.85 and found.metadata["avatar_hash"] == "1234123412341234"
+    # Scored against the known details, the employer and town agree.
+    known = S.clean_known({"names": ["Jane Doe"], "employer": "Acme Logistics", "city": "Leeds"})
+    cand = S.from_graph(_graph([found]), {"kind": "name", "value": "Jane Doe"}, "inv")[0]
+    assert any("employer" in r for r in S.score(cand, known)["agree"])
+
+
+async def test_a_username_on_x_instagram_and_facebook_within_the_lookup_limit(socialfetch_key, monkeypatch):
+    from argus.modules.identity import profile_viewer
+    from argus.modules.identity.profile_viewer import ProfileViewerModule, target_of
+
+    monkeypatch.setattr(profile_viewer, "fetch_fingerprint", _no_picture)
+    session = FakeSession({
+        r"api\.socialfetch\.dev/v1/twitter/profiles/janedoe84": FakeResponse(200, X_FOUND),
+        r"api\.socialfetch\.dev/v2/instagram/profiles/janedoe84": FakeResponse(200, {"data": {"lookupStatus": "private"}}),
+        r"api\.socialfetch\.dev/v1/facebook/profiles": FakeResponse(402, {"error": "insufficient_credits"}),
+    })  # fmt: skip
+    user = Entity.create(E.USERNAME, "janedoe84")
+    entities, _ = await run(ProfileViewerModule(), user, session)
+    assert [e.value for e in entities] == ["https://x.com/janedoe84"]
+    assert entities[0].metadata["profile"]["website"] == "https://janedoe.dev"
+    assert user.metadata["viewed_profiles"] == {"X": "found", "Instagram": "private", "Facebook": "no credits"}
+    # Profile lookups only: never contact details, followers or stories.
+    assert all(not re.search(r"/(email|phones|contact|followers|following|stories)", u) for u in session.requested)
+    # The per-scan limit (3 here) stops further lookups.
+    module = ProfileViewerModule()
+    module.spent = 3
+    entities, _ = await run(module, Entity.create(E.USERNAME, "someoneelse"), FakeSession({}))
+    assert entities == [] and set(module.__dict__) >= {"spent"}
+    assert target_of("https://www.linkedin.com/company/acme") is None and target_of("https://x.com/home") is None
+    assert target_of("https://m.facebook.com/jane.doe.77") == (
+        "Facebook",
+        {"url": "https://www.facebook.com/jane.doe.77"},
+    )
+
+
+def test_without_a_key_it_is_off_and_never_brokered(monkeypatch):
+    from argus.accounts import connect_client
+    from argus.core.settings import get_settings
+    from argus.modules.identity.profile_viewer import ProfileViewerModule
+
+    monkeypatch.delenv("ARGUS_SOCIALFETCH_API_KEY", raising=False)
+    monkeypatch.setenv("ARGUS_EDITION", "personal")
+    monkeypatch.setenv("ARGUS_ACCOUNT_SERVER_URL", "https://accounts.example")
+    get_settings.cache_clear()
+    assert not ProfileViewerModule.is_configured() and connect_client.available("web_search")
+    get_settings.cache_clear()

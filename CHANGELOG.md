@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.109.0] — Phase 109: Public profiles behind sign-in walls
+
+### Added
+- **Profile viewing service (SocialFetch)**, with your own key (`ARGUS_SOCIALFETCH_API_KEY` or Settings →
+  Your API keys): LinkedIn, X, Facebook and Instagram profiles that show automated visitors a sign-in
+  page are read as a logged-out visitor would see them (`profile_viewer`), for profiles found by other
+  means and for a username's X, Instagram and Facebook profiles. Name, headline or bio, location,
+  website, picture fingerprint, followers, and LinkedIn positions and education feed the scoring.
+- At most `ARGUS_SOCIALFETCH_MAX_LOOKUPS` lookups per scan (default 20). Not brokered by Argus Connect.
+
+### Security
+- Profile lookups only: the service's contact finders, followers, following, stories and posts are
+  never used.
+
 ## [1.108.0] — Phases 105–108: many more sources about a person
 
 ### Added

@@ -29,6 +29,7 @@ PROVIDERS = {
     },
     "courtlistener": {"label": "US court records (CourtListener)", "where": "courtlistener.com/sign-in (free)"},
     "tineye": {"label": "Reverse image search (TinEye)", "where": "services.tineye.com/TinEyeAPI"},
+    "socialfetch": {"label": "Profiles behind sign-in walls (SocialFetch)", "where": "socialfetch.dev"},
 }
 STATE_KEY = "own_keys"
 CONTEXT = "own-api-keys"

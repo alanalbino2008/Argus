@@ -84,10 +84,26 @@ _IMAGE_URL = re.compile(r"^https?://[^\s]{4,2000}$")
 CATALOGUE["tineye"] = {
     "search": Operation("/search/", {"image_url": _IMAGE_URL}, {"limit": "50", "sort": "score", "order": "desc"}, 3),
 }
+# SocialFetch: public profiles as a logged-out visitor sees them, where the site itself shows a sign-in
+# wall to automated visitors. Profile lookups only: never contact details, followers or stories.
+_HANDLE = re.compile(r"^@?[A-Za-z0-9._-]{1,100}$")
+_FACEBOOK_URL = re.compile(r"^https://(www\.|m\.)?facebook\.com/[A-Za-z0-9.\-/=?_]{1,200}$")
+CATALOGUE["socialfetch"] = {
+    "linkedin": Operation("/v2/linkedin/profiles", {"handle": _HANDLE}, {}, 5),
+    "instagram": Operation("/v2/instagram/profiles/{profile}", {"profile": _HANDLE}, {}, 1),
+    "x": Operation("/v1/twitter/profiles/{handle}", {"handle": _HANDLE}, {"by": "handle"}, 1),
+    "facebook": Operation("/v1/facebook/profiles", {"url": _FACEBOOK_URL}, {}, 1),
+    "tiktok": Operation("/v1/tiktok/profiles/{handle}", {"handle": _HANDLE}, {}, 1),
+    "threads": Operation("/v1/threads/profiles/{handle}", {"handle": _HANDLE}, {}, 1),
+    "snapchat": Operation("/v1/snapchat/profiles/{handle}", {"handle": _HANDLE}, {}, 1),
+    "youtube": Operation("/v1/youtube/channel", {"handle": _HANDLE}, {}, 1),
+}
 BASES = {"companies_house": COMPANIES_HOUSE, "web_search": WEB_SEARCH, "tineye": "https://api.tineye.com/rest",
-         "opencorporates": "https://api.opencorporates.com/v0.4", "courtlistener": "https://www.courtlistener.com/api/rest/v4"}  # fmt: skip
+         "opencorporates": "https://api.opencorporates.com/v0.4", "courtlistener": "https://www.courtlistener.com/api/rest/v4",
+         "socialfetch": "https://api.socialfetch.dev"}  # fmt: skip
 LABELS = {"companies_house": "UK Companies House", "web_search": "Web search", "opencorporates": "OpenCorporates",
-          "courtlistener": "US court records (CourtListener)", "tineye": "Reverse image search (TinEye)"}  # fmt: skip
+          "courtlistener": "US court records (CourtListener)", "tineye": "Reverse image search (TinEye)",
+          "socialfetch": "SocialFetch"}  # fmt: skip
 
 
 def _auth_query(provider: str, key: str) -> dict[str, str]:
@@ -102,7 +118,7 @@ def _auth(provider: str, key: str) -> dict[str, str]:
         return {}
     if provider == "courtlistener":
         return {"Authorization": f"Token {key}"}
-    if provider == "tineye":
+    if provider in ("tineye", "socialfetch"):
         return {"x-api-key": key}
     token = base64.b64encode(f"{key}:".encode()).decode()  # HTTP Basic: the key is the user name
     return {"Authorization": f"Basic {token}"}
@@ -142,6 +158,8 @@ async def call_source(http: Any, provider: str, name: str, params: dict[str, Any
             return {"not_found": True}
         if resp.status in (401, 403):
             raise ConnectError(502, f"{LABELS[provider]} refused the key")
+        if resp.status == 402:
+            raise ConnectError(402, f"{LABELS[provider]}: no credits left on the account")
         if resp.status == 429:
             raise ConnectError(503, f"{LABELS[provider]} is rate-limiting requests; try again shortly")
         if resp.status != 200:

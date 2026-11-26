@@ -238,6 +238,14 @@ class Settings(BaseSettings):
     tineye_api_key: SecretStr | None = Field(
         default=None, description="TinEye API key: reverse image search (where else a picture appears)"
     )
+    socialfetch_api_key: SecretStr | None = Field(
+        default=None,
+        description="SocialFetch API key: public profiles behind sign-in walls (LinkedIn, X, Facebook, Instagram), "
+        "read by SocialFetch as a logged-out visitor. Optional; your own key, paid in SocialFetch credits",
+    )
+    socialfetch_max_lookups: int = Field(
+        default=20, ge=0, le=500, description="At most this many SocialFetch lookups per scan (each costs credits)"
+    )
     wayback_url: str = Field(
         default="https://web.archive.org", description="The Internet Archive (page history); '' = off"
     )

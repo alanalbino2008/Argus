@@ -23,6 +23,7 @@ from argus.modules.identity.pgp_keyserver import PgpKeyserverModule
 from argus.modules.identity.phone_recon import PhoneReconModule
 from argus.modules.identity.profile_enricher import ProfileEnricherModule
 from argus.modules.identity.profile_history import ProfileHistoryModule
+from argus.modules.identity.profile_viewer import ProfileViewerModule
 from argus.modules.identity.public_records import DeveloperFootprintModule, PublicRecordsModule
 from argus.modules.identity.social_pages import SocialPagesModule
 from argus.modules.identity.username_hunter import UsernameHunterModule
@@ -71,6 +72,7 @@ ALL_MODULE_CLASSES: list[type[BaseModule]] = [
     DeveloperFootprintModule,
     ProfileHistoryModule,
     SocialPagesModule,
+    ProfileViewerModule,
     GitHubOrgModule,
     PgpKeyserverModule,
     PhoneReconModule,

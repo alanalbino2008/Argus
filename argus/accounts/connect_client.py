@@ -20,7 +20,8 @@ from argus.core.settings import get_settings
 
 OWN_KEYS = {"companies_house": "companies_house_api_key", "web_search": "web_search_api_key",
             "opencorporates": "opencorporates_api_key", "courtlistener": "courtlistener_api_key",
-            "tineye": "tineye_api_key"}  # fmt: skip
+            "tineye": "tineye_api_key", "socialfetch": "socialfetch_api_key"}  # fmt: skip
+OWN_KEY_ONLY = {"socialfetch"}  # not brokered by Argus Connect: the investigator's own account only
 
 
 def own_key(provider: str) -> str:
@@ -40,6 +41,8 @@ def anthropic_key() -> str:
 
 def available(provider: str) -> bool:
     settings = get_settings()
+    if provider in OWN_KEY_ONLY:
+        return bool(own_key(provider))
     return bool(own_key(provider)) or (settings.edition == "personal" and bool(settings.account_server_url))
 
 
@@ -48,6 +51,8 @@ async def lookup(session: Any, provider: str, name: str, params: dict[str, Any])
     key = own_key(provider)
     if key:
         return await call_source(session, provider, name, params, key)
+    if provider in OWN_KEY_ONLY:
+        raise ConnectError(503, f"{LABELS[provider]} needs your own API key")
     licence = personal.CURRENT
     settings = get_settings()
     if licence is None or not licence.token or not settings.account_server_url:

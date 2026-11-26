@@ -50,7 +50,7 @@ CANDIDATE_TYPES = {EntityType.SOCIAL_PROFILE: "profile", EntityType.USERNAME: "u
 SEARCHES: dict[str, dict[str, Any]] = {
     "username": {"type": EntityType.USERNAME, "modules": ("username_hunter", "github_hunter", "profile_enricher",
                                                           "git_identity", "developer_footprint", "web_mentions",
-                                                          "profile_history", "social_pages"), "depth": 1,
+                                                          "profile_history", "social_pages", "profile_viewer"), "depth": 1,
                  "variants": True},
     "email": {"type": EntityType.EMAIL, "modules": ("email_recon", "hibp", "pgp_keyserver", "username_hunter",
                                                     "github_hunter", "profile_enricher", "web_mentions",
@@ -58,8 +58,9 @@ SEARCHES: dict[str, dict[str, Any]] = {
     "phone": {"type": EntityType.PHONE, "modules": ("phone_recon", "web_mentions"), "depth": 1},
     "name": {"type": EntityType.PERSON, "modules": ("companies_house", "offshore_leaks", "sanctions_screen",
                                                     "name_guesser", "public_records", "web_mentions", "social_pages",
-                                                    "profile_history"), "depth": 1},
-    "profile": {"type": EntityType.SOCIAL_PROFILE, "modules": ("profile_enricher", "profile_history", "social_pages"),
+                                                    "profile_history", "profile_viewer"), "depth": 1},
+    "profile": {"type": EntityType.SOCIAL_PROFILE, "modules": ("profile_enricher", "profile_history", "social_pages",
+                                                               "profile_viewer"),
                 "depth": 1},
     "website": {"type": EntityType.DOMAIN, "modules": ("whois_lookup", "site_crawler", "profile_enricher"), "depth": 1},
 }  # fmt: skip
