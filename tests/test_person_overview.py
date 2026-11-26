@@ -88,7 +88,7 @@ def test_the_api(make_client, monkeypatch):
     insta = next(x for x in wait(c, case_id, sid)["candidates"] if x["value"] == INSTA)
     c.post(f"/api/cases/{case_id}/subjects/{sid}/candidates/{insta['id']}/confirm", json={})
     base = f"/api/cases/{case_id}/subjects/{sid}"
-    assert set(c.get(f"{base}/timeline").json()) == {"events", "contradictions"}
+    assert set(c.get(f"{base}/timeline").json()) == {"events", "contradictions", "activity"}
     assert "not the subject" in c.get(f"{base}/associates").json()["note"]
 
     assert c.post(f"{base}/dossier", json={"ai_acknowledged": False}).status_code == 428

@@ -75,6 +75,7 @@ def _capture(row: EvidenceCaptureRow) -> dict[str, Any]:
         "title": row.title, "note": row.note, "digest": row.digest, "status": m.get("status"),
         "browser": m.get("browser"), "route": m.get("route"), "files": m.get("files", []), "timestamped": row.timestamp_token is not None,
         "warnings": list(row.warnings or []), "captured_by": row.captured_by, "captured_at": _iso(row.captured_at),
+        **({"data_import": m["data_import"]} if m.get("data_import") else {}),
     }  # fmt: skip
 
 

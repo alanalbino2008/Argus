@@ -79,6 +79,7 @@ from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
 from argus.api.exposure_routes import router as exposure_router
 from argus.api.fingerprint_watch_routes import router as fingerprint_watch_router
+from argus.api.import_routes import router as import_router
 from argus.api.inspect_routes import router as inspect_router
 from argus.api.integrity_routes import router as integrity_router
 from argus.api.legal_routes import router as legal_router
@@ -773,6 +774,7 @@ async def _approval_required(request: Request, exc: ApprovalRequired) -> JSONRes
 app.include_router(case_report_router)
 app.include_router(playbook_router)
 app.include_router(subject_router)
+app.include_router(import_router)
 app.include_router(vault_router)
 app.include_router(backup_router)
 app.include_router(legal_router)

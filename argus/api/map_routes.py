@@ -107,10 +107,23 @@ async def _fact_entries(request: Request, items: list[dict[str, Any]]) -> list[d
     return await anyio.to_thread.run_sync(case_facts, loaded) if loaded else []
 
 
+async def _people_entries(request: Request, case_id: str) -> list[dict[str, Any]]:
+    """The confirmed online life of each person researched in the case (People tab)."""
+    from argus.intel.subjects import case_timeline_entries
+
+    subjects = request.app.state.subjects
+    out: list[dict[str, Any]] = []
+    for person in await subjects.for_case(case_id):
+        out += case_timeline_entries(person["id"], person["name"], await subjects.data(person["id"]) or {})
+    return out
+
+
 async def _timeline(request: Request, case_id: str, facts: bool) -> list[dict[str, Any]]:
     repo = _repo(request)
     items, captures = await repo.items(case_id), await repo.captures(case_id)
     entries = build_timeline(items, captures, await _scans(request, items), await _photos_of(request, captures))
+    entries += await _people_entries(request, case_id)
+    entries.sort(key=lambda e: e["at"])
     if facts:
         entries = sorted(entries + await _fact_entries(request, items), key=lambda e: e["at"])
     return entries

@@ -155,7 +155,22 @@ function timelinePanel(t) {
       <div class="list-title">${e.title}</div><div class="list-sub">${e.date}${e.status === "open" ? " · not confirmed" : ""}</div></div>
       ${safeUrl(e.url) ? html`<a href="${e.url}" target="_blank" rel="noopener noreferrer" class="small">${ico("external")}Open</a>` : ""}</div>`)}</div>`
       : html`<p class="muted small">Nothing dated yet. Dates come from confirmed accounts (when created, first and last archived, renamed), documents and records.</p>`}
-    <label class="small"><input type="checkbox" data-sj-open ${timelineOpen ? "checked" : ""}> Include candidates not yet confirmed</label>`;
+    <label class="small"><input type="checkbox" data-sj-open ${timelineOpen ? "checked" : ""}> Include candidates not yet confirmed</label>
+    ${activityPanel(t.activity)}`;
+}
+
+function activityPanel(a) {
+  if (!a) return "";
+  const max = Math.max(1, ...Object.values(a.hours_utc || {}));
+  const bars = Array.from({ length: 24 }, (_, h) => (a.hours_utc || {})[String(h)] || 0);
+  return html`<div style="margin-top:12px"><b class="small">When they are active</b>
+    ${a.samples ? html`<div role="img" aria-label="Activity by hour (UTC)" style="display:flex;align-items:flex-end;gap:2px;height:60px;margin:6px 0">
+        ${bars.map((n, h) => html`<div title="${String(h).padStart(2, "0")}:00 UTC: ${n}" style="flex:1;background:${a.busiest_utc.includes(h) ? "var(--accent)" : "var(--border)"};height:${Math.round((n / max) * 100)}%;min-height:2px"></div>`)}</div>
+      <div class="muted small" style="display:flex;justify-content:space-between"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00 UTC</span></div>
+      <div class="small">Busiest: ${a.busiest_utc.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ")} UTC, from ${a.samples} dated posts and account dates${a.utc_offset ? ` (their usual time zone: UTC${a.utc_offset})` : ""}.</div>`
+      : html`<p class="muted small">Not enough dated posts yet (a public Telegram channel or account creation times give them).</p>`}
+    ${a.gaps.length ? html`<b class="small">Gaps of a year or more with nothing found</b>${a.gaps.map((g) => html`<div class="small">${g.from} → ${g.to} (${Math.round(g.days / 365)} year${g.days >= 730 ? "s" : ""}): after “${g.after}”</div>`)}` : ""}
+    <p class="muted small">${a.note}</p></div>`;
 }
 
 function associatesPanel(a) {

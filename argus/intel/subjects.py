@@ -433,7 +433,8 @@ def from_graph(graph: IntelligenceGraph, search: dict[str, Any], investigation_i
         channel = md.get("telegram_channel") or {}
         if channel:
             facts["channel"] = {"first_shown": channel.get("first_shown"), "last_post": channel.get("last_post"),
-                                "subscribers": channel.get("subscribers")}  # fmt: skip
+                                "subscribers": channel.get("subscribers"),
+                                "post_hours_utc": channel.get("post_hours_utc") or {}}  # fmt: skip
             facts["mentions"] = channel.get("mentions") or []
         if md.get("coauthors"):
             facts["coauthors"] = md["coauthors"][:15]
@@ -1022,3 +1023,62 @@ def graph(name: str, data: dict[str, Any], *, include_rejected: bool = False) ->
                     }
                 )
     return {"nodes": nodes, "edges": edges}
+
+
+# ---------------------------------------------------------------------------- one timeline, activity, gaps
+GAP_DAYS = 365
+
+
+def _moment(day: str) -> tuple[datetime, str] | None:
+    parts = day.split("-")
+    try:
+        if len(parts) == 1:
+            return datetime(int(parts[0]), 1, 1, tzinfo=timezone.utc), "year"
+        if len(parts) == 2:
+            return datetime(int(parts[0]), int(parts[1]), 1, tzinfo=timezone.utc), "month"
+        return datetime(int(parts[0]), int(parts[1]), int(parts[2]), tzinfo=timezone.utc), "day"
+    except ValueError:
+        return None
+
+
+def case_timeline_entries(subject_id: str, name: str, data: dict[str, Any]) -> list[dict[str, Any]]:
+    """The person's confirmed online life as entries of the case's own timeline."""
+    out = []
+    for e in timeline(data):
+        found = _moment(e["date"])
+        if found is None:
+            continue
+        at, precision = found
+        out.append({"at": at, "precision": precision, "kind": "person", "title": f"{name}: {e['title']}",
+                    "detail": e.get("url") or "", "ref": {"type": "subject", "id": subject_id, "candidate": e["candidate"]},
+                    "by": None})  # fmt: skip
+    return out
+
+
+def activity(data: dict[str, Any]) -> dict[str, Any]:
+    """When the person is active: posting hours (UTC) from their channels and account dates, the busiest
+    hours, and the long stretches with nothing found (gaps of a year or more between dated findings)."""
+    hours: dict[int, int] = {}
+    for c in (data.get("candidates") or {}).values():
+        if c.get("status") != "confirmed":
+            continue
+        facts = c.get("facts") or {}
+        for hour, count in ((facts.get("channel") or {}).get("post_hours_utc") or {}).items():
+            hours[int(hour)] = hours.get(int(hour), 0) + int(count)
+        created = str(facts.get("created_at") or "")
+        if re.match(r"\d{4}-\d{2}-\d{2}T\d{2}", created):
+            hours[int(created[11:13])] = hours.get(int(created[11:13]), 0) + 1
+    total = sum(hours.values())
+    busiest = sorted(hours, key=lambda h: -hours[h])[:3] if total else []
+    events = [(m[0], e) for e in timeline(data) if (m := _moment(e["date"])) is not None]
+    events.sort(key=lambda x: x[0])
+    gaps = []
+    for (a, ea), (b, eb) in pairwise(events):
+        days = (b - a).days
+        if days >= GAP_DAYS:
+            gaps.append({"from": ea["date"], "to": eb["date"], "days": days,
+                         "after": ea["title"], "before": eb["title"]})  # fmt: skip
+    zone = (data.get("known") or {}).get("utc_offset")
+    return {"hours_utc": {str(h): hours[h] for h in sorted(hours)}, "samples": total, "busiest_utc": busiest,
+            "utc_offset": zone, "gaps": gaps,
+            "note": "Hours are in UTC; with a known time zone, local time = UTC + offset. A few samples say little."}  # fmt: skip

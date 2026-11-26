@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.117.0] — One timeline and the map; data imports
+
+### Added
+- **One timeline**: people's confirmed online lives join the case timeline (labelled *Person*), its CSV export
+  and its report, keeping each entry's precision.
+- **Activity patterns**: a person's posting and account-creation hours (UTC) with the busiest highlighted, and
+  **gaps** of a year or more between dated findings (`activity` in `GET .../subjects/{id}/timeline`).
+- **People on the map**: known towns, towns learned from confirmed accounts and the locations they give become
+  places to look up on the case map (town level only).
+- **Data imports** (Data tab, `POST /api/cases/{case}/imports`): call detail records, bank or payment
+  statements, contact lists (CSV, XLSX; XRY exports) and Cellebrite UFDR extractions. Kept as fingerprinted
+  evidence with their records; cross-referenced with the numbers, addresses, accounts and names already in the
+  case; most frequent parties, totals and hours. Needs the case's legal authorisation; imports and readings are
+  audited.
+
 ## [1.115.0] — Capture and audit; a person's graph and groups
 
 ### Added

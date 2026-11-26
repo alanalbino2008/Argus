@@ -35,7 +35,7 @@ TYPE_COLOUR = {
 }  # fmt: skip
 KIND_LABEL = {
     "fact": "Fact", "event": "Event", "scan": "Scan", "capture": "Capture", "upload": "Evidence added",
-    "photo": "Photo", "change": "Change", "account_change": "Account change", "note": "Note",
+    "photo": "Photo", "change": "Change", "account_change": "Account change", "note": "Note", "person": "Person",
 }  # fmt: skip
 
 CSS = """

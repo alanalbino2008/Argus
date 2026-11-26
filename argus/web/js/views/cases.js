@@ -7,6 +7,7 @@ import { initCaseViews, renderMap, renderTimeline, teardownMap } from "./casemap
 import { initAnalyst, renderAnalyst } from "./analyst.js";
 import { initPlaybooks, renderPlaybooks } from "./playbooks.js";
 import { initSubjects, renderSubjects } from "./subjects.js";
+import { initImports, renderImports } from "./imports.js";
 import { initChart, renderChart } from "./casechart.js";
 import { openProfile } from "./profile.js";
 import { openImageSearch, openPageHistory } from "./research.js";
@@ -162,7 +163,7 @@ function renderCase() {
           <select class="select" data-act-select="status" aria-label="Case status" style="max-width:130px">${["open", "closed", "archived"].map((s) => html`<option value="${s}" ${c.status === s ? "selected" : ""}>${s}</option>`)}</select>` : ""}
       </div>
     </div>
-    <div class="segmented" role="tablist" aria-label="Case views" style="margin-bottom:16px">${[["overview", "Overview"], ["timeline", "Timeline"], ["chart", "Link chart"], ["map", "Map"], ["people", "People"], ["playbooks", "Playbooks"], ["analyst", "AI analyst"]].map(([k, label]) => html`<button class="${caseTab === k ? "active" : ""}" role="tab" aria-selected="${caseTab === k}" data-case-tab="${k}">${label}</button>`)}</div>
+    <div class="segmented" role="tablist" aria-label="Case views" style="margin-bottom:16px">${[["overview", "Overview"], ["timeline", "Timeline"], ["chart", "Link chart"], ["map", "Map"], ["people", "People"], ["data", "Data"], ["playbooks", "Playbooks"], ["analyst", "AI analyst"]].map(([k, label]) => html`<button class="${caseTab === k ? "active" : ""}" role="tab" aria-selected="${caseTab === k}" data-case-tab="${k}">${label}</button>`)}</div>
     ${caseTab !== "overview" ? html`<div id="case-view"><p class="muted">Loading…</p></div>` : html`
     <div class="grid" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start" id="case-layout">
       <div>
@@ -185,7 +186,7 @@ function renderCase() {
   if (caseTab === "overview") { teardownMap(); loadThumbs(); return; }
   const view = $("#case-view");
   if (caseTab !== "map") teardownMap();
-  const render = { timeline: renderTimeline, map: renderMap, chart: renderChart, people: renderSubjects, playbooks: renderPlaybooks, analyst: renderAnalyst }[caseTab];
+  const render = { timeline: renderTimeline, map: renderMap, chart: renderChart, people: renderSubjects, data: renderImports, playbooks: renderPlaybooks, analyst: renderAnalyst }[caseTab];
   render(view, c).catch((err) => setHTML(view, html`<p class="error-text">${err.message}</p>`));
 }
 
@@ -501,6 +502,7 @@ export function initCases(el, actions) {
   initAnalyst(root, () => refresh());
   initPlaybooks(root, () => refresh());
   initSubjects(root, () => refresh());
+  initImports(root);
   initChart(root);
   on(root, "click", "[data-case-tab]", (_e, btn) => { caseTab = btn.dataset.caseTab; refresh(); });
   $("#capture-egress").addEventListener("change", syncCapture);

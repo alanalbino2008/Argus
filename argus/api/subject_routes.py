@@ -123,6 +123,8 @@ async def create_subject(case_id: str, body: SubjectCreate, request: Request, ws
     known = _clean(body.known.model_dump())
     subject = await request.app.state.subjects.create(workspace_id=ws.id, case_id=case_id, name=body.name.strip(),
                                                       known=known, by=ws.principal.name)  # fmt: skip
+    if known.get("city"):
+        await _place_item(request.app, case_id, subject, known["city"], "known town", ws.principal.name)
     await audit(request, ws.principal, "subject.create", subject["id"],
                 details={"case": case_id, "known": {k: len(v) for k, v in known.items() if isinstance(v, list)},
                          "purpose": case["purpose"]})  # fmt: skip
@@ -575,6 +577,10 @@ async def confirm_candidate(case_id: str, subject_id: str, candidate_id: str, bo
     await audit(request, ws.principal, "subject.confirm", subject_id,
                 details={"case": case_id, "candidate": candidate_id, "kind": cand["kind"], "score": cand.get("score"),
                          "authorization": case.get("authorization") or ""})  # fmt: skip
+    location = (cand.get("facts") or {}).get("location")
+    if location:
+        await _place_item(request.app, case_id, subject, str(location), f"where {cand['label']} says they are",
+                          ws.principal.name)  # fmt: skip
     if body.capture and str(cand.get("url") or "").startswith(("https://", "http://")):
         await _mark_capture(request.app, subject_id, candidate_id, {"status": "capturing", "at": _now()})
         task = asyncio.create_task(_capture_confirmed(request.app, case, subject, cand, ws.principal, ws.id),
@@ -584,6 +590,26 @@ async def confirm_candidate(case_id: str, subject_id: str, candidate_id: str, bo
     if body.search:
         subject = await _search_new(request, case, subject, ws, reason="confirmed")
     return subject
+
+
+async def _place_item(app: Any, case_id: str, subject: dict[str, Any], town: str, why: str, by: str) -> None:
+    """A town the person is linked to, as a place on the case's map (town level only, to be looked up
+    on the map by the investigator; never a street address worked out by Argus)."""
+    town = str(town or "").split(",")[0].strip()[:120]
+    if not town or len(town) < 2:
+        return
+    for item in await app.state.cases.items(case_id):
+        data = item.get("data") or {}
+        if (
+            item["kind"] == "entity"
+            and data.get("type") == "location"
+            and str(data.get("value") or "").lower() == town.lower()
+        ):
+            return
+    await app.state.cases.add_item(case_id, by=by, kind="entity", title=town[:300],
+                                   body=f"{subject['name']}: {why}"[:2000],
+                                   data={"type": "location", "value": town, "attributes": {"subject": subject["id"]}},
+                                   occurred_at=None)  # fmt: skip
 
 
 CAPTURES: set[asyncio.Task[None]] = set()  # captures in progress, kept referenced until done
@@ -672,6 +698,11 @@ async def accept_suggestions(case_id: str, subject_id: str, body: SuggestionDeci
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not picked:
         raise HTTPException(status_code=404, detail="No such suggestions")
+    for x in picked:
+        if x["field"] == "city":
+            await _place_item(
+                request.app, case_id, subject, x["value"], f"town learned from {x['from']}", ws.principal.name
+            )
     await audit(request, ws.principal, "subject.learn", subject_id,
                 details={"case": case_id, "fields": sorted({x["field"] for x in picked}), "count": len(picked)})  # fmt: skip
     if body.search:
@@ -768,7 +799,11 @@ async def subject_timeline(case_id: str, subject_id: str, request: Request, incl
     confirmed findings contradict each other."""
     await _subject(request, ws, case_id, subject_id)
     data = await request.app.state.subjects.data(subject_id) or {}
-    return {"events": S.timeline(data, include_open=include_open), "contradictions": S.contradictions(data)}
+    return {
+        "events": S.timeline(data, include_open=include_open),
+        "contradictions": S.contradictions(data),
+        "activity": S.activity(data),
+    }
 
 
 @router.get("/cases/{case_id}/subjects/{subject_id}/associates")
