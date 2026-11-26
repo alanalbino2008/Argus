@@ -18,6 +18,7 @@ read; their public parts are a YouTube channel (read here) and the address's Gra
 from __future__ import annotations
 
 import html
+import json
 import re
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar
@@ -27,7 +28,7 @@ from argus.core.http import HttpClient
 from argus.core.models import Entity, EntityType, Relation, RelationType, ScanConfig
 from argus.intel.avatars import fetch_fingerprint
 from argus.modules.base import BaseModule
-from argus.modules.identity.web_mentions import display_name
+from argus.modules.identity.web_mentions import display_name, social_profile
 
 # platform: (profile address for a handle, host)
 PAGES: dict[str, tuple[str, str]] = {
@@ -56,6 +57,33 @@ def meta_tags(page: str) -> dict[str, str]:
     return out
 
 
+NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', re.S)
+SNAP_FILLER = re.compile(r"\s*is on Snapchat!?\s*$", re.I)
+
+
+def snapchat_profile(page: str, handle: str) -> dict[str, Any] | None:
+    """The profile Snapchat embeds in its page (name, bio, website, picture, subscribers); the preview tags
+    only carry filler ("… is on Snapchat!") and a screenshot of the page."""
+    match = NEXT_DATA.search(page)
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1))
+    except ValueError:
+        return None
+    profile = ((data.get("props") or {}).get("pageProps") or {}).get("userProfile") or {}
+    info = profile.get("publicProfileInfo") or profile.get("userInfo") or {}
+    if not isinstance(info, dict) or str(info.get("username") or "").lower() != handle.lower():
+        return None
+    raw_bitmoji = info.get("bitmoji3d")
+    bitmoji: dict[str, Any] = raw_bitmoji if isinstance(raw_bitmoji, dict) else {}
+    picture = info.get("profilePictureUrl") or (bitmoji.get("avatarImage") or {}).get("url")
+    return {"display_name": str(info.get("title") or info.get("displayName") or "").strip(),
+            "bio": str(info.get("bio") or "").strip()[:500], "website": str(info.get("websiteUrl") or "").strip(),
+            "location": str(info.get("address") or "").strip(), "avatar_url": picture or None,
+            "followers": info.get("subscriberCount") or None}  # fmt: skip
+
+
 def read_page(platform: str, handle: str, page: str) -> dict[str, Any] | None:
     """What a public profile page shows, or None when it is not this profile (a sign-in wall, a
     "page not found", or another page)."""
@@ -67,11 +95,65 @@ def read_page(platform: str, handle: str, page: str) -> dict[str, Any] | None:
             return None  # t.me answers every handle with a page; a real one has these
         title = html.unescape(match.group(1)).strip()
         return {"display_name": title, "bio": tags.get("og:description", "")[:500], "avatar_url": tags.get("og:image")}
+    if platform == "Snapchat":
+        embedded = snapchat_profile(page, handle)
+        if embedded is not None:
+            return embedded
     low = title.lower()
     if not title or any(w in low for w in WALL_WORDS) or handle.lower() not in (low + tags.get("og:url", "").lower()):
         return None
+    if platform == "Snapchat":  # the preview tags only: no real bio, and the image is a page screenshot
+        name = re.sub(r"\s+on Snapchat$", "", title).strip()
+        return {"display_name": name, "bio": "", "avatar_url": None}
     return {"display_name": display_name(title) or title[:80], "bio": tags.get("og:description", "")[:500],
             "avatar_url": tags.get("og:image")}  # fmt: skip
+
+
+TG_POST = re.compile(
+    r'<div class="tgme_widget_message [^"]*js-widget_message" data-post="([^"]+)"(.*?)(?=<div class="tgme_widget_message_wrap|\Z)',
+    re.S,
+)
+TG_TEXT = re.compile(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', re.S)
+TG_TIME = re.compile(r'<time datetime="([^"]+)"')
+TG_COUNTER = re.compile(r'<span class="counter_value">([^<]+)</span> <span class="counter_type">subscribers')
+TG_HREF = re.compile(r'href="(https?://[^"]+)"')
+TG_MENTION = re.compile(r"(?<![\w@])@([A-Za-z][A-Za-z0-9_]{4,31})\b")
+MAX_POSTS = 20
+
+
+def _plain(fragment: str) -> str:
+    text = re.sub(r"<br\s*/?>", "\n", fragment)
+    return html.unescape(re.sub(r"<[^>]+>", "", text)).strip()
+
+
+def telegram_channel(page: str, handle: str) -> dict[str, Any] | None:
+    """A public channel's recent posts, as ``t.me/s/<channel>`` shows them to anyone."""
+    posts: list[dict[str, Any]] = []
+    for post_id, body in TG_POST.findall(page):
+        if not post_id.lower().startswith(handle.lower() + "/"):
+            continue  # a forwarded post shown in the channel: someone else's
+        text = TG_TEXT.search(body)
+        when = TG_TIME.search(body)
+        plain = _plain(text.group(1)) if text else ""
+        links = (
+            [h for h in dict.fromkeys(TG_HREF.findall(text.group(1))) if not h.startswith("https://t.me/" + handle)]
+            if text
+            else []
+        )
+        posts.append({"url": f"https://t.me/{post_id}", "date": when.group(1) if when else None, "text": plain[:500],
+                      "links": links[:10], "mentions": sorted(set(TG_MENTION.findall(plain)))[:10]})  # fmt: skip
+    if not posts:
+        return None
+    posts = posts[-MAX_POSTS:]
+    dates: list[str] = sorted(str(p["date"]) for p in posts if p["date"])
+    hours: dict[int, int] = {}
+    for d in dates:
+        hours[int(d[11:13])] = hours.get(int(d[11:13]), 0) + 1
+    counter = TG_COUNTER.search(page)
+    return {"subscribers": counter.group(1) if counter else None, "posts": posts, "first_shown": dates[0] if dates else None,
+            "last_post": dates[-1] if dates else None, "post_hours_utc": dict(sorted(hours.items())),
+            "links": list(dict.fromkeys(link for p in posts for link in p["links"]))[:30],
+            "mentions": sorted({m for p in posts for m in p["mentions"]})[:30]}  # fmt: skip
 
 
 def platform_of(url: str) -> tuple[str, str] | None:
@@ -141,6 +223,9 @@ class SocialPagesModule(BaseModule):
                         profile[key] = value
                 if not entity.metadata.get("avatar_hash"):
                     entity.metadata["avatar_hash"] = await fetch_fingerprint(session, facts.get("avatar_url"))
+                if platform == "Telegram":
+                    async for item in self._channel(session, handle, entity):
+                        yield item
             return
         handle = entity.value.strip().lstrip("@")
         checked: dict[str, str] = {}
@@ -159,4 +244,34 @@ class SocialPagesModule(BaseModule):
             )  # fmt: skip
             yield profile
             yield Relation.create(entity.id, profile.id, RelationType.HAS_ACCOUNT, label=f"{platform} profile")
+            if platform == "Telegram":
+                async for item in self._channel(session, handle, profile):
+                    yield item
         entity.metadata["social_pages"] = checked
+
+    async def _channel(self, session: HttpClient, handle: str, profile: Entity) -> AsyncIterator[Entity | Relation]:
+        """A public Telegram channel's recent posts: when it posts, what it links to, whom it mentions.
+        A person's own account has no such page (t.me/s/ shows posts only for public channels)."""
+        try:
+            async with session.get(f"https://t.me/s/{quote(handle)}", headers={"Accept-Language": "en"}) as resp:
+                if resp.status != 200:
+                    return
+                page = await resp.text(errors="ignore")
+        except Exception:
+            return
+        channel = telegram_channel(page[:2_000_000], handle)
+        if channel is None:
+            return
+        profile.metadata["telegram_channel"] = channel
+        for link in channel["links"]:
+            found = social_profile(link)
+            if found is None or found[0] == "Telegram":
+                continue  # other channels' posts linked or forwarded: news, not their accounts
+            platform, url = found
+            linked = Entity.create(EntityType.SOCIAL_PROFILE, url, label=f"{platform}: {url.rsplit('/', 1)[-1]}",
+                                   source_module=self.name, confidence=0.6, depth=profile.depth + 1,
+                                   metadata={"platform": platform, "origin": "linked in their Telegram channel",
+                                             "profile": {"links": [profile.value]}})  # fmt: skip
+            yield linked
+            yield Relation.create(profile.id, linked.id, RelationType.ASSOCIATED_WITH, confidence=0.6,
+                                  label="Linked in their Telegram channel")  # fmt: skip

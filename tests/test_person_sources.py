@@ -420,3 +420,70 @@ def test_without_a_key_it_is_off_and_never_brokered(monkeypatch):
     get_settings.cache_clear()
     assert not ProfileViewerModule.is_configured() and connect_client.available("web_search")
     get_settings.cache_clear()
+
+
+# ---------------------------------------------------------------------------- Snapchat and Telegram, in more depth
+SNAP = """<html><head><meta property="og:title" content="Jane D on Snapchat">
+<meta property="og:url" content="https://www.snapchat.com/@janedoe84">
+<meta property="og:description" content="Jane D is on Snapchat!">
+<meta property="og:image" content="https://www.snapchat.com/web-capture/www.snapchat.com/@janedoe84/preview/square.jpeg"></head>
+<body><script id="__NEXT_DATA__" type="application/json">{"props": {"pageProps": {"userProfile": {"$case": "publicProfileInfo",
+"publicProfileInfo": {"username": "janedoe84", "title": "Jane D", "bio": "Leeds | nurse", "websiteUrl": "janedoe.dev",
+"profilePictureUrl": "https://cf-st.sc-cdn.net/jane.jpg", "subscriberCount": 1200, "address": ""}}}}}</script></body></html>"""
+SNAP_TAGS_ONLY = SNAP.split("<body>")[0] + "</html>"
+CHANNEL = """<div class="tgme_channel_info_counter"><span class="counter_value">1.2K</span> <span class="counter_type">subscribers</span></div>
+<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="janedoe84/7">
+<div class="tgme_widget_message_text js-message_text" dir="auto">Night shift again. Follow me on <a href="https://www.instagram.com/janedoe84/">Insta</a>,
+ask @leeds_nurses_uk<br/>and see <a href="https://t.me/othernews/5">this</a></div><time datetime="2026-11-20T22:15:00+00:00" class="time"></time></div></div>
+<div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message js-widget_message" data-post="othernews/5">
+<div class="tgme_widget_message_text js-message_text" dir="auto">A forwarded post</div><time datetime="2026-11-21T10:00:00+00:00"></time></div></div>"""
+
+
+def test_snapchat_profiles_come_from_the_page_data_not_its_filler():
+    from argus.modules.identity.social_pages import read_page
+
+    facts = read_page("Snapchat", "janedoe84", SNAP)
+    assert facts == {"display_name": "Jane D", "bio": "Leeds | nurse", "website": "janedoe.dev", "location": "",
+                     "avatar_url": "https://cf-st.sc-cdn.net/jane.jpg", "followers": 1200}  # fmt: skip
+    # Without the page data: the name only; never the filler bio or the page screenshot as a picture.
+    assert read_page("Snapchat", "janedoe84", SNAP_TAGS_ONLY) == {
+        "display_name": "Jane D",
+        "bio": "",
+        "avatar_url": None,
+    }
+    assert read_page("Snapchat", "someoneelse", SNAP) is None
+
+
+async def test_a_public_telegram_channel_gives_posts_links_and_mentions(monkeypatch):
+    from argus.modules.identity import social_pages
+    from argus.modules.identity.social_pages import SocialPagesModule, telegram_channel
+
+    channel = telegram_channel(CHANNEL, "janedoe84")
+    assert channel["subscribers"] == "1.2K" and len(channel["posts"]) == 1  # the forwarded post is not theirs
+    post = channel["posts"][0]
+    assert post["url"] == "https://t.me/janedoe84/7" and post["date"].startswith("2026-11-20T22:15")
+    assert post["mentions"] == ["leeds_nurses_uk"] and "Night shift again." in post["text"]
+    assert channel["post_hours_utc"] == {22: 1}
+
+    async def fingerprint(session, url):
+        return None
+
+    monkeypatch.setattr(social_pages, "fetch_fingerprint", fingerprint)
+    user = Entity.create(E.USERNAME, "janedoe84")
+    session = FakeSession(
+        {r"t\.me/s/janedoe84": FakeResponse(200, CHANNEL), r"t\.me/janedoe84$": FakeResponse(200, TG)}
+    )
+    entities, _ = await run(SocialPagesModule(), user, session)
+    telegram = next(e for e in entities if e.value == "https://t.me/janedoe84")
+    assert telegram.metadata["telegram_channel"]["subscribers"] == "1.2K"
+    linked = [e for e in entities if e.metadata.get("origin") == "linked in their Telegram channel"]
+    assert [e.value for e in linked] == ["https://www.instagram.com/janedoe84"]  # not the other channel
+
+
+def test_telegram_is_searched_on_the_web_and_its_links_are_understood():
+    from argus.modules.identity.web_mentions import social_profile, social_query
+
+    assert "site:t.me" in social_query('"Jane Doe"')
+    assert social_profile("https://t.me/s/janedoe84") == ("Telegram", "https://t.me/janedoe84")
+    assert social_profile("https://t.me/janedoe84/12") == ("Telegram", "https://t.me/janedoe84")
+    assert social_profile("https://t.me/+AbCdEf") is None and social_profile("https://t.me/joinchat/x") is None

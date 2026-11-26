@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.110.0] — Snapchat and Telegram in more depth
+
+### Added
+- **Telegram channels**: a public channel's recent posts (`t.me/s/<channel>`): subscribers, post
+  dates and posting hours, links and @mentions; links to the person's other accounts become
+  candidates. Forwarded posts and links to other channels are not taken as theirs.
+- **Web search on Telegram** (`site:t.me`) for names and usernames; Telegram post and `/s/` links
+  are understood as the channel, invite and sticker links are ignored.
+
+### Fixed
+- **Snapchat** profiles are read from the page's embedded profile (name, bio, website, picture,
+  subscribers) instead of its preview tags, whose description is filler ("… is on Snapchat!") and
+  whose image is a screenshot of the page (it was being fingerprinted as a profile picture).
+
 ## [1.109.0] — Phase 109: Public profiles behind sign-in walls
 
 ### Added

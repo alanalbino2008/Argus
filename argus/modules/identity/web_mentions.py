@@ -62,10 +62,11 @@ def kind_of(url: str) -> str:
 
 
 SOCIAL_QUERY = ("site:facebook.com", "site:instagram.com", "site:linkedin.com/in", "site:x.com", "site:tiktok.com",
-                "site:snapchat.com", "site:threads.net", "site:youtube.com", "site:pinterest.com", "site:twitter.com")  # fmt: skip
+                "site:snapchat.com", "site:t.me", "site:threads.net", "site:youtube.com", "site:pinterest.com", "site:twitter.com")  # fmt: skip
 PLATFORM_NAMES = {"facebook.com": "Facebook", "instagram.com": "Instagram", "linkedin.com": "LinkedIn",
                   "x.com": "X", "twitter.com": "X", "tiktok.com": "TikTok", "threads.net": "Threads",
-                  "youtube.com": "YouTube", "pinterest.com": "Pinterest", "snapchat.com": "Snapchat"}  # fmt: skip
+                  "youtube.com": "YouTube", "pinterest.com": "Pinterest", "snapchat.com": "Snapchat",
+                  "t.me": "Telegram"}  # fmt: skip
 NOT_PROFILES = ("/posts/", "/status/", "/p/", "/reel/", "/video/", "/watch", "/groups/", "/events/", "/pin/",
                 "/pulse/", "/jobs/", "/company/", "/school/", "/hashtag/", "/explore/", "/search", "/share")  # fmt: skip
 
@@ -81,6 +82,10 @@ def social_query(subject: str) -> str:
         if len(query) <= MAX_QUERY:
             return query
     return subject
+
+
+TELEGRAM_RESERVED = {"joinchat", "addstickers", "addemoji", "share", "proxy", "socks", "addlist", "addtheme",
+                     "setlanguage", "boost", "contact", "iv", "login", "confirmphone"}  # fmt: skip
 
 
 def name_pattern(name: str) -> re.Pattern[str]:
@@ -107,6 +112,12 @@ def social_profile(url: str) -> tuple[str, str] | None:
         if len(segments) < 2 or segments[0] != "add":
             return None
         segments = segments[:2]
+    elif platform == "Telegram":
+        if segments[0] == "s" and len(segments) > 1:
+            segments = segments[1:]
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{4,31}", segments[0]) or segments[0].lower() in TELEGRAM_RESERVED:
+            return None  # invite links (+..., joinchat), stickers, sharing and other non-profile pages
+        segments = segments[:1]
     elif platform == "Facebook" and segments[0] == "people" and len(segments) >= 3:
         segments = segments[:3]
     else:
