@@ -166,6 +166,11 @@ class BreachSources:
             return {str(e).split("@", 1)[0]: [] for e in data}
         return {}
 
+    async def stealer_by_email(self, email: str) -> list[str]:
+        """The website domains one email's infostealer-captured credentials unlock (needs the key)."""
+        data = await self._hibp_keyed(f"/stealerlogsbyemail/{quote(email)}", "stealer logs")
+        return [str(s) for s in data] if isinstance(data, list) else []
+
     # ------------------------------------------------------------------ ransomware leak sites
     async def ransomware_posts(self, keyword: str) -> list[dict[str, Any]]:
         """Leak-site posts whose victim matches ``keyword`` (the feed's own search)."""

@@ -180,6 +180,7 @@ class FakeSources:
     def __init__(self):
         self.accounts = {"alice": ["OldForum"], "bob": ["Newsletter"]}
         self.stealer: dict | Exception = SourceUnavailable("Needs a Have I Been Pwned API key")
+        self.stealer_emails: dict[str, list] = {}
         self.posts: dict[str, list] = {}
         self.catalogue_error: Exception | None = None
 
@@ -201,6 +202,9 @@ class FakeSources:
 
     async def ransomware_posts(self, keyword):
         return self.posts.get(keyword, [])
+
+    async def stealer_by_email(self, email):
+        return self.stealer_emails.get(email, [])
 
     async def close(self):
         pass
@@ -362,6 +366,19 @@ def test_a_selector_watch_covers_the_dark_web_pastes_and_leak_feeds(client):
     # Re-running finds nothing new.
     client.post(f"/api/exposure/watches/{created.json()['id']}/check")
     assert client.portal.call(monitor.tick)[0]["new"] == 0
+
+
+def test_an_email_selector_also_checks_infostealer_logs(client):
+    sources = FakeSources()
+    sources.stealer_emails = {"ceo@acme.com": ["netflix.com", "https://portal.work.example/login"]}
+    monitor = install(client, sources)
+    created = selector_watch(client, selector="ceo@acme.com")
+    assert created.status_code == 201
+    [outcome] = client.portal.call(monitor.tick)
+    assert outcome["new"] == 1
+    [f] = client.get("/api/exposure?status=all").json()["findings"]
+    assert f["kind"] == "stealer_log" and f["severity"] == "critical" and f["subject"] == "ceo@acme.com"
+    assert set(f["details"]["websites"]) == {"netflix.com", "portal.work.example"}
 
 
 def test_selector_watch_validation_and_dedup(client):

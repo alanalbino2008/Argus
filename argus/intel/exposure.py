@@ -162,6 +162,18 @@ def stealer_findings(domain: str, infections: dict[str, list[str]]) -> list[Find
     return findings
 
 
+def email_stealer_findings(email: str, sites: list[str]) -> list[Finding]:
+    """One infostealer finding for an email selector: the sites its captured credentials unlock."""
+    clean = sorted({host_of(s) or str(s) for s in sites if s})[:50]
+    if not clean:
+        return []
+    return [Finding(
+        key=f"sl:{email.lower()}", kind="stealer_log", severity="critical",
+        title="Credentials captured by infostealer malware", subject=email, account=email,
+        details={"websites": clean, "website_count": len(clean)},
+    )]  # fmt: skip
+
+
 def domain_breach_findings(
     domain: str, catalogue: dict[str, dict[str, Any]], now: datetime, *, subject_name: str | None = None
 ) -> list[Finding]:

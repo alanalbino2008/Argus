@@ -72,6 +72,50 @@ async def test_the_custom_provider_is_read_server_side_and_plaintext_is_dropped(
     get_settings.cache_clear()
 
 
+def test_infostealer_records_are_recognised_and_summarised():
+    # a plain breach row is not a stealer log
+    plain = B.exposure("jane@x.com", "email", {"breach": "Acme 2019", "date": "2019", "password": "p"})
+    assert plain["is_stealer"] is False and plain["site"] is None
+    # a record with a captured-site + stealer family is a stealer log, and the site is kept as a bare host
+    st = B.exposure("jane@x.com", "email", {"breach": "Logs", "url": "https://login.bank.example/app",
+                                            "stealer": "RedLine", "computer": "DESKTOP-7", "compromised": "2024-03-02",
+                                            "password": "hunter2"})  # fmt: skip
+    assert st["is_stealer"] and st["site"] == "login.bank.example" and st["stealer"] == "RedLine"
+    assert st["computer"] == "DESKTOP-7" and st["infected_at"] == "2024-03-02" and "hunter2" not in str(st)
+    # a 'stealer'-named database with a site also counts
+    assert B.exposure("x", "email", {"database": "StealerLogs", "url": "shop.example"})["is_stealer"]
+    summary = B.stealer_summary([plain, st, B.exposure("jane@x.com", "email", {"type": "stealer", "url": "mail.example"})])
+    assert summary["infections"] == 2 and summary["sites"] == ["login.bank.example", "mail.example"]
+    assert summary["site_count"] == 2 and summary["families"] == ["RedLine"] and summary["latest"] == "2024-03-02"
+    assert B.summary([st])["stealer"]["sites"] == ["login.bank.example"]  # carried in the person summary
+
+
+async def test_hibp_stealer_logs_for_an_email_are_fetched(monkeypatch):
+    from argus.core.settings import get_settings
+    from argus.intel import breach_lookup
+    from argus.intel.breach_lookup import fetch_exposures
+
+    monkeypatch.setenv("ARGUS_BREACH_PROVIDER", "hibp")
+    monkeypatch.setenv("ARGUS_HIBP_API_KEY", "hibp-key")
+    get_settings.cache_clear()
+    answers = {
+        r"breachedaccount": FakeResponse(200, [{"Name": "Acme", "Title": "Acme", "BreachDate": "2019-01-01",
+                                                "DataClasses": ["Email addresses", "Passwords"]}]),
+        r"stealerlogsbyemail": FakeResponse(200, ["netflix.com", "https://portal.work.example/login"]),
+    }  # fmt: skip
+
+    @contextlib.asynccontextmanager
+    async def fake_client(settings, route):
+        yield FakeSession(answers)
+
+    monkeypatch.setattr(breach_lookup, "client", fake_client)
+    got = await fetch_exposures(get_settings(), "jane@example.org", "email", None)
+    assert [e["breach"] for e in got] == ["Acme", "Infostealer logs", "Infostealer logs"]
+    st = B.stealer_summary(got)
+    assert st["infections"] == 2 and st["sites"] == ["netflix.com", "portal.work.example"]
+    get_settings.cache_clear()
+
+
 def _subject_with_breaches(make_client, monkeypatch, provider="custom"):
     from argus.intel import breach_lookup
 

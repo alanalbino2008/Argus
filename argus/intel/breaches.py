@@ -26,8 +26,39 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 IDENT_KINDS = ("email", "username", "phone")
+# Signs that a provider record is an infostealer log (credentials captured by malware) rather than a
+# plain data-breach row. Stealer logs are the richest signal: they list the exact sites a person's
+# saved logins unlock, so they surface accounts you did not know about.
+_STEALER_TYPES = {"stealer", "stealer_log", "stealer_logs", "stealerlog", "infostealer", "logs", "ulp"}
+
+
+def _host(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    host = urlsplit(text if "://" in text else f"//{text}").hostname or text
+    return host.removeprefix("www.").rstrip(".")[:200]
+
+
+def _site(record: dict[str, Any]) -> str | None:
+    """The site a captured credential unlocks (stealer logs), as a bare host."""
+    for key in ("url", "website", "site", "domain", "uri", "origin"):
+        if record.get(key):
+            return _host(str(record[key])) or None
+    return None
+
+
+def _is_stealer(record: dict[str, Any], site: str | None) -> bool:
+    if any(record.get(k) for k in ("stealer", "malware", "stealer_family", "malware_path")):
+        return True
+    rtype = " ".join(str(record.get(k) or "") for k in ("type", "category")).lower().replace("-", "_")
+    if any(t in rtype.split() for t in _STEALER_TYPES):
+        return True
+    name = " ".join(str(record.get(k) or "") for k in ("database", "breach", "source")).lower()
+    return ("stealer" in name or "infostealer" in name or name.split() == ["ulp"]) and bool(site)
 
 
 def mask(password: str) -> str:
@@ -66,6 +97,16 @@ def exposure(identifier: str, kind: str, record: dict[str, Any]) -> dict[str, An
         "hash_only": bool(not password and (record.get("password_hash") or record.get("hashed_password"))),
         "extra": {k: str(v)[:200] for k, v in record.items() if k in ("ip_address", "name", "address", "phone") and v},
     }
+    site = _site(record)
+    out["site"] = site
+    out["is_stealer"] = _is_stealer(record, site)
+    out["stealer"] = (
+        str(record.get("stealer") or record.get("malware") or record.get("stealer_family") or "").strip()[:80] or None
+    )
+    out["computer"] = (
+        str(record.get("computer") or record.get("machine") or record.get("hostname") or "").strip()[:120] or None
+    )
+    out["infected_at"] = _year(record.get("compromised") or record.get("infected") or record.get("log_date"))
     return out
 
 
@@ -102,7 +143,26 @@ def shared_with(exposures: list[dict[str, Any]], identifier: str, others: set[st
     return sorted(out)
 
 
+def stealer_summary(exposures: list[dict[str, Any]]) -> dict[str, Any]:
+    """Infostealer intelligence: the sites a person's captured logins unlock, and which infections.
+
+    The single most useful OSINT signal in a stealer log is the **list of sites** the victim had saved
+    credentials for — it reveals accounts (banks, email, social, work portals) you did not know about."""
+    st = [e for e in exposures if e.get("is_stealer")]
+    sites = sorted({e["site"] for e in st if e.get("site")})
+    idents = sorted({e["identifier"] for e in st})
+    return {
+        "infections": len(st),
+        "identifiers": idents,
+        "sites": sites,
+        "site_count": len(sites),
+        "families": sorted({e["stealer"] for e in st if e.get("stealer")}),
+        "latest": max((e.get("infected_at") or e.get("date") or "" for e in st), default="") or None,
+    }
+
+
 def summary(exposures: list[dict[str, Any]]) -> dict[str, Any]:
     breaches = sorted({e["breach"] for e in exposures})
     return {"exposures": len(exposures), "breaches": breaches, "with_password": sum(1 for e in exposures if e["has_password"]),
-            "identifiers": sorted({e["identifier"] for e in exposures}), "reuse": reuse(exposures)}  # fmt: skip
+            "identifiers": sorted({e["identifier"] for e in exposures}), "reuse": reuse(exposures),
+            "stealer": stealer_summary(exposures)}  # fmt: skip

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.122.0] — Infostealer intelligence
+
+### Added
+- **Infostealer infections** on a person: a breach look-up now reads infostealer logs for the subject's
+  emails and shows the **sites their captured credentials unlock** — accounts you may not have known
+  about — with the stealer family and the latest infection date. Metadata only; no plaintext is stored.
+- Stealer-aware provider parsing: a custom-provider record that names a captured site and a stealer/
+  malware family (or comes from a stealer dataset) is recognised, and its site, family, computer name and
+  infection date are kept (`argus/intel/breaches.py`). Have I Been Pwned's `stealerlogsbyemail` is read
+  for an email where the plan includes it.
+- **Email selector watches** also check infostealer logs, raising a critical finding that lists the
+  unlocked sites, wired into the existing exposure alerting, triage and export.
+
+### Unchanged by design
+- Plaintext passwords are still dropped on read (masked + one-way hash only); Argus never buys, opens or
+  mirrors stealer logs — it reads them only through the configured provider, server-side.
+
 ## [1.121.0] — Dark-web selector watches
 
 ### Added

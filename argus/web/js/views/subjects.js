@@ -236,6 +236,10 @@ function breachesPanel(b) {
     ${canEdit() ? html`<button class="btn sm" data-sj="run-breaches">${ico("search")}Look up breaches</button>` : ""}
     ${s.reuse?.length ? html`<h3 style="margin-top:12px">Reused passwords (${s.reuse.length})</h3>${s.reuse.map((g) => html`<div class="note"><b class="small">${g.masked || "same password"}</b>
       <div class="small">${g.identifiers.join(" ↔ ")}</div><div class="muted small">in ${g.breaches.join(", ")}</div></div>`)}` : ""}
+    ${s.stealer?.infections ? html`<h3 style="margin-top:12px">${ico("alert")}Infostealer infections (${s.stealer.infections})</h3>
+      <div class="guide-warning info" style="margin:6px 0"><div class="small">Malware captured this person's saved logins. The <b>sites below are accounts they hold</b> — often ones you did not know about (banks, email, work portals). Metadata only; no passwords are stored.${s.stealer.families?.length ? html` Stealer: ${s.stealer.families.join(", ")}.` : ""}${s.stealer.latest ? ` Most recent: ${s.stealer.latest}.` : ""}</div></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${(s.stealer.sites || []).map((site) => html`<span class="pill mono">${site}</span>`)}</div>
+      ${s.stealer.site_count > (s.stealer.sites || []).length ? html`<div class="muted small">and more</div>` : ""}` : ""}
     ${b.exposures.length ? html`<h3 style="margin-top:12px">Exposures (${b.exposures.length})</h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Identifier</th><th>Breach</th><th>When</th><th>Password</th><th></th></tr></thead><tbody>
       ${b.exposures.map((e) => html`<tr><td style="word-break:break-all">${e.identifier}</td><td>${e.breach}</td><td>${e.date || "—"}</td>
         <td>${e.password_masked || (e.has_password ? (e.hash_only ? "hashed" : "yes") : "—")}</td>
@@ -347,7 +351,8 @@ export function initSubjects(root, changed) {
       }
       if (sj === "run-breaches") {
         const r = await api.post(`${path}/breaches`);
-        toast(`${r.summary.exposures} exposure(s), ${r.summary.reuse.length} reused password group(s)${r.scored ? `, ${r.scored} candidate(s) scored up` : ""}`, "success", 7000);
+        const stealer = r.summary.stealer?.infections ? `, ${r.summary.stealer.site_count} site(s) from infostealer logs` : "";
+        toast(`${r.summary.exposures} exposure(s), ${r.summary.reuse.length} reused password group(s)${stealer}${r.scored ? `, ${r.scored} candidate(s) scored up` : ""}`, "success", 7000);
         return loadPanel("breaches", el.querySelector('[data-sj-panel="breaches"]'));
       }
       if (sj === "reveal") {

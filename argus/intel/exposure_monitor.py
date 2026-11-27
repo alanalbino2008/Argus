@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
@@ -35,6 +36,7 @@ from argus.intel.exposure import (
     account_findings,
     darkweb_findings,
     domain_breach_findings,
+    email_stealer_findings,
     headline,
     paste_findings,
     ransomware_findings,
@@ -48,6 +50,11 @@ logger = logging.getLogger("argus.exposure")
 PURGE_EVERY = 6 * 3600.0
 MAX_SUPPLIERS = 500
 SupplierLister = Callable[[str], Any]  # workspace id -> awaitable list of supplier dicts
+_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _looks_like_email(selector: str) -> bool:
+    return bool(_EMAIL.match(selector.strip()))
 
 
 class ExposureMonitor:
@@ -144,6 +151,10 @@ class ExposureMonitor:
             pastes = await ask("paste_monitor", self.darkweb.pastes(selector))
             if pastes:
                 findings += paste_findings(selector, pastes, now)
+            if _looks_like_email(selector):  # infostealer logs the captured credentials unlock
+                sites = await ask("stealer_logs", self.sources.stealer_by_email(selector))
+                if sites:
+                    findings += email_stealer_findings(selector, sites)
             posts = await ask("ransomware", self.sources.ransomware_posts(selector))
             if posts:
                 findings += ransomware_findings(selector, posts, now, names=(selector,))

@@ -43,7 +43,7 @@ __all__ = [
     "WebhookVerificationError",
     "verify_webhook",
 ]
-__version__ = "1.121.0"
+__version__ = "1.122.0"
 
 FINISHED = {"completed", "cancelled", "failed"}
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"

@@ -58,10 +58,32 @@ async def fetch_exposures(settings: Settings, identifier: str, kind: str, route:
                 "email": identifier, "password_hash": "" if "Passwords" not in classes else None}))  # fmt: skip
             out[-1]["has_password"] = "Passwords" in classes
             out[-1]["data_classes"] = classes[:20]
+        out += await _hibp_stealer_by_email(settings, identifier, route, headers)
         return out
     if provider == "custom" and settings.breach_provider_url:
         return [breaches.exposure(identifier, kind, r) for r in await _custom(settings, identifier, route)]
     return []
+
+
+async def _hibp_stealer_by_email(
+    settings: Settings, email: str, route: Any, headers: dict[str, str]
+) -> list[dict[str, Any]]:
+    """HIBP infostealer logs for an email: the website domains its captured credentials unlock.
+
+    Needs the stealer-logs subscription; any non-200 (not subscribed, nothing found) yields nothing."""
+    url = f"{HIBP}/stealerlogsbyemail/{quote(email.lower(), safe='')}"
+    try:
+        async with client(settings, route) as http, http.get(url, headers=headers) as resp:
+            if resp.status != 200:
+                return []
+            sites = await resp.json(content_type=None)
+    except Exception:  # noqa: BLE001 - a provider failure never breaks a search
+        return []
+    return [
+        breaches.exposure(email, "email", {"breach": "Infostealer logs", "type": "stealer", "url": str(site)})
+        for site in sites or []
+        if site
+    ]
 
 
 async def _custom(settings: Settings, identifier: str, route: Any) -> list[dict[str, Any]]:
