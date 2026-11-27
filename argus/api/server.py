@@ -102,6 +102,7 @@ from argus.api.playbook_routes import RUNS as PLAYBOOK_RUNS
 from argus.api.playbook_routes import router as playbook_router
 from argus.api.query_routes import router as query_router
 from argus.api.quota_routes import router as quota_router
+from argus.api.ransomware_routes import router as ransomware_router
 from argus.api.rating_routes import benchmark, ensure_history, rate
 from argus.api.rating_routes import router as rating_router
 from argus.api.remediation_routes import router as remediation_router
@@ -720,6 +721,7 @@ app.include_router(onboarding_router)
 app.include_router(rating_router)
 app.include_router(supplier_router)
 app.include_router(exposure_router)
+app.include_router(ransomware_router)
 app.include_router(remediation_router)
 app.include_router(executive_router)
 app.include_router(compliance_router)

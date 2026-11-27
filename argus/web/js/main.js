@@ -14,6 +14,7 @@ import { initGuide, markPathsReviewed, openGuide } from "./views/guide.js";
 import { initRatings, refresh as refreshRatings } from "./views/ratings.js";
 import { initSuppliers, refresh as refreshSuppliers } from "./views/suppliers.js";
 import { initExposure, refresh as refreshExposure } from "./views/exposure.js";
+import { initRansomware, refresh as refreshRansomware } from "./views/ransomware.js";
 import { initRemediation, refresh as refreshRemediation } from "./views/remediation.js";
 import { initExecutive, refresh as refreshExecutive } from "./views/executive.js";
 import { initCompliance, refresh as refreshCompliance } from "./views/compliance.js";
@@ -26,7 +27,7 @@ import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 import { initBusiness, refreshBusiness } from "./views/business.js";
 import { initVault, refreshVault } from "./vault.js";
 
-const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "remediation", "compliance", "ratings", "history", "business", "settings"];
+const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "ransomware", "remediation", "compliance", "ratings", "history", "business", "settings"];
 let currentView = null;
 let pollTimer = null;
 
@@ -52,6 +53,7 @@ function route() {
   if (view === "ratings") refreshRatings();
   if (view === "suppliers") refreshSuppliers();
   if (view === "exposure") refreshExposure();
+  if (view === "ransomware") refreshRansomware();
   if (view === "remediation") refreshRemediation();
   if (view === "executive") refreshExecutive();
   if (view === "compliance") refreshCompliance();
@@ -421,6 +423,7 @@ async function boot() {
   initRatings($("#view-ratings"), actions);
   initSuppliers($("#view-suppliers"), actions);
   initExposure($("#view-exposure"));
+  initRansomware($("#view-ransomware"));
   initRemediation($("#view-remediation"));
   initExecutive($("#view-executive"));
   initCompliance($("#view-compliance"));

@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.123.0] — Ransomware intelligence hub
+
+### Added
+- A new **Ransomware** page: the leak-site landscape from the public research feed at a glance — posts in
+  the last 7/30 days, a 14-day activity chart, the busiest groups, sectors and countries (click to
+  filter), and the recent victims, filterable by group/sector/country or a free-text search.
+- **New-group detection**: group names not seen before are called out at the top (a new name usually
+  marks a new operation or a rebrand); the seen-set is kept in the state store so each is flagged once.
+- `GET /api/ransomware` behind it, and `recent_victims()` / `groups()` on the feed client (cached).
+
+### Unchanged by design
+- Argus still never visits a leak site — the hub reads only the research feed, and handles metadata only
+  (victim, group, date, sector, country), never stolen files. Off when the feed is not configured.
+- The hub is for situational awareness; to be *alerted* about a specific victim, use a domain, supplier
+  or selector watch, which raise alerts as before.
+
 ## [1.122.0] — Infostealer intelligence
 
 ### Added

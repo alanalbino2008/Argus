@@ -33,6 +33,8 @@ HIBP = "https://haveibeenpwned.com/api/v3"
 USER_AGENT = "Argus-Exposure-Monitor/1 (+https://github.com/alanalbino2008/Argus)"
 MAX_BODY = 16 * 1024 * 1024
 CATALOGUE_TTL = 6 * 3600.0
+RECENT_TTL = 600.0  # the ransomware feed's recent-victims list, cached for ten minutes
+GROUPS_TTL = 3600.0
 HIBP_SPACING = 6.5  # the entry-level HIBP plan allows 10 keyed requests a minute
 FEED_SPACING = 1.0
 
@@ -57,6 +59,8 @@ class BreachSources:
         self.settings = settings
         self._session: aiohttp.ClientSession | None = None
         self._catalogue: tuple[float, dict[str, dict[str, Any]]] | None = None
+        self._recent: tuple[float, list[dict[str, Any]]] | None = None
+        self._groups: tuple[float, list[dict[str, Any]]] | None = None
         self._last_call: dict[str, float] = {}
         self._lock = asyncio.Lock()
 
@@ -187,3 +191,37 @@ class BreachSources:
         if isinstance(data, dict):  # some versions wrap the list
             data = data.get("victims") or data.get("data") or []
         return [p for p in data if isinstance(p, dict)] if isinstance(data, list) else []
+
+    async def _feed_list(self, path: str) -> list[dict[str, Any]]:
+        feed = self.ransomware_feed
+        if not feed:
+            raise SourceUnavailable("The ransomware feed is turned off (ARGUS_RANSOMWARE_FEED_URL)")
+        await self._space("ransomware", FEED_SPACING)
+        answer = await self._get(f"{feed}{path}")
+        if answer.status == 404:
+            return []
+        if answer.status != 200:
+            raise SourceError(f"The ransomware feed answered HTTP {answer.status}")
+        data = answer.data
+        if isinstance(data, dict):
+            data = data.get("victims") or data.get("groups") or data.get("data") or []
+        return [p for p in data if isinstance(p, dict)] if isinstance(data, list) else []
+
+    async def recent_victims(self) -> list[dict[str, Any]]:
+        """The feed's recent leak-site posts across every group (cached for ten minutes)."""
+        if self._recent and time.monotonic() - self._recent[0] < RECENT_TTL:
+            return self._recent[1]
+        posts = await self._feed_list("/recentvictims")
+        self._recent = (time.monotonic(), posts)
+        return posts
+
+    async def groups(self) -> list[dict[str, Any]]:
+        """The feed's roster of ransomware groups (cached for an hour); empty if unsupported."""
+        if self._groups and time.monotonic() - self._groups[0] < GROUPS_TTL:
+            return self._groups[1]
+        try:
+            roster = await self._feed_list("/groups")
+        except SourceError:
+            roster = []
+        self._groups = (time.monotonic(), roster)
+        return roster
