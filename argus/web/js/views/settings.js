@@ -516,9 +516,9 @@ function scimCard() {
       <td class="actions"><button class="btn sm ghost danger" data-act="scim-unmap" data-group="${m.group}" data-ws="${m.workspace_id}">Remove</button></td></tr>`)}</tbody></table>`
       : html`<p class="muted small">No group gives access yet.</p>`}
     <form id="scim-form" class="filters" style="margin-top:8px">
-      <input id="scim-group" class="input" placeholder="Group name in your identity provider" style="max-width:260px" required>
-      <select id="scim-ws" class="select" style="max-width:200px">${workspaces.map(([id, name]) => html`<option value="${id}">${name}</option>`)}</select>
-      <select id="scim-role" class="select" style="max-width:140px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+      <input id="scim-group" aria-label="Identity-provider group name" class="input" placeholder="Group name in your identity provider" style="max-width:260px" required>
+      <select id="scim-ws" aria-label="Workspace for this group" class="select" style="max-width:200px">${workspaces.map(([id, name]) => html`<option value="${id}">${name}</option>`)}</select>
+      <select id="scim-role" aria-label="Role for this group" class="select" style="max-width:140px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
       <button class="btn sm" type="submit">Map group</button>
     </form>
   </div>`;
@@ -560,7 +560,7 @@ function accessCard() {
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><div><h2>Network access</h2><p class="muted small">Only these networks can use this workspace, from a browser or with an API key; empty means anywhere. Your address now: <span class="mono">${policy.your_address || "unknown"}</span>.</p></div></div>
     <form id="access-form" class="filters">
-      <input id="access-networks" class="input" style="max-width:520px" value="${policy.allowed_networks.join(", ")}" placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8 (empty: anywhere)">
+      <input id="access-networks" aria-label="Allowed networks" class="input" style="max-width:520px" value="${policy.allowed_networks.join(", ")}" placeholder="e.g. 203.0.113.0/24, 10.0.0.0/8 (empty: anywhere)">
       <button class="btn sm" type="submit">Save</button>
     </form>
   </div>`;
@@ -625,8 +625,8 @@ function keysCard() {
     <div class="card-head"><div><h2>API keys</h2><p class="muted small">Keys are stored only as SHA-256 hashes. Viewer: read · Analyst: + scan · Admin: + delete, keys, audit.</p></div></div>
     <p class="muted small" style="margin:-6px 0 12px">New keys are bound to <b>${state.workspace?.name || "this workspace"}</b> and cannot see any other workspace.</p>
     <form id="key-form" class="filters" style="margin-bottom:12px">
-      <input id="key-name" class="input" placeholder="Key name, e.g. alice-laptop" maxlength="128" style="max-width:260px">
-      <select id="key-role" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+      <input id="key-name" aria-label="API key name" class="input" placeholder="Key name, e.g. alice-laptop" maxlength="128" style="max-width:260px">
+      <select id="key-role" aria-label="API key role" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
       <select id="key-expiry" class="select" style="max-width:170px" title="When the key stops working">
         <option value="30">Expires in 30 days</option><option value="90" selected>Expires in 90 days</option>
         <option value="365">Expires in a year</option><option value="">Never expires</option></select>
@@ -1025,8 +1025,8 @@ function workspacesCard() {
       <p class="muted small">Each team works in its own workspace: investigations, monitors, alerts, API keys and audit entries are never visible to other workspaces. Your role here: <b>${current?.role || "—"}</b>.</p></div></div>
     ${members ? html`
       <form id="member-form" class="filters" style="margin-bottom:12px">
-        <input id="member-email" class="input" type="email" placeholder="colleague@company.com (signed in once with SSO)" style="max-width:320px" required>
-        <select id="member-role" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
+        <input id="member-email" aria-label="Colleague's email address" class="input" type="email" placeholder="colleague@company.com (signed in once with SSO)" style="max-width:320px" required>
+        <select id="member-role" aria-label="Role for the new member" class="select" style="max-width:150px"><option value="viewer">Viewer</option><option value="analyst" selected>Analyst</option><option value="admin">Admin</option></select>
         <button class="btn primary" type="submit">${ico("plus")}Add member</button>
       </form>
       ${members.length ? html`<table class="table"><thead><tr><th>Member</th><th>Role</th><th>Added</th><th></th></tr></thead><tbody>
@@ -1039,7 +1039,7 @@ function workspacesCard() {
         })}</tbody></table>` : html`<p class="muted small">No people yet — API keys bound to this workspace can still use it.</p>`}` : ""}
     ${platform ? html`<div class="section"><div class="section-title">All workspaces (platform administration)</div>
       <form id="ws-form" class="filters" style="margin-bottom:10px">
-        <input id="ws-name" class="input" placeholder="New workspace, e.g. Red Team" maxlength="128" style="max-width:260px" required>
+        <input id="ws-name" aria-label="New workspace name" class="input" placeholder="New workspace, e.g. Red Team" maxlength="128" style="max-width:260px" required>
         <button class="btn" type="submit">${ico("plus")}Create workspace</button>
       </form>
       <div class="chips">${(state.me.workspaces || []).map((w) => html`<span class="chip">${w.name}${w.default ? "" : html` <button class="btn sm ghost danger" style="height:20px;padding:0 6px" data-act="ws-delete" data-id="${w.id}" title="Delete (only if empty)">×</button>`}</span>`)}</div>

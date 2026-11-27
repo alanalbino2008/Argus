@@ -3,7 +3,8 @@
 // analyst's IP address to the subject's platform. Initials are used instead.
 
 import { api, enc } from "../api.js";
-import { empty, entityIcon, ico, severityPill } from "../components.js";
+import { empty, entityIcon, ico, noInvestigation, severityPill } from "../components.js";
+import { fillRecent } from "../recent.js";
 import { formatDay, html, on, plural, setHTML } from "../dom.js";
 import { isRunning, on as onState, state } from "../state.js";
 
@@ -88,8 +89,8 @@ function render() {
   if (!root) return;
   const inv = state.investigation;
   if (!inv) {
-    setHTML(root, html`<div class="page"><div class="card">${empty("persona", "No investigation open", "Argus links usernames, emails, accounts and names it finds into people, and builds a dossier for each.",
-      html`<div class="hero-actions" style="justify-content:center"><button class="btn primary" data-action="newInvestigation">${ico("plus")}New investigation</button><button class="btn" data-action="loadDemo">Try the demo</button></div>`)}</div></div>`);
+    setHTML(root, html`<div class="page"><div class="card">${noInvestigation("persona", "People", "Argus links usernames, emails, accounts and names it finds into people, and builds a dossier for each.")}</div></div>`);
+    fillRecent(root, "people", actions);
     return;
   }
   if (loadedFor !== inv.id && !loading && !failed && !isRunning()) queueMicrotask(refresh);

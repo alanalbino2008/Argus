@@ -3,7 +3,8 @@
 
 import { imageSearchLinks } from "./research.js";
 import { api, enc } from "../api.js";
-import { empty, entityIcon, ico, severityPill } from "../components.js";
+import { empty, entityIcon, ico, noInvestigation, severityPill } from "../components.js";
+import { fillRecent } from "../recent.js";
 import { $, $$, formatDay, html, on, setHTML, timeAgo, toast } from "../dom.js";
 import { ENTITY_TYPES, typeInfo } from "../icons.js";
 import * as graph from "../graph.js";
@@ -504,8 +505,8 @@ function renderEmpty() {
   const { nodes } = graph.counts();
   if (!state.investigation) {
     el.hidden = false;
-    setHTML(el, html`<div class="card" style="max-width:420px">${empty("graph", "No investigation open", "Start an investigation or open one from History to explore its intelligence graph.",
-      html`<div class="hero-actions" style="justify-content:center"><button class="btn primary" data-action="newInvestigation">${ico("plus")}New investigation</button><button class="btn" data-action="loadDemo">Try the demo</button></div>`)}</div>`);
+    setHTML(el, html`<div class="card" style="max-width:420px">${noInvestigation("graph", null, "Start an investigation, or open a recent one, to explore its intelligence graph.")}</div>`);
+    fillRecent(el, "graph", actions);
   } else if (!nodes) {
     el.hidden = false;
     setHTML(el, html`<div class="card" style="max-width:380px">${empty("search", isRunning() ? "Discovering…" : "Loading…", "Findings appear here live as Argus discovers them.")}</div>`);

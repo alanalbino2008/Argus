@@ -1,7 +1,7 @@
 // Argus web app entry point: sign-in, routing, top bar, shortcuts and cross-view actions.
 
 import { activeWorkspace, api, authConfig, clearKey, download, enc, endSession, personalSignIn, setActiveWorkspace, storeKey, whoAmI } from "./api.js";
-import { $, $$, closeTopModal, confirmDialog, html, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
+import { $, $$, closeModal, closeTopModal, confirmDialog, html, on as onDom, openModal, setHTML, setupModals, toast, trusted } from "./dom.js";
 import * as graph from "./graph.js";
 import { icon, installSprite } from "./icons.js";
 import { closeInvestigation, openInvestigation, startScan, stopScan } from "./live.js";
@@ -30,6 +30,22 @@ import { initVault, refreshVault } from "./vault.js";
 const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "ransomware", "remediation", "compliance", "ratings", "history", "business", "settings"];
 let currentView = null;
 let pollTimer = null;
+const VIEW_TITLES = {
+  executive: "Executive overview", cases: "Cases", overview: "Overview", graph: "Graph", paths: "Attack paths",
+  people: "People", history: "History", monitoring: "Monitoring", exposure: "Exposure", ransomware: "Ransomware",
+  suppliers: "Supplier risk", remediation: "Fixes", compliance: "Compliance", ratings: "Security ratings",
+  business: "Business", settings: "Settings",
+};
+const INVESTIGATION_VIEWS = new Set(["overview", "graph", "paths", "people"]);
+const pageTitle = () => VIEW_TITLES[currentView] || "Argus";
+
+/** The browser tab says where you are (and which investigation, on its views), so tabs and history differ. */
+function updateTitle() {
+  const target = state.investigation?.target;
+  const parts = [pageTitle()];
+  if (target && INVESTIGATION_VIEWS.has(currentView)) parts.unshift(target);
+  document.title = `${parts.join(" · ")} · Argus`;
+}
 
 // ------------------------------------------------------------------ routing
 function go(view) {
@@ -43,7 +59,9 @@ function route() {
   currentView = view;
   $$(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${view}`));
   $$(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
-  $(`.nav-item[data-view="${view}"]`)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }); // phones: the bar scrolls
+  // Phones show four tabs and "More": light "More" up when the page is one of the others.
+  $("#nav-more")?.classList.toggle("active", !$(`.nav-item[data-view="${view}"]`)?.hasAttribute("data-primary"));
+  renderContext();
   if (view === "graph") setTimeout(graph.resizeCanvas, 50);
   if (view === "people") refreshPeople();
   if (view === "history") refreshHistory();
@@ -129,7 +147,7 @@ function renderContext() {
   const status = $("#context-status");
   if (!inv) {
     status.hidden = true;
-    $("#context-title").textContent = "No investigation open";
+    $("#context-title").textContent = pageTitle(); // where you are, rather than what is missing
     $("#context-meta").textContent = "";
   } else {
     status.hidden = false;
@@ -139,6 +157,7 @@ function renderContext() {
     $("#context-title").textContent = inv.target || "Loading…";
     $("#context-meta").textContent = `${state.entities.size} assets · ${state.relations.size} connections`;
   }
+  updateTitle();
   const running = isRunning();
   $("#btn-stop").hidden = !running;
   $("#scan-progress").hidden = !running;
@@ -159,6 +178,26 @@ function renderThemeButton() {
   setHTML($("#btn-theme"), trusted(icon(dark ? "sun" : "moon")));
 }
 
+// ------------------------------------------------------------------ "More" (every page, grouped, for phones)
+function setupNavSheet() {
+  const body = $("#nav-sheet-body");
+  const build = () => {
+    const groups = [{ label: "Summary", items: [] }];
+    for (const el of $$(".nav > *")) {
+      if (el.classList.contains("nav-group")) groups.push({ label: el.textContent.trim(), items: [] });
+      else if (el.classList.contains("nav-spacer")) groups.push({ label: "Workspace", items: [] });
+      else if (el.matches(".nav-item[data-view]") && !el.hidden) groups.at(-1).items.push(el);
+    }
+    const item = (el) => {
+      const here = el.dataset.view === currentView;
+      return html`<button type="button" class="nav-sheet-item ${here ? "active" : ""}" data-sheet-view="${el.dataset.view}" aria-current="${here ? "page" : "false"}">${trusted(el.querySelector("svg").outerHTML)}${VIEW_TITLES[el.dataset.view] || el.textContent.trim()}</button>`;
+    };
+    setHTML(body, html`${groups.filter((g) => g.items.length).map((g) => html`<div class="nav-sheet-group"><h3>${g.label}</h3><div class="nav-sheet-grid">${g.items.map(item)}</div></div>`)}`);
+  };
+  $("#nav-more").addEventListener("click", () => { build(); openModal("nav-sheet"); });
+  onDom(body, "click", "[data-sheet-view]", (_e, btn) => { closeModal("nav-sheet"); go(btn.dataset.sheetView); });
+}
+
 // ------------------------------------------------------------------ keyboard
 function setupShortcuts() {
   document.addEventListener("keydown", (e) => {
@@ -168,7 +207,7 @@ function setupShortcuts() {
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
     if (typing || e.metaKey || e.ctrlKey || e.altKey || !$("#signin").hidden || $(".modal-root.open")) return;
-    const map = { x: "executive", k: "cases", o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", w: "remediation", c: "compliance", r: "ratings", h: "history" };
+    const map = { x: "executive", k: "cases", o: "overview", g: "graph", p: "paths", u: "people", m: "monitoring", s: "suppliers", e: "exposure", a: "ransomware", w: "remediation", c: "compliance", r: "ratings", h: "history" };
     if (map[e.key]) go(map[e.key]);
     else if (e.key === "n") { e.preventDefault(); actions.newInvestigation(); }
     else if (e.key === "/") { e.preventDefault(); go("graph"); setTimeout(() => $("#graph-search").focus(), 120); }
@@ -411,6 +450,7 @@ async function boot() {
   setupAuth();
   initVault();
   setupShortcuts();
+  setupNavSheet();
   initModals(actions);
   initGuide(actions);
   initReports();

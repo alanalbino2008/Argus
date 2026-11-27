@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.124.0] — UI/UX pass: navigation, orientation, accessibility
+
+### Changed
+- **Grouped sidebar** — Investigate / Watch / Act — that fits a 900px-tall screen (and scrolls rather than
+  clipping on shorter ones).
+- **Phones:** four everyday tabs (Overview, Cases, Monitor, Exposure) and **More**, a sheet with every page,
+  replacing a sixteen-item strip that scrolled sideways and hid where you were.
+- The **top bar names the current page** instead of "No investigation open" everywhere; each browser tab
+  gets its own title. Ransomware has a keyboard shortcut (A).
+- Graph, Attack paths and People, with no investigation open, offer the **three most recent investigations**
+  one click away instead of a dead end.
+
+### Fixed
+- Accessible names and labels for every control and field the audit flagged; one heading per page.
+- Icons in buttons inside empty states rendered at 36px and half-transparent across the app.
+- Security ratings on phones: grade cards no longer crushed, portfolio table scrolls.
+- Graph seed nodes now render bold (an invalid font weight was ignored).
+
+### Tests
+- `tests/test_web_modules.py`: every browser module parses as an ES module and every imported name is
+  exported (either mistake blanks the whole app); sidebar, page sections and titles stay in agreement.
+
 ## [1.123.1] — Correctness review (whole-repository bug sweep)
 
 ### Fixed

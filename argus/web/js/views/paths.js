@@ -1,6 +1,7 @@
 // Attack paths: the signature view. Ranked scenarios, filterable by severity.
 
-import { empty, ico, pathCard, SEVERITIES } from "../components.js";
+import { SEVERITIES, empty, ico, noInvestigation, pathCard } from "../components.js";
+import { fillRecent } from "../recent.js";
 import { html, on, setHTML } from "../dom.js";
 import { isRunning, on as onState, state } from "../state.js";
 import { trackFinding } from "./remediation.js";
@@ -27,8 +28,8 @@ function render() {
   if (!root) return;
   const inv = state.investigation;
   if (!inv) {
-    setHTML(root, html`<div class="page"><div class="card">${empty("paths", "No investigation open", "Attack paths connect individual findings into the scenarios an attacker would actually use.",
-      html`<div class="hero-actions" style="justify-content:center"><button class="btn primary" data-action="newInvestigation">${ico("plus")}New investigation</button><button class="btn" data-action="loadDemo">Try the demo</button></div>`)}</div></div>`);
+    setHTML(root, html`<div class="page"><div class="card">${noInvestigation("paths", "Attack paths", "Attack paths connect individual findings into the scenarios an attacker would actually use.")}</div></div>`);
+    fillRecent(root, "paths", actions);
     return;
   }
   const data = state.paths;

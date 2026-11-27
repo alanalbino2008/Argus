@@ -13,6 +13,8 @@ const P = {
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  ransom: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3M12 15v2"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',

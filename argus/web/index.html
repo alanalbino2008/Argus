@@ -20,22 +20,26 @@
     <nav class="nav" aria-label="Main">
       <div class="brand" title="Argus"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-logo"/></svg></div>
       <button class="nav-item" data-view="executive" title="Executive overview (X)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-layout"/></svg>Executive</button>
-      <button class="nav-item" data-view="cases" title="Cases &amp; evidence (K)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-report"/></svg>Cases</button>
-      <button class="nav-item" data-view="overview" title="Overview (O)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-overview"/></svg>Overview</button>
+      <div class="nav-group" role="presentation"><span>Investigate</span></div>
+      <button class="nav-item" data-view="overview" data-primary title="Overview (O)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-overview"/></svg>Overview</button>
+      <button class="nav-item" data-view="cases" data-primary title="Cases &amp; evidence (K)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-report"/></svg>Cases</button>
       <button class="nav-item" data-view="graph" title="Graph (G)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-graph"/></svg>Graph</button>
       <button class="nav-item" data-view="paths" title="Attack paths (P)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-paths"/></svg>Paths<span class="nav-dot" id="paths-dot" hidden></span></button>
       <button class="nav-item" data-view="people" title="People (U)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-persona"/></svg>People</button>
-      <button class="nav-item" data-view="monitoring" title="Monitoring (M)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>Monitor<span class="nav-dot" id="alerts-dot" hidden></span></button>
+      <button class="nav-item" data-view="history" title="History (H)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-history"/></svg>History</button>
+      <div class="nav-group" role="presentation"><span>Watch</span></div>
+      <button class="nav-item" data-view="monitoring" data-primary title="Monitoring (M)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-bell"/></svg>Monitor<span class="nav-dot" id="alerts-dot" hidden></span></button>
+      <button class="nav-item" data-view="exposure" data-primary title="Breach &amp; dark-web exposure (E)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-breach"/></svg>Exposure</button>
+      <button class="nav-item" data-view="ransomware" title="Ransomware intelligence (A)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-ransom"/></svg>Ransomware</button>
       <button class="nav-item" data-view="suppliers" title="Supplier risk (S)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-organization"/></svg>Suppliers</button>
-      <button class="nav-item" data-view="exposure" title="Breach &amp; dark-web exposure (E)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-breach"/></svg>Exposure</button>
-      <button class="nav-item" data-view="ransomware" title="Ransomware intelligence"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-alert"/></svg>Ransomware</button>
+      <div class="nav-group" role="presentation"><span>Act</span></div>
       <button class="nav-item" data-view="remediation" title="Remediation work (W)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>Fixes</button>
       <button class="nav-item" data-view="compliance" title="Compliance mapping (C)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-shield"/></svg>Compliance</button>
       <button class="nav-item" data-view="ratings" title="Security ratings (R)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rating"/></svg>Ratings</button>
-      <button class="nav-item" data-view="history" title="History (H)"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-history"/></svg>History</button>
       <div class="nav-spacer"></div>
       <button class="nav-item" data-view="business" title="Business: customers and revenue" hidden><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rating"/></svg>Business</button>
       <button class="nav-item" data-view="settings" title="Settings"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-settings"/></svg>Settings</button>
+      <button class="nav-item nav-more" id="nav-more" type="button" aria-haspopup="dialog" aria-controls="nav-sheet" title="All pages"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><use href="#i-menu"/></svg>More</button>
     </nav>
 
     <!-- ================================================================ top bar -->
@@ -54,7 +58,7 @@
         <button id="btn-vault-lock" class="btn ghost icon" hidden title="Lock the case vault now" aria-label="Lock the case vault"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-shield"/></svg></button>
         <button id="btn-theme" class="btn ghost icon" title="Toggle light / dark theme" aria-label="Toggle theme"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-moon"/></svg></button>
         <button id="btn-shortcuts" class="btn ghost icon hide-sm" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-keyboard"/></svg></button>
-        <button id="btn-new" class="btn primary"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg><span class="hide-sm">New investigation</span></button>
+        <button id="btn-new" class="btn primary" aria-label="New investigation" title="New investigation (N)"><svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><use href="#i-plus"/></svg><span class="hide-sm">New investigation</span></button>
         <button id="btn-user" class="btn ghost hide-sm" title="Sign out"><span id="user-name"></span><svg fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><use href="#i-logout"/></svg></button>
       </div>
       <div id="scan-progress" class="scan-progress" hidden></div>
@@ -65,6 +69,7 @@
       <section id="view-overview" class="view" aria-label="Overview"></section>
 
       <section id="view-graph" class="view" aria-label="Graph">
+        <h1 class="sr-only">Graph</h1>
         <div id="workspace" class="workspace">
           <div class="canvas-wrap">
             <div class="toolbar">
@@ -627,6 +632,13 @@
       <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start watching</button></div>
     </form>
   </div>
+  <div id="nav-sheet" class="modal-root" aria-hidden="true">
+    <div class="modal nav-sheet" role="dialog" aria-modal="true" aria-labelledby="nav-sheet-h">
+      <div class="modal-head"><div><h2 id="nav-sheet-h">All pages</h2></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body" id="nav-sheet-body"></div>
+    </div>
+  </div>
   <div id="triage-modal" class="modal-root" aria-hidden="true">
     <form class="modal" role="dialog" aria-labelledby="triage-title" id="triage-form" novalidate>
       <div class="modal-head"><div><h2 id="triage-title">Mark as resolved</h2><p>Recorded with your name in the audit log.</p></div>
@@ -765,7 +777,7 @@
         <table class="table">
           <tbody>
             <tr><td><span class="kbd">N</span></td><td>New investigation</td></tr>
-            <tr><td><span class="kbd">X</span> <span class="kbd">K</span> <span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">W</span> <span class="kbd">C</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Executive · Cases · Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Work (remediation) · Compliance · Ratings · History</td></tr>
+            <tr><td><span class="kbd">X</span> <span class="kbd">K</span> <span class="kbd">O</span> <span class="kbd">G</span> <span class="kbd">P</span> <span class="kbd">U</span> <span class="kbd">M</span> <span class="kbd">S</span> <span class="kbd">E</span> <span class="kbd">A</span> <span class="kbd">W</span> <span class="kbd">C</span> <span class="kbd">R</span> <span class="kbd">H</span></td><td>Executive · Cases · Overview · Graph · Paths · People · Monitoring · Suppliers · Exposure · Ransomware · Fixes · Compliance · Ratings · History</td></tr>
             <tr><td><span class="kbd">/</span></td><td>Find in graph</td></tr>
             <tr><td><span class="kbd">F</span></td><td>Fit graph to screen</td></tr>
             <tr><td><span class="kbd">T</span></td><td>Toggle light / dark theme</td></tr>

@@ -83,3 +83,10 @@ export function empty(iconName, title, text, actions = "") {
 export function skeletonRows(n = 3) {
   return html`${Array.from({ length: n }, (_, i) => html`<div class="skeleton" style="width:${90 - i * 15}%;margin:12px 0"></div>`)}`;
 }
+
+/** The empty state of a view that needs an investigation. Never a dead end: besides starting one, it offers
+ *  the most recent investigations (filled in by recent.js#fillRecent) one click away. */
+export function noInvestigation(iconName, pageName, text) {
+  return html`${pageName ? html`<h1 class="sr-only">${pageName}</h1>` : ""}${empty(iconName, "No investigation open", text,
+    html`<div class="hero-actions" style="justify-content:center"><button class="btn primary" data-action="newInvestigation">${ico("plus")}New investigation</button><button class="btn" data-action="loadDemo">Try the demo</button></div><div class="recent-open" data-recent></div>`)}`;
+}

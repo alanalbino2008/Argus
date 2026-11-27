@@ -62,7 +62,7 @@ function render() {
     </div>
     <div class="card">
       <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
-        <input id="history-search" class="input" type="search" placeholder="Filter by target…" value="${query}" style="max-width:320px">
+        <input id="history-search" class="input" type="search" aria-label="Filter investigations by target" placeholder="Filter by target…" value="${query}" style="max-width:320px">
       </div>
       ${rows === null ? html`<div class="card-pad"><p class="muted">Loading…</p></div>`
         : !rows.length ? empty("history", query ? "No matches" : "No investigations yet", query ? "Try a different filter." : "Start your first investigation, or load the demo to explore Argus.",

@@ -49,7 +49,7 @@ function styles() {
         "transition-duration": "200ms",
       },
     },
-    { selector: "node[?seed]", style: { "border-width": 5, "border-color": accent, "border-opacity": 0.25, "font-weight": 650 } },
+    { selector: "node[?seed]", style: { "border-width": 5, "border-color": accent, "border-opacity": 0.25, "font-weight": "bold" } },
     { selector: "node:selected", style: { "border-width": 4, "border-color": accent, "border-opacity": 1 } },
     {
       selector: "edge",
@@ -85,7 +85,7 @@ function styles() {
       selector: "node.bundle",
       style: {
         shape: "round-rectangle", "border-width": 3, "border-style": "dashed", "border-color": "data(color)",
-        "border-opacity": 0.9, "background-opacity": 0.85, "font-weight": 650, label: "data(short)",
+        "border-opacity": 0.9, "background-opacity": 0.85, "font-weight": "bold", label: "data(short)",
       },
     },
     { selector: "edge.merged", style: { width: "data(width)", "line-style": "solid", opacity: 0.55 } },

@@ -90,7 +90,7 @@ function render() {
     </div>
     <div class="card card-pad">
       <div class="card-head"><div><h2>Portfolio</h2><p class="muted small">Weakest first. Median score ${Math.round(data.median)}. Benchmarks compare each organisation with the others assessed here — never with invented industry averages.</p></div></div>
-      <table class="table"><thead><tr><th>Organisation</th><th>Grade</th><th>Score</th><th>Trend</th><th>Weakest area</th><th>Benchmark</th><th>Assessed</th></tr></thead><tbody>
+      <div class="table-scroll"><table class="table"><thead><tr><th>Organisation</th><th>Grade</th><th>Score</th><th>Trend</th><th>Weakest area</th><th>Benchmark</th><th>Assessed</th></tr></thead><tbody>
       ${orgs.map((o) => html`<tr>
         <td><button class="btn ghost sm" data-open="${o.investigation_id}" style="font-weight:600">${o.target}</button>
           ${o.critical_issues ? html`<div class="small" style="color:var(--sev-critical);padding-left:10px">${o.critical_issues} critical issue${o.critical_issues === 1 ? "" : "s"}</div>` : ""}</td>
@@ -100,7 +100,7 @@ function render() {
         <td>${o.weakest ? html`${o.weakest.name}<div class="muted small">${Math.round(o.weakest.score)}/100</div>` : "—"}</td>
         <td>${o.percentile != null ? html`better than ${o.percentile}%` : html`<span class="muted small">needs 3+</span>`}</td>
         <td>${formatDate(o.assessed_at)}</td></tr>`)}
-      </tbody></table>
+      </tbody></table></div>
     </div>`}
   </div>`);
 }
