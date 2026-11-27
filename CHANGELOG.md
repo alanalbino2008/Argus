@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.120.0] — One-box investigate
+
+### Added
+- **Investigate a person** button on the Cases page: paste one detail — a name, username, email, phone,
+  website or profile link — and Argus opens a case, adds the person with that detail, and starts a full
+  search from it in a single step, landing you on the People tab to confirm candidates.
+- `POST /api/investigate` behind it, which reads what kind of identifier you typed and files it under the
+  right known-detail field. Rate-limited to 10 a minute.
+
+### Unchanged by design
+- The one box keeps the full discipline of a hand-built case: the purpose is still required, the legal
+  authorisation too where the instance requires it, every step is audited (`via: investigate`), and the
+  search uses the same safety route and rate limits.
+
 ## [1.119.2] — Hardening review, part 2 (fetches and limits)
 
 ### Security

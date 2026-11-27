@@ -27,7 +27,7 @@ from argus.api.case_routes import _case
 from argus.api.deps import WorkspaceContext, audit, in_workspace, require_approval
 from argus.api.opsec_routes import route_for
 from argus.api.playbook_routes import RUNS, ScanFn, _available
-from argus.core.models import ScanConfig
+from argus.core.models import EntityType, ScanConfig
 from argus.evidence.capture import CaptureError, capture_url
 from argus.intel import subjects as S
 from argus.intel.avatars import fingerprint
@@ -1080,3 +1080,71 @@ async def reveal_password(case_id: str, subject_id: str, body: RevealRequest, re
         raise HTTPException(status_code=404, detail="The provider no longer returns that password")
     return {"identifier": revealed["identifier"], "breach": revealed["breach"], "password": revealed["password"],
             "warning": "A leaked password. Never use it to sign in; this reveal was recorded."}  # fmt: skip
+
+
+# ---------------------------------------------------------------------------- one-box investigate
+_investigate_limiter = SlidingWindowLimiter(limit=10, window=60, name="investigate")
+
+
+class InvestigateRequest(BaseModel):
+    identifier: str = Field(min_length=1, max_length=300, description="A name, username, email, phone or profile link")
+    name: str = Field(default="", max_length=300, description="How to refer to the person (defaults to the identifier)")
+    purpose: str = Field(min_length=10, max_length=500, description="The legitimate purpose of the investigation")
+    authorization: str = Field(
+        default="", max_length=300, description="The legal authorisation (warrant, order, ticket)"
+    )
+    rounds: int = Field(default=2, ge=1, le=3)
+    confirmed: bool = Field(description="Confirms there is a legitimate purpose and the person is not a child")
+
+
+def _known_field(identifier: str) -> tuple[str, str]:
+    """(the known-details field, the tidied value) for a typed identifier."""
+    from argus.cli.console import detect_target_type
+
+    text = identifier.strip()
+    if text.startswith(("http://", "https://")) or S.handle_from_url(text):
+        return "profiles", text
+    kind = detect_target_type(text)
+    mapping = {EntityType.EMAIL: "emails", EntityType.PHONE: "phones", EntityType.DOMAIN: "websites",
+               EntityType.USERNAME: "usernames"}  # fmt: skip
+    if kind in mapping:
+        return mapping[kind], text
+    return ("names" if " " in text else "usernames"), text
+
+
+@router.post("/investigate", status_code=201)
+async def investigate(body: InvestigateRequest, request: Request, ws: WorkspaceContext = ANALYST):
+    """One box: open a case, add the person with the typed identifier, and start a full search from it.
+    Returns the case and person to follow. Confirm candidates yourself; the AI dossier is a draft."""
+    from argus.api.case_routes import _safety
+
+    if not body.confirmed:
+        raise HTTPException(
+            status_code=422, detail="Confirm there is a legitimate purpose and the person is not a child"
+        )
+    settings = request.app.state.settings
+    if settings.require_case_authorization and not body.authorization.strip():
+        raise HTTPException(status_code=422, detail="Give the legal authorisation for this investigation")
+    if not await _investigate_limiter.allow(ws.principal.key_id):
+        raise HTTPException(status_code=429, detail="Too many investigations at once; try again in a minute")
+    field, value = _known_field(body.identifier)
+    name = body.name.strip() or (value if field == "names" else body.identifier.strip())
+    try:
+        known = S.clean_known({field: [value]})
+    except S.KnownDetailsError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    egress = _safety(request, "", "standard")
+    case = await request.app.state.cases.create(
+        workspace_id=ws.id, by=ws.principal.name, title=f"Investigation: {name}"[:200], purpose=body.purpose.strip(),
+        egress=egress, authorization=body.authorization.strip() or None,
+    )  # fmt: skip
+    await audit(request, ws.principal, "case.create", case["id"],
+                details={"title": case["title"], "purpose": case["purpose"], "via": "investigate",
+                         "authorization": case["authorization"]})  # fmt: skip
+    subject = await request.app.state.subjects.create(workspace_id=ws.id, case_id=case["id"], name=name,
+                                                      known=known, by=ws.principal.name)  # fmt: skip
+    await audit(request, ws.principal, "subject.create", subject["id"],
+                details={"case": case["id"], "via": "investigate", "field": field, "purpose": case["purpose"]})  # fmt: skip
+    started = await start(request.app, case, subject, ws.principal, ws.id, rounds=body.rounds, fresh=False,
+                          reason="investigate", request=request)  # fmt: skip
+    return {"case_id": case["id"], "subject_id": subject["id"], "field": field, "name": name, "subject": started}

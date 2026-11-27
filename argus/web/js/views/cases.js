@@ -53,7 +53,7 @@ function renderList() {
     <div class="page-head">
       <div><h1>Cases</h1><p>One place per story or inquiry: notes, people and how they connect, a timeline, scans, and web pages preserved as evidence with fingerprints and a chain of custody.</p></div>
       <div class="page-actions"><button class="btn" data-act="verify-report" title="Check that a case report is genuine and unaltered">${ico("check")}Verify a report</button>
-      ${canEdit() ? html`<button class="btn primary" data-act="new-case">${ico("plus")}New case</button>` : ""}</div>
+      ${canEdit() ? html`<span style="display:flex;gap:8px"><button class="btn primary" data-act="investigate">${ico("search")}Investigate a person</button><button class="btn" data-act="new-case">${ico("plus")}New case</button></span>` : ""}</div>
     </div>
     ${cases.some((c) => c.review_due) ? html`<div class="callout warn" style="margin-bottom:12px">${ico("history")}<span><b>${cases.filter((c) => c.review_due).length} case(s) haven't been touched in a long time.</b> Data protection law expects you to keep personal information only while you need it: close, export or delete the ones you've finished with.</span></div>` : ""}
     ${!cases.length ? html`<div class="card">${empty("report", "No cases yet", "Open a case for each investigation. Capture pages before they change or disappear, and export a bundle anyone can verify.")}</div>`
@@ -214,6 +214,13 @@ export function showCase(id) {
   return openCase(id);
 }
 
+async function openCasePeople(id) {
+  current = await loadCase(id);
+  caseTab = "people";
+  if (location.hash !== "#/cases") location.hash = "#/cases";
+  renderCase();
+}
+
 async function openCase(id) {
   caseTab = "overview";
   current = await loadCase(id);
@@ -288,6 +295,17 @@ function attributes(text) {
 }
 
 const FORMS = {
+  "investigate-form": async () => {
+    if (!$("#inv-confirmed").checked) throw new Error("Confirm there is a legitimate purpose.");
+    const identifier = $("#inv-identifier").value.trim();
+    if (!identifier) throw new Error("Type something to investigate.");
+    const r = await api.post("/api/investigate", { identifier, name: $("#inv-name").value.trim(),
+      purpose: $("#inv-purpose").value.trim(), authorization: $("#inv-authorization").value.trim(),
+      rounds: Number($("#inv-rounds").value), confirmed: true });
+    closeModal("investigate-modal");
+    toast("Investigation started: searching from what you typed", "success");
+    openCasePeople(r.case_id);
+  },
   "case-form": async () => {
     if (!$("#case-confirmed").checked) throw new Error("Confirm there is a legitimate purpose for this investigation.");
     const created = await api.post("/api/cases", { title: $("#case-title").value.trim(), purpose: $("#case-purpose").value.trim(),
@@ -373,7 +391,7 @@ const FORMS = {
 };
 
 async function openDialog(act) {
-  const ids = { watch: "watch-modal", safety: "safety-modal", capture: "capture-modal", upload: "upload-modal", entity: "entity-modal", link: "link-modal", event: "event-modal", note: "note-modal", scan: "scan-modal", "new-case": "case-modal" };
+  const ids = { watch: "watch-modal", safety: "safety-modal", capture: "capture-modal", upload: "upload-modal", entity: "entity-modal", link: "link-modal", event: "event-modal", note: "note-modal", scan: "scan-modal", "new-case": "case-modal", investigate: "investigate-modal" };
   const modal = ids[act];
   const form = $(`#${modal} form`);
   form.reset();

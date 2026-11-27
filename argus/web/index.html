@@ -514,6 +514,22 @@
       <div class="modal-body" id="history-body"></div>
     </div>
   </div>
+  <div id="investigate-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="investigate-modal-h" id="investigate-form" novalidate>
+      <div class="modal-head"><div><h2 id="investigate-modal-h">Investigate a person</h2><p>Type one thing you know — a name, username, email, phone or profile link. Argus opens a case, searches from it across its sources, and scores what it finds for you to confirm. Nothing is concluded for you.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button></div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="inv-identifier">Name, username, email, phone or link</label><input id="inv-identifier" class="input" maxlength="300" placeholder="jane.doe@example.org, or @janedoe84, or Jane Doe"></div>
+        <div class="field"><label class="label" for="inv-name">How to refer to them <span class="muted small">optional</span></label><input id="inv-name" class="input" maxlength="300" placeholder="Jane Doe"></div>
+        <div class="field"><label class="label" for="inv-purpose">Purpose</label><textarea id="inv-purpose" class="input" rows="2" maxlength="500" placeholder="Romance-fraud report R-17"></textarea></div>
+        <div class="field"><label class="label" for="inv-authorization">Legal authorisation <span class="muted small">warrant, court order or ticket</span></label><input id="inv-authorization" class="input" maxlength="300" placeholder="e.g. Production order 2026/0412"></div>
+        <div class="field"><label class="label" for="inv-rounds">How far to follow what is found</label><select id="inv-rounds" class="select"><option value="1">the starting point only</option><option value="2" selected>one step further</option><option value="3">two steps further</option></select></div>
+        <label class="check"><input type="checkbox" id="inv-confirmed"> <span>There is a legitimate purpose for this, and the person is not a child.</span></label>
+        <div class="error-text" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">Start</button></div>
+    </form>
+  </div>
   <div id="tocase-modal" class="modal-root" aria-hidden="true">
     <form class="modal" role="dialog" aria-labelledby="tocase-modal-h" id="tocase-form" novalidate>
       <div class="modal-head"><div><h2 id="tocase-modal-h">Add to a case</h2></div>
