@@ -84,7 +84,9 @@ def test_infostealer_records_are_recognised_and_summarised():
     assert st["computer"] == "DESKTOP-7" and st["infected_at"] == "2024-03-02" and "hunter2" not in str(st)
     # a 'stealer'-named database with a site also counts
     assert B.exposure("x", "email", {"database": "StealerLogs", "url": "shop.example"})["is_stealer"]
-    summary = B.stealer_summary([plain, st, B.exposure("jane@x.com", "email", {"type": "stealer", "url": "mail.example"})])
+    summary = B.stealer_summary(
+        [plain, st, B.exposure("jane@x.com", "email", {"type": "stealer", "url": "mail.example"})]
+    )
     assert summary["infections"] == 2 and summary["sites"] == ["login.bank.example", "mail.example"]
     assert summary["site_count"] == 2 and summary["families"] == ["RedLine"] and summary["latest"] == "2024-03-02"
     assert B.summary([st])["stealer"]["sites"] == ["login.bank.example"]  # carried in the person summary
