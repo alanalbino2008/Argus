@@ -99,7 +99,7 @@ function findingsCard() {
   const findings = data.findings;
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><div><h2>Findings</h2><p class="muted small">Most urgent first. Mark a finding resolved when you have dealt with it, or accept the risk; either way it stays on record.</p></div>
-      <div class="segmented" role="tablist">${["open", "resolved", "accepted", "all"].map((s) => html`<button class="${status === s ? "active" : ""}" data-status-filter="${s}">${s[0].toUpperCase() + s.slice(1)}</button>`)}</div></div>
+      <div class="segmented" role="group" aria-label="Findings shown">${["open", "resolved", "accepted", "all"].map((s) => html`<button class="${status === s ? "active" : ""}" aria-pressed="${status === s}" data-status-filter="${s}">${s[0].toUpperCase() + s.slice(1)}</button>`)}</div></div>
     ${!findings.length ? empty("check", status === "open" ? "Nothing open" : "Nothing here", status === "open" ? "No open exposure. New findings appear here after each check, and alert your notification channels." : "")
       : SECTIONS.map((sec) => {
         const items = findings.filter((f) => f.kind === sec.kind);
@@ -133,8 +133,8 @@ function render() {
     ${!caps.domain_search ? html`<div class="guide-warning info" style="margin-bottom:16px">${ico("info")}<div class="small">Breached staff accounts and infostealer infections need a <b>Have I Been Pwned</b> API key (<code>ARGUS_HIBP_API_KEY</code>), and HIBP only answers for domains you have verified you own. Breaches of organisations and ransomware leak-site posts work without one.</div></div>` : ""}
     ${!caps.darkweb_index && !caps.paste_monitor ? html`<div class="guide-warning info" style="margin-bottom:16px">${ico("info")}<div class="small">Watch-a-term covers the <b>ransomware leak feeds</b> out of the box. For the <b>dark-web index</b> and <b>paste/leak-forum</b> sources, point Argus at a provider (<code>ARGUS_DARKWEB_INDEX_URL</code>, <code>ARGUS_PASTE_MONITOR_URL</code>). Argus reads only those indexes — it never opens an onion service.</div></div>` : ""}
     <div class="grid kpis" style="margin-bottom:16px">
-      <div class="card card-pad"><b style="font-size:24px;color:${s.by_kind.stealer_log ? "var(--sev-critical)" : "inherit"}">${s.by_kind.stealer_log}</b><div class="muted small">infostealer infections</div></div>
-      <div class="card card-pad"><b style="font-size:24px;color:${s.by_kind.ransomware_post ? "var(--sev-critical)" : "inherit"}">${s.by_kind.ransomware_post}</b><div class="muted small">ransomware leak-site posts</div></div>
+      <div class="card card-pad"><b style="font-size:24px;color:${s.by_kind.stealer_log ? "var(--sev-critical-text)" : "inherit"}">${s.by_kind.stealer_log}</b><div class="muted small">infostealer infections</div></div>
+      <div class="card card-pad"><b style="font-size:24px;color:${s.by_kind.ransomware_post ? "var(--sev-critical-text)" : "inherit"}">${s.by_kind.ransomware_post}</b><div class="muted small">ransomware leak-site posts</div></div>
       <div class="card card-pad"><b style="font-size:24px">${s.accounts}</b><div class="muted small">staff accounts in breaches</div></div>
       <div class="card card-pad"><b style="font-size:24px">${s.by_kind.domain_breach}</b><div class="muted small">breaches of you or your suppliers</div></div>
     </div>

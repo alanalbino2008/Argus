@@ -53,3 +53,7 @@ argus.db-shm
 *.db
 /data/
 .env
+
+# npm packages the accessibility check installs (CI, or locally)
+node_modules/
+package-lock.json

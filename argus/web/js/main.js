@@ -18,7 +18,7 @@ import { initRansomware, refresh as refreshRansomware } from "./views/ransomware
 import { initRemediation, refresh as refreshRemediation } from "./views/remediation.js";
 import { initExecutive, refresh as refreshExecutive } from "./views/executive.js";
 import { initCompliance, refresh as refreshCompliance } from "./views/compliance.js";
-import { initCases, refresh as refreshCases } from "./views/cases.js";
+import { initCases, refresh as refreshCases, showCase } from "./views/cases.js";
 import { initMonitoring, refresh as refreshMonitoring } from "./views/monitoring.js";
 import { initOverview } from "./views/overview.js";
 import { initPaths } from "./views/paths.js";
@@ -26,6 +26,7 @@ import { initPeople, refresh as refreshPeople } from "./views/people.js";
 import { initSettings, refresh as refreshSettings } from "./views/settings.js";
 import { initBusiness, refreshBusiness } from "./views/business.js";
 import { initVault, refreshVault } from "./vault.js";
+import { SHORTCUT, initPalette, openPalette } from "./palette.js";
 
 const VIEWS = ["executive", "cases", "overview", "graph", "paths", "people", "monitoring", "suppliers", "exposure", "ransomware", "remediation", "compliance", "ratings", "history", "business", "settings"];
 let currentView = null;
@@ -203,6 +204,10 @@ function setupShortcuts() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (!closeTopModal()) graph.clearHighlight();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
+      if ($("#signin").hidden) { e.preventDefault(); openPalette(); }
       return;
     }
     const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
@@ -451,6 +456,13 @@ async function boot() {
   initVault();
   setupShortcuts();
   setupNavSheet();
+  $("#palette-shortcut").textContent = SHORTCUT;
+  initPalette({
+    go, actions, titles: VIEW_TITLES, showCase,
+    hints: { executive: "X", cases: "K", overview: "O", graph: "G", paths: "P", people: "U", monitoring: "M", suppliers: "S",
+             exposure: "E", ransomware: "A", remediation: "W", compliance: "C", ratings: "R", history: "H" },
+    canEdit: () => ["analyst", "admin"].includes(state.workspace?.role),
+  });
   initModals(actions);
   initGuide(actions);
   initReports();

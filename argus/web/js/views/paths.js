@@ -45,9 +45,9 @@ function render() {
     </div>
     ${data ? html`
       <div class="filters" style="margin-bottom:16px">
-        <div class="segmented" role="tablist">
-          <button class="${filter === "all" ? "active" : ""}" data-filter="all">All ${all.length}</button>
-          ${SEVERITIES.map((s) => html`<button class="${filter === s ? "active" : ""}" data-filter="${s}">${s[0].toUpperCase() + s.slice(1)} ${counts[s] || 0}</button>`)}
+        <div class="segmented" role="group" aria-label="Severity">
+          <button class="${filter === "all" ? "active" : ""}" aria-pressed="${filter === "all"}" data-filter="all">All ${all.length}</button>
+          ${SEVERITIES.map((s) => html`<button class="${filter === s ? "active" : ""}" aria-pressed="${filter === s}" data-filter="${s}">${s[0].toUpperCase() + s.slice(1)} ${counts[s] || 0}</button>`)}
         </div>
         <span class="muted small">${data.summary.rules_evaluated} rules evaluated</span>
       </div>

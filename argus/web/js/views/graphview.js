@@ -637,7 +637,7 @@ function screeningBlock(md) {
       ${md.sanction_matches.map((m) => html`<div class="list-row"><span class="pill ${m.score >= 0.97 ? "critical" : "warn"}">${Math.round(m.score * 100)}%</span>
         <div class="list-main"><div class="list-title">${m.matched_name}${m.matched_name !== m.name ? html` <span class="muted">(alias of ${m.name})</span>` : ""}</div>
         <div class="list-sub">${m.list}${m.programs?.length ? ` · ${m.programs.join(", ")}` : ""}${Object.entries(m.details || {}).map(([k, v]) => ` · ${k}: ${v}`).join("")}</div>
-        ${m.conflicts?.length ? html`<div class="small" style="margin-top:4px;color:var(--ok)">${ico("check")} Probably a different person: ${m.conflicts.join("; ")}</div>` : ""}</div></div>`)}</div>`);
+        ${m.conflicts?.length ? html`<div class="small" style="margin-top:4px;color:var(--ok-text)">${ico("check")} Probably a different person: ${m.conflicts.join("; ")}</div>` : ""}</div></div>`)}</div>`);
   }
   if (md.matched_person) {
     out.push(html`<div class="section"><div class="section-title">Why this was linked</div>

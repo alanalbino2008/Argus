@@ -159,7 +159,7 @@ function lookalikePanel() {
   const mail = threats.filter((e) => e.metadata.lookalike.mx.length).length;
   return html`<div class="card card-pad" style="margin-top:16px">
     <div class="card-head"><div><h2>Brand impersonation</h2>
-      <p class="muted small">${seed?.metadata?.lookalikes_checked || "Many"} lookalike domains checked (typos, look-alike letters, other endings, brand + keyword) · ${found.length} registered · <b>${threats.length}</b> not yours${mail ? html` · <b style="color:var(--sev-critical)">${mail} can send email</b>` : ""}</p></div></div>
+      <p class="muted small">${seed?.metadata?.lookalikes_checked || "Many"} lookalike domains checked (typos, look-alike letters, other endings, brand + keyword) · ${found.length} registered · <b>${threats.length}</b> not yours${mail ? html` · <b style="color:var(--sev-critical-text)">${mail} can send email</b>` : ""}</p></div></div>
     ${found.length ? html`<table class="table"><thead><tr><th>Domain</th><th>How it imitates you</th><th>Status</th><th>Email</th><th>Risk</th></tr></thead><tbody>
       ${found.slice(0, 12).map((e) => {
         const l = e.metadata.lookalike;

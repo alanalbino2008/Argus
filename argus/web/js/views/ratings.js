@@ -23,7 +23,7 @@ export function sparkline(values, width = 90, height = 26) {
 }
 
 const change = (c) => (c === null || c === undefined ? "" : c === 0 ? html`<span class="muted small">no change</span>`
-  : html`<span class="small" style="color:${c > 0 ? "var(--ok)" : "var(--sev-critical)"};font-weight:600">${c > 0 ? "▲" : "▼"} ${Math.abs(c)}</span>`);
+  : html`<span class="small" style="color:${c > 0 ? "var(--ok-text)" : "var(--sev-critical-text)"};font-weight:600">${c > 0 ? "▲" : "▼"} ${Math.abs(c)}</span>`);
 
 // ------------------------------------------------------------------ the card on an investigation's overview
 export function ratingCard(r, { onOpenIssue } = {}) {
@@ -93,7 +93,7 @@ function render() {
       <div class="table-scroll"><table class="table"><thead><tr><th>Organisation</th><th>Grade</th><th>Score</th><th>Trend</th><th>Weakest area</th><th>Benchmark</th><th>Assessed</th></tr></thead><tbody>
       ${orgs.map((o) => html`<tr>
         <td><button class="btn ghost sm" data-open="${o.investigation_id}" style="font-weight:600">${o.target}</button>
-          ${o.critical_issues ? html`<div class="small" style="color:var(--sev-critical);padding-left:10px">${o.critical_issues} critical issue${o.critical_issues === 1 ? "" : "s"}</div>` : ""}</td>
+          ${o.critical_issues ? html`<div class="small" style="color:var(--sev-critical-text);padding-left:10px">${o.critical_issues} critical issue${o.critical_issues === 1 ? "" : "s"}</div>` : ""}</td>
         <td>${gradeBadge(o.grade)}${o.provisional ? html` <span class="pill warn">provisional</span>` : ""}</td>
         <td><b>${Math.round(o.score)}</b> ${change(o.change)}</td>
         <td>${sparkline(o.trend)}</td>

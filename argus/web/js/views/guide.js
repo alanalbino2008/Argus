@@ -148,7 +148,7 @@ function stepRun() {
     <div class="guide-live">
       <div><b>${inv.node_count}</b><span class="muted small">things found</span></div>
       <div><b>${g.paths?.summary?.total ?? 0}</b><span class="muted small">attack paths</span></div>
-      <div><b style="color:var(--sev-critical)">${(sev.critical || 0) + (sev.high || 0)}</b><span class="muted small">critical or high</span></div>
+      <div><b style="color:var(--sev-critical-text)">${(sev.critical || 0) + (sev.high || 0)}</b><span class="muted small">critical or high</span></div>
     </div>
     ${top ? html`<div class="guide-warning ${["critical", "high"].includes(top.severity) ? "danger" : "info"}">${ico("paths")}<div><b>Most important: ${top.title}</b><br>${top.narrative}<br><span class="muted small">First fix: ${top.remediation?.[0] || "see the attack path"}</span></div></div>`
       : html`<div class="guide-warning info">${ico("check")}<div><b>No attack paths found.</b><br>That's a good sign. The graph still shows everything that's publicly discoverable.</div></div>`}
@@ -286,7 +286,7 @@ export async function checklistCard() {
         <div><h2>Getting started</h2><p class="muted small">${done} of ${steps.length} done — each step takes a minute or two.</p></div>
         <button class="btn ghost sm" data-action="hideChecklist">Hide</button>
       </div>
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${done}"><span style="width:${Math.round((done / steps.length) * 100)}%"></span></div>
+      <div class="progress" role="progressbar" aria-label="Getting started: steps done" aria-valuemin="0" aria-valuemax="${steps.length}" aria-valuenow="${done}"><span style="width:${Math.round((done / steps.length) * 100)}%"></span></div>
       <div class="checklist">${steps.map((s) => {
         const [title, text, action] = CHECKLIST[s.id];
         return html`<div class="checklist-row ${s.done ? "done" : ""}"><span class="tick">${s.done ? ico("check") : ""}</span>

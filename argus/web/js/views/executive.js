@@ -27,7 +27,7 @@ function areaCard(a) {
 
 function due(r) {
   if (r.status === "untracked") return html`<span class="muted">No owner yet</span>`;
-  if (r.overdue) return html`<b style="color:var(--sev-critical)">Overdue</b> <span class="muted small">(${formatDay(r.due_at)})</span>`;
+  if (r.overdue) return html`<b style="color:var(--sev-critical-text)">Overdue</b> <span class="muted small">(${formatDay(r.due_at)})</span>`;
   return r.due_at ? html`Due ${formatDay(r.due_at)}` : "";
 }
 
@@ -37,7 +37,7 @@ function render() {
     <div class="page-head">
       <div><h1>Executive overview</h1><p>How exposed are we, and are we fixing it fast enough? Everything Argus knows, summarised the way a board asks.</p></div>
       <div class="page-actions">
-        <div class="segmented" role="tablist" aria-label="Period">${[30, 90, 180].map((n) => html`<button class="${days === n ? "active" : ""}" data-days="${n}">${n} days</button>`)}</div>
+        <div class="segmented" role="group" aria-label="Period">${[30, 90, 180].map((n) => html`<button class="${days === n ? "active" : ""}" aria-pressed="${days === n}" data-days="${n}">${n} days</button>`)}</div>
         ${canEdit() ? html`<button class="btn sm primary" data-act="board">${ico("report")}Board report (PDF)</button>` : ""}
         ${state.workspace?.role === "admin" ? html`<button class="btn sm" data-act="schedule">Send monthly…</button>` : ""}
       </div>
@@ -59,7 +59,7 @@ function render() {
         ${d.organisations.length ? html`<table class="table"><tbody>${d.organisations.map((o) => html`<tr>
           <td>${gradeBadge(o.grade)}</td><td><b>${o.target}</b><div class="muted small">score ${Math.round(o.score)}</div></td>
           <td>${sparkline(o.trend || [], 90, 26)}</td>
-          <td>${o.change == null ? html`<span class="muted">—</span>` : html`<b style="color:${o.change >= 0 ? "var(--ok)" : "var(--sev-critical)"}">${o.change > 0 ? "+" : ""}${o.change}</b>`}</td>
+          <td>${o.change == null ? html`<span class="muted">—</span>` : html`<b style="color:${o.change >= 0 ? "var(--ok-text)" : "var(--sev-critical-text)"}">${o.change > 0 ? "+" : ""}${o.change}</b>`}</td>
         </tr>`)}</tbody></table>` : empty("rating", "Not rated yet", "Scan your organisation's domain to get an A–F security rating.")}
       </div>
       <div class="card card-pad">

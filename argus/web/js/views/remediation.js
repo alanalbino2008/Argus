@@ -30,7 +30,7 @@ function dueLabel(t) {
   const raw = (new Date(t.due_at) - Date.now()) / 86400000;
   const days = raw >= 0 ? Math.ceil(raw) : Math.floor(raw);
   if (["verified", "accepted"].includes(t.status)) return html`<span class="muted small">due ${formatDay(t.due_at)}</span>`;
-  if (t.overdue) return html`<b style="color:var(--sev-critical)">${-days} day${days === -1 ? "" : "s"} overdue</b>`;
+  if (t.overdue) return html`<b style="color:var(--sev-critical-text)">${-days} day${days === -1 ? "" : "s"} overdue</b>`;
   return html`<span class="${days <= 7 ? "" : "muted"}">${days === 0 ? "due today" : `in ${days} day${days === 1 ? "" : "s"}`}</span>`;
 }
 
@@ -39,7 +39,7 @@ const statusPill = (t) => html`<span class="pill ${STATUS[t.status][0]}" style="
 function kpis(m) {
   const mttr = m.mttr_days;
   return html`<div class="grid kpis" style="margin-bottom:16px">
-    <div class="card card-pad"><b style="font-size:24px;color:${m.overdue ? "var(--sev-critical)" : "inherit"}">${m.overdue}</b><div class="muted small">overdue${m.overdue ? ` (${Object.entries(m.overdue_by_severity).filter(([, n]) => n).map(([s, n]) => `${n} ${s}`).join(", ")})` : ""}</div></div>
+    <div class="card card-pad"><b style="font-size:24px;color:${m.overdue ? "var(--sev-critical-text)" : "inherit"}">${m.overdue}</b><div class="muted small">overdue${m.overdue ? ` (${Object.entries(m.overdue_by_severity).filter(([, n]) => n).map(([s, n]) => `${n} ${s}`).join(", ")})` : ""}</div></div>
     <div class="card card-pad"><b style="font-size:24px">${m.active}</b><div class="muted small">active · ${m.due_within_7_days} due this week · ${m.awaiting_verification} awaiting verification</div></div>
     <div class="card card-pad"><b style="font-size:24px">${m.sla_compliance === null ? "—" : `${m.sla_compliance}%`}</b><div class="muted small">closed on time (last ${m.window_days} days, ${m.closed_in_window} closed)</div></div>
     <div class="card card-pad"><b style="font-size:24px">${mttr.critical ?? "—"}<span class="muted" style="font-size:14px"> / ${mttr.high ?? "—"} days</span></b><div class="muted small">median time to verified fix: critical / high</div></div>
@@ -71,7 +71,7 @@ function table() {
   return html`<div class="table-scroll"><table class="table"><thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead><tbody>
     ${tasks.map((t) => html`<tr class="clickable" data-open="${t.id}" tabindex="0" style="cursor:pointer">
       <td>${severityPill(t.severity)} <b>${t.title}</b>
-        <div class="muted small"><span class="pill">${SOURCE[t.source_type]}</span> ${t.target}${t.external_ref ? html` · <span class="mono">${t.external_ref}</span>` : ""}${t.reopen_count ? html` · <span style="color:var(--sev-high)">reopened ${t.reopen_count}×</span>` : ""}</div></td>
+        <div class="muted small"><span class="pill">${SOURCE[t.source_type]}</span> ${t.target}${t.external_ref ? html` · <span class="mono">${t.external_ref}</span>` : ""}${t.reopen_count ? html` · <span style="color:var(--sev-high-text)">reopened ${t.reopen_count}×</span>` : ""}</div></td>
       <td>${t.assignee || html`<span class="muted">Unassigned</span>`}</td>
       <td>${dueLabel(t)}</td>
       <td>${statusPill(t)}</td>
@@ -84,7 +84,7 @@ function sidebar(m) {
   const closed = m.trend.reduce((a, w) => a + w.closed, 0);
   return html`<div class="card card-pad">
       <div class="card-head"><h2>By owner</h2></div>
-      ${owners.length ? html`<table class="table"><tbody>${owners.map(([who, n]) => html`<tr><td>${who}</td><td>${n.open} open</td><td>${n.overdue ? html`<b style="color:var(--sev-critical)">${n.overdue} overdue</b>` : ""}</td></tr>`)}</tbody></table>` : html`<p class="muted small">No active tasks.</p>`}
+      ${owners.length ? html`<table class="table"><tbody>${owners.map(([who, n]) => html`<tr><td>${who}</td><td>${n.open} open</td><td>${n.overdue ? html`<b style="color:var(--sev-critical-text)">${n.overdue} overdue</b>` : ""}</td></tr>`)}</tbody></table>` : html`<p class="muted small">No active tasks.</p>`}
       <p class="muted small" style="margin-top:12px">Last 12 weeks: <b>${opened}</b> opened, <b>${closed}</b> closed${m.regressions ? html`, <b>${m.regressions}</b> regression${m.regressions === 1 ? "" : "s"}` : ""}.</p>
     </div>
     <div class="card card-pad" style="margin-top:16px">

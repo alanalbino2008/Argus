@@ -60,7 +60,7 @@ function render() {
     ${!sup.length ? html`<div class="card">${empty("organization", "No suppliers yet", "Add the organisations you depend on — or import your register — and Argus will rate each one and tell you when one drops below what you accept.")}</div>` : html`
     <div class="grid kpis" style="margin-bottom:16px">
       <div class="card card-pad"><b style="font-size:24px">${s.total}</b><div class="muted small">suppliers</div></div>
-      <div class="card card-pad"><b style="font-size:24px;color:${s.below_minimum ? "var(--sev-critical)" : "inherit"}">${s.below_minimum}</b><div class="muted small">below the minimum grade for their tier</div></div>
+      <div class="card card-pad"><b style="font-size:24px;color:${s.below_minimum ? "var(--sev-critical-text)" : "inherit"}">${s.below_minimum}</b><div class="muted small">below the minimum grade for their tier</div></div>
       <div class="card card-pad"><b style="font-size:24px">${s.by_risk.critical + s.by_risk.high}</b><div class="muted small">high or critical risk</div></div>
       <div class="card card-pad"><b style="font-size:24px">${s.not_assessed}</b><div class="muted small">first assessment in progress</div></div>
     </div>

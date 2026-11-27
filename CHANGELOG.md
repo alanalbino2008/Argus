@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.125.0] — Command palette, WCAG 2.1 AA, navigable Settings
+
+### Added
+- **Command palette** (Ctrl K / ⌘K, or **Search…** in the top bar): jump to any page, recent investigation,
+  case or setting, or run an action (new investigation, investigate a person, watch a term, watch a domain,
+  guided scan, theme, shortcuts). Forgiving matching (abbreviations work); keyboard- and screen-reader-friendly.
+- **Settings index**: a sticky, grouped "On this page" index with scroll-spy, and a **Find a setting** filter;
+  chips on phones. Every section is reachable from the palette.
+- **Accessibility CI job**: axe-core checks every page (light, dark, phone, palette, menus — 47 states) against
+  WCAG 2.1 A + AA and fails the build on any violation (`tests/test_accessibility.py`, `tests/a11y/axe_audit.mjs`).
+
+### Fixed (accessibility — all 47 states now pass with zero violations)
+- Text contrast: muted text raised to 4.8:1 in both themes; severity colours gain text and solid shades so
+  pills, figures, banners and badges all meet AA (were as low as 2.1:1).
+- Filter toggles announced as pressed/unpressed buttons instead of broken tabs; named progress bar; the graph
+  side panel is keyboard-scrollable.
+
 ## [1.124.0] — UI/UX pass: navigation, orientation, accessibility
 
 ### Changed

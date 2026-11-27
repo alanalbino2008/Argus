@@ -1,6 +1,7 @@
 // Settings: appearance, account and (for admins) API keys, audit log and plugins.
 
 import { api, download, enc, request } from "../api.js";
+import { buildSettingsIndex } from "../settings-index.js";
 import { empty, ico } from "../components.js";
 import { $, confirmDialog, copyText, formatDate, html, on, openModal, setHTML, timeAgo, toast } from "../dom.js";
 import { emit, on as onState, state } from "../state.js";
@@ -791,7 +792,7 @@ function backupsCard() {
       </form></details>`;
   return html`<div class="card card-pad" style="margin-top:16px" id="backups-card">${head}
     ${b.restore_pending ? html`<div class="callout warn" style="margin-bottom:10px">${ico("alert")}<span>A restore is ready and takes over the next time Argus starts. <button class="btn sm" data-act="backup-restore-cancel">Cancel it</button></span></div>` : ""}
-    <p class="small"${b.health === "error" ? ' style="color:var(--sev-high)"' : ""}>${b.summary}${b.last_backup && b.health !== "error" ? ` · ${sizeText(b.last_backup.size)}` : ""}</p>
+    <p class="small"${b.health === "error" ? ' style="color:var(--sev-high-text)"' : ""}>${b.summary}${b.last_backup && b.health !== "error" ? ` · ${sizeText(b.last_backup.size)}` : ""}</p>
     ${b.enabled ? html`<div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn sm" data-act="backup-now" ${b.running ? "disabled" : ""}>${ico("download")}${b.running ? "Backing up…" : "Back up now"}</button>
       ${b.last_success_at ? html`<button class="btn sm ghost" data-act="backup-drill" title="Restore the newest backup into a scratch folder and check it, keeping nothing">${ico("shield")}Test a restore</button>` : ""}</div>` : ""}
@@ -1163,4 +1164,5 @@ function render() {
     ${admin ? html`${platform ? usersCard() : ""}${platform ? scimCard() : ""}${platform ? integrityCard() : ""}${approvalsCard()}${accessCard()}${retentionCard()}${keysCard()}${auditCard()}${platform ? pluginsCard() : ""}`
       : html`<div class="card" style="margin-top:16px">${empty("shield", "Administration", "API keys and the audit log are available to this workspace's administrators.")}</div>`}
   </div>`);
+  buildSettingsIndex(root);
 }

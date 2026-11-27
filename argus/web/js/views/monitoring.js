@@ -405,7 +405,7 @@ function brandStrip() {
   const cell = (value, label, tone = "") => html`<div style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border);border-radius:8px">
     <div style="font-size:20px;font-weight:700;${tone}">${value}</div><div class="muted small">${label}</div></div>`;
   return html`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px">
-    ${cell(b.open_threats.count, "open threats", b.open_threats.count ? "color:var(--sev-critical)" : "")}
+    ${cell(b.open_threats.count, "open threats", b.open_threats.count ? "color:var(--sev-critical-text)" : "")}
     ${cell(b.found.new, "new lookalikes (90 days)")}
     ${cell(take.down_in_period, "taken down (90 days)")}
     ${cell(take.median_days_to_down != null ? `${take.median_days_to_down} d` : "–", "median time to takedown")}

@@ -60,7 +60,7 @@ function refundsLine(r) {
   const amounts = Object.entries(r.refunded).map(([cur, amt]) => money(amt, cur === "?" ? null : cur)).join(" + ");
   return html`<div class="section-title" style="margin-top:12px">Refunds and disputes</div>
     <p class="small" style="margin:0">${r.refunds ? `${r.refunds} refund${r.refunds === 1 ? "" : "s"} (${amounts})` : "No refunds"} in this period ·
-      ${r.disputes_open ? html`<b style="color:var(--sev-critical)">${r.disputes_open} dispute${r.disputes_open === 1 ? "" : "s"} open</b>` : "no open disputes"}${r.disputes_won || r.disputes_lost ? ` · ${r.disputes_won} won, ${r.disputes_lost} lost` : ""}</p>
+      ${r.disputes_open ? html`<b style="color:var(--sev-critical-text)">${r.disputes_open} dispute${r.disputes_open === 1 ? "" : "s"} open</b>` : "no open disputes"}${r.disputes_won || r.disputes_lost ? ` · ${r.disputes_won} won, ${r.disputes_lost} lost` : ""}</p>
     <p class="muted small" style="margin:4px 0 0">Answer disputes in Stripe's dashboard (Payments → Disputes) with your evidence. Argus puts the account on hold meanwhile and lifts it if you win.</p>`;
 }
 
@@ -168,7 +168,7 @@ function render() {
   setHTML(root, html`<div class="page">
     <div class="page-head">
       <div><h1>Business</h1><p>Your Argus customers at a glance: who pays, what it brings in, how people use their credits, and who needs a hand.</p></div>
-      <div class="page-actions"><div class="segmented" role="tablist" aria-label="Period">${[30, 90, 365].map((n) => html`<button class="${days === n ? "active" : ""}" data-days="${n}">${n === 365 ? "12 months" : `${n} days`}</button>`)}</div></div>
+      <div class="page-actions"><div class="segmented" role="group" aria-label="Period">${[30, 90, 365].map((n) => html`<button class="${days === n ? "active" : ""}" aria-pressed="${days === n}" data-days="${n}">${n === 365 ? "12 months" : `${n} days`}</button>`)}</div></div>
     </div>
     ${d.payments_enabled ? "" : html`<div class="callout warn" style="margin-bottom:16px">${ico("info")}<span>Payments aren't set up on this account service yet, so revenue can't be shown. See "Payments with Stripe" in the deployment guide.</span></div>`}
     <div class="grid kpis">

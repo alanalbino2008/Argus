@@ -111,7 +111,7 @@ function candidateRow(c) {
   return html`<tr>
     <td><span class="pill ${decided ? (c.status === "confirmed" ? "ok" : "") : cls}">${decided ? c.status : label}</span><div class="muted small">${c.score ?? ""}/100</div></td>
     <td><b>${c.label}</b>${c.platform ? html` <span class="muted small">${c.platform}</span>` : ""}<div class="muted small">${KIND[c.kind] || c.kind} · ${c.grade} · found from ${(c.found_from || []).map((f) => f.value).join(", ")}</div>
-      ${c.agree?.length ? html`<div class="small" style="color:var(--ok)">${ico("check")}${c.agree.join("; ")}</div>` : ""}
+      ${c.agree?.length ? html`<div class="small" style="color:var(--ok-text)">${ico("check")}${c.agree.join("; ")}</div>` : ""}
       ${c.conflict?.length ? html`<div class="small error-text">${c.conflict.join("; ")}</div>` : ""}
       ${c.note ? html`<div class="muted small">Note: ${c.note}</div>` : ""}
       ${c.capture ? html`<div class="small ${c.capture.status === "failed" ? "error-text" : "muted"}">${ico("shield")}${{ capturing: "Preserving the page as evidence…", done: "Page preserved as evidence (fingerprinted, in the case)", failed: `Page not preserved: ${c.capture.detail || "error"}` }[c.capture.status] || ""}</div>` : ""}</td>
@@ -281,7 +281,7 @@ function subjectCard(s) {
     ${runView(s.run)}
     ${deeperView(s)}
     <div class="card-head" style="margin-top:16px"><h3>Candidates</h3>
-      <div class="segmented" role="tablist" aria-label="Candidates shown">${[["open", `To review (${s.counts.open})`], ["confirmed", `Theirs (${s.counts.confirmed})`], ["rejected", `Not theirs (${s.counts.rejected})`], ["all", "All"]].map(([k, label]) => html`<button class="${filter === k ? "active" : ""}" data-sj="filter" data-id="${k}">${label}</button>`)}</div></div>
+      <div class="segmented" role="group" aria-label="Candidates shown">${[["open", `To review (${s.counts.open})`], ["confirmed", `Theirs (${s.counts.confirmed})`], ["rejected", `Not theirs (${s.counts.rejected})`], ["all", "All"]].map(([k, label]) => html`<button class="${filter === k ? "active" : ""}" aria-pressed="${filter === k}" data-sj="filter" data-id="${k}">${label}</button>`)}</div></div>
     <p class="muted small">Each is scored against what is known: the same name, photo, town or employer, links to a known account, a known address shown on it. These are possibilities, never identifications: confirm only what you have checked.</p>
     ${shown.length ? html`<div style="overflow-x:auto"><table class="table"><tbody>${shown.map(candidateRow)}</tbody></table></div>`
       : html`<p class="muted small">${s.run ? "Nothing here." : "Search from what is known to find candidates."} Sources are incomplete, so this is not proof of absence.</p>`}
@@ -293,7 +293,7 @@ function draw() {
   setHTML(el, html`<div class="card card-pad">
     <div class="card-head"><h2>${ico("persona")}People</h2>${canEdit() && !editing ? html`<button class="btn sm ghost" data-sj="new">${ico("plus")}Person</button>` : ""}</div>
     <p class="muted small">Enter everything already known about a person (names, usernames, email addresses, phone numbers, account links, town, employer) and Argus searches from all of it at once, through this case's route${caseRef.opsec_mode === "anonymous" ? ", using passive sources only (anonymous case)" : ""}. What it finds is scored against what you know, for you to confirm or reject.</p>
-    ${people.length > 1 ? html`<div class="segmented" role="tablist" aria-label="Person">${people.map((p) => html`<button class="${current?.id === p.id ? "active" : ""}" data-sj="pick" data-id="${p.id}">${p.name}${p.counts.open ? ` (${p.counts.open})` : ""}</button>`)}</div>` : ""}
+    ${people.length > 1 ? html`<div class="segmented" role="group" aria-label="Person">${people.map((p) => html`<button class="${current?.id === p.id ? "active" : ""}" aria-pressed="${current?.id === p.id}" data-sj="pick" data-id="${p.id}">${p.name}${p.counts.open ? ` (${p.counts.open})` : ""}</button>`)}</div>` : ""}
     ${editing && canEdit() ? html`<div style="margin-top:12px">${knownForm(current && people.length && editing === "edit" ? current : null)}</div>` : ""}
   </div>${current && editing !== true ? subjectCard(current) : ""}`);
 }

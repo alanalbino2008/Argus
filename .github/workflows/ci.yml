@@ -251,3 +251,26 @@ jobs:
           name: sbom
           path: sbom-image.cdx.json
           if-no-files-found: warn
+
+  accessibility:
+    name: Accessibility (axe, WCAG 2.1 AA)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      # Playwright drives Chromium; axe-core is the accessibility engine. Both pinned.
+      - name: Browser and axe-core
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.49.1 axe-core@4.10.2
+          npx playwright install --with-deps chromium
+      # Every page in light and dark, on a phone, and with the command palette and the "More" sheet open.
+      # ARGUS_REQUIRE_A11Y turns a missing tool into a failure instead of a silently skipped test.
+      - name: Every page against WCAG 2.1 A + AA
+        env:
+          ARGUS_REQUIRE_A11Y: "1"
+        run: pytest -q tests/test_accessibility.py
