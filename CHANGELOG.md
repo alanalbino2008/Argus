@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.121.0] — Dark-web selector watches
+
+### Added
+- **Watch a term** on the Exposure page: monitor any selector — a brand, a product codename, an
+  executive's address, a username, a card BIN — not just a domain you own. Each check queries the
+  ransomware leak feeds plus (when a provider is configured) a dark-web index and paste/leak-forum
+  sources, raising findings scored, triaged, alerted and exported through the existing exposure engine.
+- Two new finding kinds: **dark-web index mentions** (`darkweb_mention`) and **paste/leak-forum posts**
+  (`paste_leak`), scored conservatively (a bare mention is low; leak-looking or recent raises it) and
+  flagged "looks like a leak: verify".
+- `POST /api/exposure/selectors`; two new provider settings, `ARGUS_DARKWEB_INDEX_URL` and
+  `ARGUS_PASTE_MONITOR_URL` (both off by default), and `ARGUS_DARKWEB_LOOKUPS_MAX`.
+
+### Unchanged by design
+- Argus still **never opens an onion service**: the dark-web source reads only a clearnet index of onion
+  titles and snippets, preserving the reference without downloading criminal content, and needs no Tor
+  route. Both new sources go through the existing SSRF guard and are capped.
+
 ## [1.120.0] — One-box investigate
 
 ### Added

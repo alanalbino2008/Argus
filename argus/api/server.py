@@ -540,6 +540,7 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(*background, return_exceptions=True)
         if exposure_task is None:
             await app.state.exposure_monitor.sources.close()
+            await app.state.exposure_monitor.darkweb.close()
         event_bus.unsubscribe_all(ws_dispatcher)
         runs = [t for t in PLAYBOOK_RUNS.values() if not t.done()]
         for task in runs:

@@ -28,13 +28,20 @@ from urllib.parse import urlsplit
 SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 RECENT = timedelta(days=365)
 PASSWORD_CLASSES = {"passwords", "password hints", "auth tokens", "historical passwords"}
-KINDS = ("stealer_log", "ransomware_post", "domain_breach", "breach_account")
+KINDS = ("stealer_log", "ransomware_post", "domain_breach", "breach_account", "darkweb_mention", "paste_leak")
 KIND_LABEL = {
     "stealer_log": "infostealer infection",
     "ransomware_post": "ransomware leak-site post",
     "domain_breach": "breach of the organisation",
     "breach_account": "breached staff account",
+    "darkweb_mention": "dark-web index mention",
+    "paste_leak": "paste / leak-forum post",
 }
+# Words that turn a bare mention into a likely leak (raise the severity).
+LEAK_TERMS = (
+    "dump", "combolist", "combo", "database", "db leak", "leaked", "leak", "breach", "fullz", "cvv",
+    "credential", "password", "stealer", "logs", "rdp", "accounts", "base", "sql", "exfil", "0day",
+)  # fmt: skip
 _LEGAL_SUFFIX = re.compile(
     r"\b(inc|incorporated|ltd|limited|llc|plc|gmbh|ag|sa|sas|srl|bv|nv|co|corp|corporation|company|group|holdings?)\b\.?"
 )
@@ -216,6 +223,70 @@ def ransomware_findings(
     return findings
 
 
+# ---------------------------------------------------------------------------- dark web & pastes
+def _leak_signal(*texts: str) -> bool:
+    """Does any text read like a credential leak rather than a passing mention?"""
+    blob = " ".join(t.lower() for t in texts if t)
+    return any(re.search(rf"\b{re.escape(term)}\b", blob) for term in LEAK_TERMS)
+
+
+def _mention_severity(selector: str, texts: tuple[str, ...], when: Any, now: datetime) -> str:
+    """Conservative: a bare mention is low; leak-looking or recent raises it."""
+    leak = _leak_signal(*texts)
+    fresh = recent(when, now)
+    if leak and fresh:
+        return "high"
+    if leak or fresh:
+        return "medium"
+    return "low"
+
+
+def darkweb_findings(selector: str, hits: list[dict[str, Any]], now: datetime) -> list[Finding]:
+    """Onion-index listings mentioning the selector (read from the clearnet index, never the onion)."""
+    findings, seen = [], set()
+    for h in hits:
+        if not isinstance(h, dict):
+            continue
+        onion, title, snippet = str(h.get("onion") or ""), str(h.get("title") or ""), str(h.get("snippet") or "")
+        when = h.get("date")
+        key = f"dw:{selector.lower()}:{onion or title}:{str(when or '')[:10]}"
+        if key in seen:
+            continue
+        seen.add(key)
+        severity = _mention_severity(selector, (title, snippet), when, now)
+        findings.append(Finding(
+            key=key, kind="darkweb_mention", severity=severity,
+            title=f"“{selector}” on a dark-web site: {title[:120]}" if title else f"“{selector}” on a dark-web site",
+            subject=selector, occurred_at=str(when)[:10] if when else None,
+            details={"onion": onion[:300], "is_onion": bool(h.get("is_onion")), "snippet": snippet[:500],
+                     "source": str(h.get("source") or "dark-web index")[:60], "leak_signal": _leak_signal(title, snippet)},
+        ))  # fmt: skip
+    return findings
+
+
+def paste_findings(selector: str, hits: list[dict[str, Any]], now: datetime) -> list[Finding]:
+    """Paste-site and leak-forum posts mentioning the selector."""
+    findings, seen = [], set()
+    for h in hits:
+        if not isinstance(h, dict):
+            continue
+        url, title, snippet = str(h.get("url") or ""), str(h.get("title") or ""), str(h.get("snippet") or "")
+        when = h.get("date")
+        key = f"pl:{selector.lower()}:{url or title}:{str(when or '')[:10]}"
+        if key in seen:
+            continue
+        seen.add(key)
+        severity = _mention_severity(selector, (title, snippet), when, now)
+        findings.append(Finding(
+            key=key, kind="paste_leak", severity=severity,
+            title=f"“{selector}” in a paste/leak-forum post: {title[:120]}" if title else f"“{selector}” in a paste",
+            subject=selector, occurred_at=str(when)[:10] if when else None,
+            details={"url": url[:300], "snippet": snippet[:500], "source": str(h.get("source") or "paste site")[:60],
+                     "leak_signal": _leak_signal(title, snippet)},
+        ))  # fmt: skip
+    return findings
+
+
 # ---------------------------------------------------------------------------- reporting
 def worst(severities: list[str]) -> str:
     return max(severities, key=lambda s: SEVERITY_ORDER.get(s, 0)) if severities else "low"
@@ -242,6 +313,12 @@ def headline(domain: str, new: list[dict[str, Any]], *, baseline: bool, subject_
         breaches = sorted({f["details"].get("breach_title", "?") for f in by_kind["breach_account"]})
         parts.append(f"{len(accounts)} staff account{'s' if len(accounts) != 1 else ''} in "
                      f"{'a new breach' if len(breaches) == 1 else f'{len(breaches)} breaches'} ({', '.join(breaches[:3])})")  # fmt: skip
+    if by_kind["darkweb_mention"]:
+        n = len(by_kind["darkweb_mention"])
+        parts.append(f"{n} dark-web site mention{'s' if n != 1 else ''}")
+    if by_kind["paste_leak"]:
+        n = len(by_kind["paste_leak"])
+        parts.append(f"{n} paste/leak-forum post{'s' if n != 1 else ''}")
     prefix = "First exposure check" if baseline else "New exposure"
     return f"{prefix} for {who}: " + "; ".join(parts)
 

@@ -50,6 +50,7 @@ def _watch(row: ExposureWatchRow) -> dict[str, Any]:
         "workspace_id": row.workspace_id,
         "scope": row.scope,
         "domain": row.domain or None,
+        "selector": row.domain if row.scope == "selector" else None,
         "organisation": row.organisation,
         "basis": row.basis,
         "enabled": bool(row.enabled),

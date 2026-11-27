@@ -203,6 +203,10 @@ def from_exposure(finding: dict[str, Any]) -> dict[str, Any]:
         "ransomware_post": "Start incident response (or, for a supplier, contact them and assess what data they held).",
         "domain_breach": "Confirm what was taken and that the cause has been fixed.",
         "breach_account": "Force a password reset where passwords were exposed and check for password reuse.",
+        "darkweb_mention": "Review the dark-web listing: confirm whether it concerns you, and what (if anything) is "
+        "exposed. Preserve the reference; do not visit the onion service.",
+        "paste_leak": "Review the paste/leak-forum post for exposed data. If credentials appear, reset them and "
+        "revoke sessions; preserve the reference as evidence.",
     }.get(finding["kind"], "")
     return {
         "source_type": "exposure",

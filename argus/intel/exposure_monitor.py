@@ -28,12 +28,15 @@ from typing import Any
 from argus.accounts import features
 from argus.core.settings import Settings
 from argus.intel.breach_sources import BreachSources, SourceError, SourceUnavailable
+from argus.intel.darkweb import DarkWebSources
 from argus.intel.exposure import (
     SEVERITY_ORDER,
     Finding,
     account_findings,
+    darkweb_findings,
     domain_breach_findings,
     headline,
+    paste_findings,
     ransomware_findings,
     stealer_findings,
     worst,
@@ -55,15 +58,21 @@ class ExposureMonitor:
         *,
         suppliers: SupplierLister,
         sources: BreachSources | None = None,
+        darkweb: DarkWebSources | None = None,
         on_new: Callable[[str, list[dict[str, Any]]], Awaitable[None]] | None = None,
     ):
         self.repo = repo
         self.settings = settings
         self.suppliers = suppliers
         self.sources = sources or BreachSources(settings)
+        self.darkweb = darkweb or DarkWebSources(settings)
         self.on_new = on_new  # e.g. open remediation tasks for qualifying findings
         self._last_purge = 0.0
         self._running: set[asyncio.Task[Any]] = set()
+
+    def capabilities(self) -> dict[str, bool]:
+        """What every source can do here, for the page (breach sources + dark-web sources)."""
+        return {**self.sources.capabilities(), **self.darkweb.capabilities()}
 
     # ------------------------------------------------------------------ the loop
     async def tick(self) -> list[dict[str, Any]]:
@@ -98,6 +107,7 @@ class ExposureMonitor:
                 await asyncio.sleep(self.settings.exposure_poll_seconds)
         finally:
             await self.sources.close()
+            await self.darkweb.close()
 
     # ------------------------------------------------------------------ one check
     async def check(self, watch: dict[str, Any]) -> dict[str, Any]:
@@ -125,6 +135,20 @@ class ExposureMonitor:
             report[name] = {"status": "ok", "found": previous.get("found", 0) + (len(result) if result else 0)}
             return result
 
+        if watch["scope"] == "selector":
+            selector = watch["domain"]  # the selector is stored in the watch's key column
+            names[selector] = watch["organisation"] or selector
+            hits = await ask("darkweb_index", self.darkweb.index(selector))
+            if hits:
+                findings += darkweb_findings(selector, hits, now)
+            pastes = await ask("paste_monitor", self.darkweb.pastes(selector))
+            if pastes:
+                findings += paste_findings(selector, pastes, now)
+            posts = await ask("ransomware", self.sources.ransomware_posts(selector))
+            if posts:
+                findings += ransomware_findings(selector, posts, now, names=(selector,))
+            return await self._finish(watch, findings, report, supplier_ids, names)
+
         catalogue = await ask("breach_catalogue", self.sources.catalogue()) or {}
         if watch["scope"] == "domain":
             domain, organisation = watch["domain"], watch["organisation"]
@@ -150,6 +174,17 @@ class ExposureMonitor:
                     if posts:
                         findings += ransomware_findings(domain, posts, now, names=(supplier["name"],))
 
+        return await self._finish(watch, findings, report, supplier_ids, names)
+
+    async def _finish(
+        self,
+        watch: dict[str, Any],
+        findings: list[Finding],
+        report: dict[str, Any],
+        supplier_ids: dict[str, str],
+        names: dict[str, str],
+    ) -> dict[str, Any]:
+        """Record a check's findings, raise any alert, and open remediation — shared by every scope."""
         statuses = [r["status"] for r in report.values()]
         ran = [s for s in statuses if s == "ok"]
         status = "error" if not ran else "partial" if "error" in statuses else "ok"

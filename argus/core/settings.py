@@ -106,6 +106,26 @@ class Settings(BaseSettings):
         default="https://api.ransomware.live/v2",
         description="Ransomware leak-site research feed (ransomware.live API); empty turns it off",
     )
+    darkweb_index_url: str = Field(
+        default="",
+        description="Dark-web index search provider (a JSON search API over onion-site titles and snippets, e.g. a "
+        "self-hosted Ahmia/Elasticsearch or a licensed index). The selector is sent as the 'q' parameter. Argus reads "
+        "only this clearnet index; it never fetches an onion service itself. Empty turns dark-web index watches off",
+    )
+    darkweb_index_api_key: SecretStr | None = Field(
+        default=None, description="API key for the dark-web index provider (sent as Bearer, server-side only)"
+    )
+    paste_monitor_url: str = Field(
+        default="",
+        description="Paste/leak-forum search provider (a JSON search API over paste sites and leak-forum indexes). "
+        "The selector is sent as the 'q' parameter. Reached from the server only. Empty turns paste watches off",
+    )
+    paste_monitor_api_key: SecretStr | None = Field(
+        default=None, description="API key for the paste/leak-forum provider (sent as Bearer, server-side only)"
+    )
+    darkweb_lookups_max: int = Field(
+        default=100, ge=0, le=500, description="At most this many dark-web/paste results kept per selector check"
+    )
     exposure_monitoring_enabled: bool = Field(default=True, description="Run the breach and dark-web exposure loop")
     exposure_poll_seconds: float = Field(
         default=300.0, gt=0, description="How often due exposure checks are looked for"

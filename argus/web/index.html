@@ -608,6 +608,23 @@
       <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start watching</button></div>
     </form>
   </div>
+  <div id="selector-modal" class="modal-root" aria-hidden="true">
+    <form class="modal" role="dialog" aria-labelledby="selector-title" id="selector-form" novalidate>
+      <div class="modal-head">
+        <div><h2 id="selector-title">Watch a term on the dark web</h2><p>Watch for any term — a brand, a product codename, an executive's address, a username — across a dark-web index, paste sites and the leak feeds. Argus reads the indexes only; it never opens an onion service.</p></div>
+        <button type="button" class="btn ghost sm icon" data-close aria-label="Close"><svg fill="none" stroke="currentColor" stroke-width="1.8"><use href="#i-x"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <div class="field"><label class="label" for="sel-term">Term to watch</label><input id="sel-term" class="input" maxlength="200" placeholder="Project Falcon, or ceo@acme.com, or acme_admin" autocomplete="off" spellcheck="false">
+          <div class="hint">Anything you want to be told about: not just a domain you own.</div></div>
+        <div class="field"><label class="label" for="sel-label">Name for this watch <span class="muted small">optional</span></label><input id="sel-label" class="input" maxlength="200" placeholder="Unreleased product codename" autocomplete="off"></div>
+        <div class="field"><label class="label" for="sel-basis">Basis</label><input id="sel-basis" class="input" maxlength="300" value="Our brand and assets, monitored by the security team"></div>
+        <label class="check"><input type="checkbox" id="sel-authorized"> <span>There is a legitimate basis for watching this term.</span></label>
+        <div class="error-text" id="sel-error" role="alert"></div>
+      </div>
+      <div class="modal-foot"><button class="btn" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Start watching</button></div>
+    </form>
+  </div>
   <div id="triage-modal" class="modal-root" aria-hidden="true">
     <form class="modal" role="dialog" aria-labelledby="triage-title" id="triage-form" novalidate>
       <div class="modal-head"><div><h2 id="triage-title">Mark as resolved</h2><p>Recorded with your name in the audit log.</p></div>

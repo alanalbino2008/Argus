@@ -38,6 +38,14 @@ class WatchRequest(BaseModel):
     )
 
 
+class SelectorWatchRequest(BaseModel):
+    selector: str = Field(min_length=2, max_length=200, examples=["Acme Corp", "projectfalcon", "ceo@acme.com"],
+                          description="Any term to watch for: a brand, codename, username, email or card BIN")  # fmt: skip
+    label: str = Field(default="", max_length=200, description="A friendly name for this watch")
+    basis: str = Field(min_length=5, max_length=300, examples=["Our brand; monitored for leaks by the SOC"])
+    authorized: bool = Field(description="Confirms there is a legitimate basis for watching this term")
+
+
 class WatchUpdate(BaseModel):
     enabled: bool | None = None
     organisation: str | None = Field(default=None, max_length=200)
@@ -87,7 +95,7 @@ async def exposure_overview(
         disclosed = len({f["account"] for f in shown if f.get("account")})
         await audit(request, ws.principal, "exposure.reveal", None, details={"addresses": disclosed})
     return {
-        "capabilities": request.app.state.exposure_monitor.sources.capabilities(),
+        "capabilities": request.app.state.exposure_monitor.capabilities(),
         "watches": await repo.list_watches(workspace_id=ws.id),
         "summary": summary,
         "findings": _ordered(shown),
@@ -115,6 +123,26 @@ async def create_watch(body: WatchRequest, request: Request, ws: WorkspaceContex
         raise HTTPException(status_code=409, detail=f"{domain} is already monitored for exposure")
     await audit(request, ws.principal, "exposure.watch_create", watch["id"],
                 details={"domain": domain, "organisation": body.organisation, "basis": body.basis})  # fmt: skip
+    _kick(request)
+    return watch
+
+
+@router.post("/selectors", status_code=201)
+async def create_selector_watch(body: SelectorWatchRequest, request: Request, ws: WorkspaceContext = ANALYST):
+    """Watch any term — not just a domain you own — across the dark-web index, paste sites and leak feeds."""
+    if not body.authorized:
+        raise HTTPException(status_code=422, detail="Confirm there is a legitimate basis for watching this term")
+    selector = " ".join(body.selector.split()).strip()
+    if len(selector) < 2:
+        raise HTTPException(status_code=422, detail="Enter a term to watch")
+    watch = await _repo(request).create_watch(
+        workspace_id=ws.id, scope="selector", domain=selector, organisation=body.label.strip(),
+        basis=body.basis.strip(), by=ws.principal.name,
+    )  # fmt: skip
+    if watch is None:
+        raise HTTPException(status_code=409, detail=f"“{selector}” is already watched")
+    await audit(request, ws.principal, "exposure.watch_create", watch["id"],
+                details={"selector": selector, "label": body.label, "basis": body.basis, "scope": "selector"})  # fmt: skip
     _kick(request)
     return watch
 

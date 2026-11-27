@@ -22,8 +22,12 @@ const SECTIONS = [
     advice: "The organisation itself was breached. Check what data was taken and that the weakness behind the breach has been fixed. For a supplier, ask for their incident report." },
   { kind: "breach_account", title: "Staff accounts in breaches", icon: "email",
     advice: "Staff used work addresses on services that were breached. Where passwords were exposed, force a reset and check the password was not reused for work systems. Enforce MFA, and block known-breached passwords." },
+  { kind: "darkweb_mention", title: "Dark-web index mentions", icon: "eye",
+    advice: "A watched term appears on a dark-web site, found through a clearnet index — Argus never opens the onion service. Confirm whether it concerns you and what is exposed. Preserve the reference; do not browse to it yourself." },
+  { kind: "paste_leak", title: "Paste & leak-forum posts", icon: "breach",
+    advice: "A watched term appears on a paste site or leak forum. Review the post for exposed data; if credentials appear, reset them and revoke sessions. Preserve the reference as evidence." },
 ];
-const SOURCE_LABEL = { breach_catalogue: "Breach catalogue", domain_search: "Domain search", stealer_logs: "Stealer logs", ransomware: "Ransomware leak sites" };
+const SOURCE_LABEL = { breach_catalogue: "Breach catalogue", domain_search: "Domain search", stealer_logs: "Stealer logs", ransomware: "Ransomware leak sites", darkweb_index: "Dark-web index", paste_monitor: "Paste & leak forums" };
 
 const canEdit = () => ["analyst", "admin"].includes(state.workspace?.role);
 const subjectLabel = (f) => (f.supplier_id ? html`<span class="pill">supplier</span> ${f.subject_name}` : f.subject_name);
@@ -40,13 +44,13 @@ function watchesCard() {
     ${!watches.length ? empty("eye", "Nothing watched yet", "Add your organisation's domain to find breached staff accounts, infostealer infections and ransomware leak-site posts.")
       : html`<div class="table-scroll"><table class="table"><thead><tr><th>What</th><th>Last check</th><th class="hide-sm">Sources</th><th></th></tr></thead><tbody>
       ${watches.map((w) => html`<tr style="${w.enabled ? "" : "opacity:.6"}">
-        <td><b>${w.scope === "suppliers" ? "Supplier register" : w.domain}</b>${w.demo ? html` <span class="pill">demo</span>` : ""}
-          <div class="muted small">${w.scope === "suppliers" ? "Public breach and ransomware reports about every supplier" : w.organisation || ""}</div></td>
+        <td><b>${w.scope === "suppliers" ? "Supplier register" : w.scope === "selector" ? w.selector : w.domain}</b>${w.scope === "selector" ? html` <span class="pill">term</span>` : ""}${w.demo ? html` <span class="pill">demo</span>` : ""}
+          <div class="muted small">${w.scope === "suppliers" ? "Public breach and ransomware reports about every supplier" : w.scope === "selector" ? (w.organisation || "Dark-web index, paste sites and leak feeds") : w.organisation || ""}</div></td>
         <td>${w.last_checked_at ? html`${timeAgo(w.last_checked_at)}<div class="muted small">${w.last_status === "ok" ? "" : w.last_message || ""}</div>` : html`<span class="muted">pending</span>`}</td>
         <td class="hide-sm"><div style="display:flex;gap:4px;flex-wrap:wrap">${sourcePills(w)}</div></td>
         <td class="actions">${canEdit() && !w.demo ? html`<button class="btn sm ghost" data-act="check" data-id="${w.id}" title="Check now">${ico("compare")}</button>
           <button class="btn sm ghost" data-act="toggle" data-id="${w.id}" data-enabled="${w.enabled}">${w.enabled ? "Pause" : "Resume"}</button>` : ""}
-          ${state.workspace?.role === "admin" && w.scope === "domain" ? html`<button class="btn sm ghost icon" data-act="remove" data-id="${w.id}" aria-label="Stop watching ${w.domain}" title="Stop watching">${ico("trash")}</button>` : ""}</td>
+          ${state.workspace?.role === "admin" && (w.scope === "domain" || w.scope === "selector") ? html`<button class="btn sm ghost icon" data-act="remove" data-id="${w.id}" aria-label="Stop watching" title="Stop watching">${ico("trash")}</button>` : ""}</td>
       </tr>`)}</tbody></table></div>`}
   </div>`;
 }
@@ -55,6 +59,8 @@ function details(f) {
   const d = f.details || {};
   if (f.kind === "stealer_log") return html`Credentials for ${d.website_count} site${d.website_count === 1 ? "" : "s"}: <span class="mono">${(d.websites || []).slice(0, 6).join(", ")}</span>`;
   if (f.kind === "ransomware_post") return html`${d.group} · posted ${d.published ? formatDay(d.published) : "?"}${d.sector ? ` · ${d.sector}` : ""}${d.match === "name" ? html` · <b>matched by name only: verify</b>` : ""}`;
+  if (f.kind === "darkweb_mention") return html`<span class="mono">${d.onion || ""}</span>${d.source ? ` · ${d.source}` : ""}${d.leak_signal ? html` · <b>looks like a leak: verify</b>` : ""}${d.snippet ? html`<div class="muted small" style="margin-top:2px">${d.snippet.slice(0, 160)}</div>` : ""}`;
+  if (f.kind === "paste_leak") return html`${d.url ? html`<span class="mono">${d.url}</span>` : ""}${d.source ? ` · ${d.source}` : ""}${d.leak_signal ? html` · <b>looks like a leak: verify</b>` : ""}${d.snippet ? html`<div class="muted small" style="margin-top:2px">${d.snippet.slice(0, 160)}</div>` : ""}`;
   return html`${d.breach_date ? `Breached ${formatDay(d.breach_date)}` : ""}${(d.data_classes || []).length ? ` · ${d.data_classes.slice(0, 5).join(", ")}` : ""}`;
 }
 
@@ -120,10 +126,12 @@ function render() {
       <div class="page-actions">
         ${canEdit() ? html`<button class="btn sm" data-act="reveal" aria-pressed="${reveal}">${ico("eye")}${reveal ? "Mask addresses" : "Show addresses"}</button>
           <button class="btn sm" data-act="export">${ico("download")}Export for resets</button>
+          <button class="btn sm" data-act="add-term">${ico("eye")}Watch a term</button>
           <button class="btn sm primary" data-act="add">${ico("plus")}Watch a domain</button>` : ""}
       </div>
     </div>
     ${!caps.domain_search ? html`<div class="guide-warning info" style="margin-bottom:16px">${ico("info")}<div class="small">Breached staff accounts and infostealer infections need a <b>Have I Been Pwned</b> API key (<code>ARGUS_HIBP_API_KEY</code>), and HIBP only answers for domains you have verified you own. Breaches of organisations and ransomware leak-site posts work without one.</div></div>` : ""}
+    ${!caps.darkweb_index && !caps.paste_monitor ? html`<div class="guide-warning info" style="margin-bottom:16px">${ico("info")}<div class="small">Watch-a-term covers the <b>ransomware leak feeds</b> out of the box. For the <b>dark-web index</b> and <b>paste/leak-forum</b> sources, point Argus at a provider (<code>ARGUS_DARKWEB_INDEX_URL</code>, <code>ARGUS_PASTE_MONITOR_URL</code>). Argus reads only those indexes — it never opens an onion service.</div></div>` : ""}
     <div class="grid kpis" style="margin-bottom:16px">
       <div class="card card-pad"><b style="font-size:24px;color:${s.by_kind.stealer_log ? "var(--sev-critical)" : "inherit"}">${s.by_kind.stealer_log}</b><div class="muted small">infostealer infections</div></div>
       <div class="card card-pad"><b style="font-size:24px;color:${s.by_kind.ransomware_post ? "var(--sev-critical)" : "inherit"}">${s.by_kind.ransomware_post}</b><div class="muted small">ransomware leak-site posts</div></div>
@@ -154,6 +162,7 @@ export function initExposure(el) {
     const { act, id } = btn.dataset;
     try {
       if (act === "add") { $("#exposure-form").reset(); $("#exp-error").textContent = ""; return openModal("exposure-modal"); }
+      if (act === "add-term") { $("#selector-form").reset(); $("#sel-error").textContent = ""; return openModal("selector-modal"); }
       if (act === "reveal") { reveal = !reveal; if (reveal) toast("Full addresses shown. This is recorded in the audit log.", "info", 4000); return refresh(); }
       if (act === "export") return download("/api/exposure/export.csv", "exposure.csv");
       if (act === "track") return trackFinding({ type: "exposure", finding_id: id });
@@ -168,7 +177,7 @@ export function initExposure(el) {
       if (act === "check") { await api.post(`/api/exposure/watches/${enc(id)}/check`); toast("Checking now. Results appear in a minute or two.", "success"); }
       if (act === "toggle") await api.patch(`/api/exposure/watches/${enc(id)}`, { enabled: btn.dataset.enabled !== "true" });
       if (act === "remove") {
-        if (!(await confirmDialog({ title: "Stop watching this domain?", message: "Its findings are deleted too.", confirm: "Stop watching", danger: true }))) return;
+        if (!(await confirmDialog({ title: "Stop watching this?", message: "Its findings are deleted too.", confirm: "Stop watching", danger: true }))) return;
         await api.del(`/api/exposure/watches/${enc(id)}`);
         toast("No longer watched");
       }
@@ -196,6 +205,19 @@ export function initExposure(el) {
       const w = await api.post("/api/exposure/watches", { domain: $("#exp-domain").value.trim(), organisation: $("#exp-org").value.trim(), basis: $("#exp-basis").value.trim(), authorized: true });
       closeModal("exposure-modal");
       toast(`${w.domain} is now watched; the first check is running`, "success", 5000);
+      await refresh();
+    } catch (err) {
+      error.textContent = err.message;
+    }
+  });
+  $("#selector-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const error = $("#sel-error");
+    if (!$("#sel-authorized").checked) return (error.textContent = "Confirm there is a legitimate basis for watching this term.");
+    try {
+      const w = await api.post("/api/exposure/selectors", { selector: $("#sel-term").value.trim(), label: $("#sel-label").value.trim(), basis: $("#sel-basis").value.trim(), authorized: true });
+      closeModal("selector-modal");
+      toast(`“${w.selector}” is now watched; the first check is running`, "success", 5000);
       await refresh();
     } catch (err) {
       error.textContent = err.message;

@@ -211,10 +211,35 @@ def client(make_client):
     return make_client(monitors_enabled="false", notifications_enabled="false", report_schedules_enabled="false")
 
 
-def install(client, sources):
+class FakeDarkWeb:
+    """A stand-in for DarkWebSources: returns canned index/paste hits, or raises to simulate 'off'."""
+
+    def __init__(self):
+        self.index_hits: list | Exception = SourceUnavailable("The dark-web index is off")
+        self.paste_hits: list | Exception = SourceUnavailable("The paste/leak-forum monitor is off")
+
+    def capabilities(self):
+        return {"darkweb_index": not isinstance(self.index_hits, Exception),
+                "paste_monitor": not isinstance(self.paste_hits, Exception)}  # fmt: skip
+
+    async def index(self, selector):
+        if isinstance(self.index_hits, Exception):
+            raise self.index_hits
+        return self.index_hits
+
+    async def pastes(self, selector):
+        if isinstance(self.paste_hits, Exception):
+            raise self.paste_hits
+        return self.paste_hits
+
+    async def close(self):
+        pass
+
+
+def install(client, sources, darkweb=None):
     app = client.app
     app.state.exposure_monitor = ExposureMonitor(
-        app.state.exposure, app.state.settings, sources=sources,
+        app.state.exposure, app.state.settings, sources=sources, darkweb=darkweb or FakeDarkWeb(),
         suppliers=lambda ws: app.state.suppliers.list_suppliers(workspace_id=ws),
     )  # fmt: skip
     return app.state.exposure_monitor
@@ -297,6 +322,69 @@ def test_suppliers_are_swept_for_breaches_and_ransomware(client):
     assert alert["target"] == "supplier register" and alert["severity"] == "critical"
     [listed] = client.get("/api/suppliers").json()["suppliers"]
     assert listed["exposure"] == {"ransomware_post": 1, "domain_breach": 1}
+
+
+# ---------------------------------------------------------------------------- selector (dark-web) watches
+def selector_watch(client, selector="Project Falcon", **extra):
+    body = {"selector": selector, "label": "Codename", "basis": "Our unreleased product codename", "authorized": True,
+            **extra}  # fmt: skip
+    return client.post("/api/exposure/selectors", json=body)
+
+
+def test_a_selector_watch_covers_the_dark_web_pastes_and_leak_feeds(client):
+    sources = FakeSources()
+    now = datetime.now(timezone.utc).isoformat()
+    sources.posts = {"Project Falcon": [{"victim": "Project Falcon", "group": "akira", "discovered": now}]}
+    darkweb = FakeDarkWeb()
+    darkweb.index_hits = [{"title": "Falcon database dump", "onion": "http://abc123.onion/t/9",
+                           "snippet": "Project Falcon credentials for sale", "date": now, "is_onion": True}]  # fmt: skip
+    darkweb.paste_hits = [
+        {"title": "falcon leak", "url": "https://paste.example/xy", "snippet": "combolist", "date": now}
+    ]
+    monitor = install(client, sources, darkweb)
+
+    created = selector_watch(client)
+    assert created.status_code == 201, created.text
+    assert created.json()["scope"] == "selector" and created.json()["selector"] == "Project Falcon"
+
+    [outcome] = client.portal.call(monitor.tick)
+    assert outcome["status"] == "ok" and outcome["new"] == 3  # index + paste + ransomware
+    data = client.get("/api/exposure?status=all").json()
+    kinds = {f["kind"] for f in data["findings"]}
+    assert kinds == {"darkweb_mention", "paste_leak", "ransomware_post"}
+    dw = next(f for f in data["findings"] if f["kind"] == "darkweb_mention")
+    # a leak-looking, recent mention is raised to high; the onion is kept but never fetched
+    assert dw["severity"] == "high" and dw["details"]["onion"] == "http://abc123.onion/t/9"
+    assert dw["subject"] == "Project Falcon" and dw["details"]["leak_signal"] is True
+    caps = data["capabilities"]
+    assert caps["darkweb_index"] is True and caps["paste_monitor"] is True
+
+    # Re-running finds nothing new.
+    client.post(f"/api/exposure/watches/{created.json()['id']}/check")
+    assert client.portal.call(monitor.tick)[0]["new"] == 0
+
+
+def test_selector_watch_validation_and_dedup(client):
+    install(client, FakeSources())
+    assert selector_watch(client, authorized=False).status_code == 422
+    assert selector_watch(client, selector="x").status_code == 422  # too short
+    first = selector_watch(client, selector="Acme Corp")
+    assert first.status_code == 201
+    assert selector_watch(client, selector="Acme Corp").status_code == 409  # already watched
+    # a selector and a domain of the same text are different scopes and both allowed
+    assert watch(client, domain="acme.com").status_code == 201
+
+
+def test_selector_watch_without_providers_reports_them_unavailable(client):
+    sources = FakeSources()
+    sources.posts = {}
+    monitor = install(client, sources)  # FakeDarkWeb defaults to "off"
+    created = selector_watch(client)
+    [outcome] = client.portal.call(monitor.tick)
+    assert outcome["status"] in ("ok", "partial")  # unavailable providers are not errors
+    saved = next(w for w in client.get("/api/exposure").json()["watches"] if w["id"] == created.json()["id"])
+    assert saved["sources"]["darkweb_index"]["status"] == "unavailable"
+    assert saved["sources"]["paste_monitor"]["status"] == "unavailable"
 
 
 # ---------------------------------------------------------------------------- privacy, triage and the API
