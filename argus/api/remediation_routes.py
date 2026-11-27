@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import io
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -11,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.core import csvsafe
 from argus.intel.paths import find_attack_paths
 from argus.intel.remediation import (
     ACTIVE,
@@ -193,7 +193,7 @@ async def set_policy(body: Policy, request: Request, ws: WorkspaceContext = ADMI
 async def export_tasks(request: Request, ws: WorkspaceContext = VIEWER):
     tasks = await _repo(request).list_tasks(workspace_id=ws.id)
     out = io.StringIO()
-    writer = csv.writer(out)
+    writer = csvsafe.writer(out)
     writer.writerow(["ID", "Title", "Severity", "Status", "Assignee", "Due", "Overdue", "Source", "Target", "Ticket",
                      "Created", "Closed", "Verified by", "Reopened"])  # fmt: skip
     for t in tasks:

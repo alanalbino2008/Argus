@@ -117,3 +117,16 @@ async def test_the_cap_limits_results():
     dw._search = fake_search  # type: ignore[method-assign]
     assert len(await dw.index("x")) == 1
     await dw.close()
+
+
+def test_a_recrawled_listing_is_the_same_finding_not_a_new_one():
+    first = darkweb_findings("Acme", [{"title": "acme dump", "onion": "http://x.onion/t", "date": "2026-11-01"}], NOW)
+    recrawl = darkweb_findings("Acme", [{"title": "acme dump", "onion": "http://x.onion/t", "date": "2026-11-19"}], NOW)
+    assert first[0].key == recrawl[0].key  # the index re-saw it; it is not news
+    p1 = paste_findings("Acme", [{"title": "leak", "url": "https://p.ex/1", "date": "2026-11-01"}], NOW)
+    p2 = paste_findings("Acme", [{"title": "leak", "url": "https://p.ex/1", "date": "2026-11-02"}], NOW)
+    assert p1[0].key == p2[0].key
+    # without a link, title + date still tells two different posts apart
+    a = paste_findings("Acme", [{"title": "leak", "date": "2026-11-01"}], NOW)
+    b = paste_findings("Acme", [{"title": "leak", "date": "2026-11-05"}], NOW)
+    assert a[0].key != b[0].key

@@ -1145,6 +1145,14 @@ async def investigate(body: InvestigateRequest, request: Request, ws: WorkspaceC
                                                       known=known, by=ws.principal.name)  # fmt: skip
     await audit(request, ws.principal, "subject.create", subject["id"],
                 details={"case": case["id"], "via": "investigate", "field": field, "purpose": case["purpose"]})  # fmt: skip
-    started = await start(request.app, case, subject, ws.principal, ws.id, rounds=body.rounds, fresh=False,
-                          reason="investigate", request=request)  # fmt: skip
-    return {"case_id": case["id"], "subject_id": subject["id"], "field": field, "name": name, "subject": started}
+    # The case and person now exist. If the search cannot start (scan rate limit, a private-network website,
+    # an anonymous case without its route), say so but still hand back the case: failing the whole request
+    # would leave an orphaned case, and a retry would create a duplicate.
+    try:
+        started = await start(request.app, case, subject, ws.principal, ws.id, rounds=body.rounds, fresh=False,
+                              reason="investigate", request=request)  # fmt: skip
+        problem = None
+    except HTTPException as exc:
+        started, problem = subject, str(exc.detail)
+    return {"case_id": case["id"], "subject_id": subject["id"], "field": field, "name": name, "subject": started,
+            "started": problem is None, "problem": problem}  # fmt: skip

@@ -303,7 +303,8 @@ const FORMS = {
       purpose: $("#inv-purpose").value.trim(), authorization: $("#inv-authorization").value.trim(),
       rounds: Number($("#inv-rounds").value), confirmed: true });
     closeModal("investigate-modal");
-    toast("Investigation started: searching from what you typed", "success");
+    if (r.started) toast("Investigation started: searching from what you typed", "success");
+    else toast(`Case opened, but the search did not start: ${r.problem}. Start it from the People tab.`, "error", 8000);
     openCasePeople(r.case_id);
   },
   "case-form": async () => {

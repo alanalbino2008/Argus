@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.123.1] — Correctness review (whole-repository bug sweep)
+
+### Fixed
+- **Exposure alerts for watched terms** were worded as supplier alerts; they now name the watched term.
+- **Privacy:** an email-address selector appeared in clear in alerts (which leave Argus for Slack, Teams,
+  email and SIEMs); addresses are now masked everywhere in an alert.
+- **Alert spam:** a dark-web listing was re-announced as new on every re-crawl (its identity included the
+  index's last-seen date); identity is now the onion / paste link.
+- **CSV injection:** six exports (exposure, compliance, remediation, suppliers, graph, evidence-bundle
+  timeline) wrote attacker-influenced text raw, so a value like `=HYPERLINK(…)` could run as a formula in a
+  spreadsheet. All now use one spreadsheet-safe writer (`argus/core/csvsafe.py`).
+- The **exposure export** dropped the link of dark-web and paste findings; a Reference column carries it.
+- **One-box investigate** no longer orphans (or, on retry, duplicates) a case when the search cannot start;
+  the case is returned with the reason.
+- **Ransomware hub:** new-group detection no longer flags every group on the first view, and a new group
+  stays visible to every viewer for a week (per-group first-seen dates).
+- A failing or odd **Have I Been Pwned** reply no longer fails a person's whole breach look-up.
+- The in-memory **rate limiter** no longer grows without bound on public endpoints.
+- **Selector watches** are unique regardless of case/spacing (no doubled alerts).
+- **Software end-of-life** dates from the external feed are parsed tolerantly (no crash; Python 3.10-safe).
+- mypy now reports no issues (three long-standing annotations added).
+
 ## [1.123.0] — Ransomware intelligence hub
 
 ### Added

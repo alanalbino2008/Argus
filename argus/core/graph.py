@@ -6,13 +6,13 @@ centrality calculations, and serialization for Cytoscape.js and Maltego.
 
 from __future__ import annotations
 
-import csv
 import io
 import logging
 from typing import Any
 
 import networkx as nx
 
+from argus.core import csvsafe
 from argus.core.models import Entity, Relation
 
 logger = logging.getLogger("argus.graph")
@@ -240,7 +240,7 @@ class IntelligenceGraph:
     def to_maltego_csv(self) -> str:
         """Export relationships in a Maltego-compatible tabular CSV structure."""
         output = io.StringIO()
-        writer = csv.writer(output)
+        writer = csvsafe.writer(output)
         writer.writerow(["Source Type", "Source Value", "Relationship", "Target Type", "Target Value"])
 
         for rel in self._relations.values():

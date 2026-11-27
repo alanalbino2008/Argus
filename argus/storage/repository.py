@@ -319,6 +319,7 @@ class InvestigationRepository:
                     .scalars()
                     .first()
                 )
+            row: InvestigationRow
             for row in (await s.execute(stmt)).scalars():
                 if (row.target or "").strip().lower() == wanted:
                     return row
@@ -357,12 +358,12 @@ class InvestigationRepository:
                     self._graph_cache.move_to_end(investigation_id)
                     metrics.GRAPH_CACHE.labels("hit").inc()
                     return cached[1]
-            ents = (
+            ents: Sequence[Any] = (
                 (await s.execute(select(EntityRow.data).where(EntityRow.investigation_id == investigation_id)))
                 .scalars()
                 .all()
             )
-            rels = (
+            rels: Sequence[Any] = (
                 (await s.execute(select(RelationRow.data).where(RelationRow.investigation_id == investigation_id)))
                 .scalars()
                 .all()

@@ -217,3 +217,29 @@ def test_breach_and_reveal_endpoints_are_rate_limited(make_client, monkeypatch):
     monkeypatch.setattr(subject_routes._breach_limiter, "limit", 1)
     assert c.post(f"/api/cases/{case_id}/subjects/{sid}/breaches").status_code == 200
     assert c.post(f"/api/cases/{case_id}/subjects/{sid}/breaches").status_code == 429
+
+
+async def test_a_hibp_failure_yields_nothing_instead_of_breaking_the_search(monkeypatch):
+    from argus.core.settings import get_settings
+    from argus.intel import breach_lookup
+    from argus.intel.breach_lookup import fetch_exposures
+
+    monkeypatch.setenv("ARGUS_BREACH_PROVIDER", "hibp")
+    monkeypatch.setenv("ARGUS_HIBP_API_KEY", "hibp-key")
+    get_settings.cache_clear()
+
+    @contextlib.asynccontextmanager
+    async def broken_client(settings, route):
+        raise OSError("connection reset")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(breach_lookup, "client", broken_client)
+    assert await fetch_exposures(get_settings(), "jane@example.org", "email", None) == []
+
+    @contextlib.asynccontextmanager
+    async def odd_client(settings, route):
+        yield FakeSession({r"breachedaccount": FakeResponse(200, {"unexpected": "shape"})})
+
+    monkeypatch.setattr(breach_lookup, "client", odd_client)
+    assert await fetch_exposures(get_settings(), "jane@example.org", "email", None) == []
+    get_settings.cache_clear()

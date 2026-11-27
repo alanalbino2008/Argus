@@ -261,7 +261,9 @@ def darkweb_findings(selector: str, hits: list[dict[str, Any]], now: datetime) -
             continue
         onion, title, snippet = str(h.get("onion") or ""), str(h.get("title") or ""), str(h.get("snippet") or "")
         when = h.get("date")
-        key = f"dw:{selector.lower()}:{onion or title}:{str(when or '')[:10]}"
+        # The listing's identity is its onion address. Not its date: an index reports when it last crawled a
+        # page, which moves on every crawl and would re-announce the same listing as new each time.
+        key = f"dw:{selector.lower()}:{onion}" if onion else f"dw:{selector.lower()}:{title}:{str(when or '')[:10]}"
         if key in seen:
             continue
         seen.add(key)
@@ -284,7 +286,7 @@ def paste_findings(selector: str, hits: list[dict[str, Any]], now: datetime) -> 
             continue
         url, title, snippet = str(h.get("url") or ""), str(h.get("title") or ""), str(h.get("snippet") or "")
         when = h.get("date")
-        key = f"pl:{selector.lower()}:{url or title}:{str(when or '')[:10]}"
+        key = f"pl:{selector.lower()}:{url}" if url else f"pl:{selector.lower()}:{title}:{str(when or '')[:10]}"
         if key in seen:
             continue
         seen.add(key)

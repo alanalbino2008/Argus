@@ -6,8 +6,8 @@ groups publish about their victims) and turns the recent posts into an at-a-glan
 
 * **recent victims** — the latest leak-site posts, filterable by group, sector and country;
 * **group tracking** — which groups are active and how much, from the recent window;
-* **new-group detection** — groups appearing for the first time since Argus last looked (a stored
-  snapshot of the group names seen before), which often marks a rebrand or a new operation;
+* **new-group detection** — groups that first appeared in the last week (a stored first-seen date per
+  group; the first run is a silent baseline), which often marks a rebrand or a new operation;
 * **ecosystem stats** — posts in the last 7 and 30 days, and the busiest groups, sectors and countries.
 
 Only metadata is handled — victim name, group, date, sector, country — never leaked files.
@@ -23,6 +23,8 @@ from argus.intel.exposure import _victim_fields, parse_time
 
 KNOWN_GROUPS_KEY = "ransomware_known_groups"
 MAX_POSTS = 400
+NEW_FOR_DAYS = 7
+BASELINE = "baseline"
 
 
 def normalise(post: dict[str, Any]) -> dict[str, Any]:
@@ -114,10 +116,31 @@ def _within(published: str | None, today: Any, days: int) -> bool:
     return 0 <= (today - d).days < days
 
 
-def detect_new_groups(posts: list[dict[str, Any]], known: set[str]) -> tuple[list[str], set[str]]:
-    """Groups in the recent window not seen before, and the updated known-group set to persist.
+def track_groups(
+    posts: list[dict[str, Any]], stored: dict[str, Any] | None, now: datetime
+) -> tuple[list[str], dict[str, Any], bool]:
+    """New groups, and the updated first-seen record to persist (and whether it changed).
 
-    A brand-new group name is a strong signal (a new operation, or a rebrand of an old one)."""
-    current = {p["group"] for p in posts if p["group"] and p["group"] != "unknown"}
-    new = sorted(g for g in current if g.lower() not in {k.lower() for k in known})
-    return new, known | current
+    Every group gets a first-seen date. The very first run records a silent **baseline** (nothing is "new"
+    just because Argus had never looked before), and a group then counts as new for ``NEW_FOR_DAYS`` after
+    it first appears — for every viewer, not only whoever happened to load the page first. A brand-new
+    group name is a strong signal: a new operation, or a rebrand of an old one."""
+    stored = stored or {}
+    first_seen: dict[str, str] = dict(stored.get("first_seen") or {})
+    if not first_seen and stored.get("groups"):  # the earlier list-only format: treat it as the baseline
+        first_seen = {str(g).lower(): BASELINE for g in stored["groups"]}
+    seeding = not first_seen
+    today = now.date().isoformat()
+    names: dict[str, str] = {}
+    for p in posts:
+        g = p["group"]
+        if g and g != "unknown":
+            names.setdefault(g.lower(), g)
+    changed = False
+    for key in names:
+        if key not in first_seen:
+            first_seen[key] = BASELINE if seeding else today
+            changed = True
+    cutoff = (now - timedelta(days=NEW_FOR_DAYS)).date().isoformat()
+    new = sorted(names[k] for k, seen in first_seen.items() if k in names and seen != BASELINE and seen >= cutoff)
+    return new, {"first_seen": first_seen, "updated_at": now.isoformat()}, changed

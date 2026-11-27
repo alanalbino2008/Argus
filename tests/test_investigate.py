@@ -70,3 +70,23 @@ def test_investigate_is_rate_limited(make_client):
     body = {"identifier": "jdoe", "purpose": "Fraud report R-101", "confirmed": True}
     codes = [c.post("/api/investigate", json=body).status_code for _ in range(12)]
     assert codes.count(201) == 10 and codes[-1] == 429
+
+
+def test_a_search_that_cannot_start_still_returns_the_case_without_duplicates(make_client, monkeypatch):
+    from fastapi import HTTPException
+
+    from argus.api import subject_routes
+
+    c = make_client(monitors_enabled="false")
+    c.app.state.playbook_scan = Scans()
+
+    async def refuse(*_a, **_k):
+        raise HTTPException(status_code=429, detail="Scan rate limit exceeded")
+
+    monkeypatch.setattr(subject_routes, "start", refuse)
+    r = c.post("/api/investigate", json={"identifier": "jdoe", "purpose": "Fraud report R-102", "confirmed": True})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["started"] is False and body["problem"] == "Scan rate limit exceeded"
+    assert c.get(f"/api/cases/{body['case_id']}").status_code == 200  # the case is usable, not orphaned
+    assert [x["title"] for x in c.get("/api/cases").json()].count("Investigation: jdoe") == 1

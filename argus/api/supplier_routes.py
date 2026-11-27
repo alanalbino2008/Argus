@@ -8,7 +8,6 @@ recorded with it and in the audit log.
 
 from __future__ import annotations
 
-import csv
 import io
 from typing import Any, Literal
 
@@ -17,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.api.rating_routes import ensure_history, rate
+from argus.core import csvsafe
 from argus.intel.suppliers import TIERS, normalise_domain, parse_register, risk, status
 from argus.intel.suppliers import min_grade as policy_min_grade
 from argus.security.auth import Role
@@ -243,7 +243,7 @@ async def export_register(request: Request, ws: WorkspaceContext = VIEWER):
     """The supplier register with current ratings, for compliance records (e.g. a DORA register of information)."""
     data = await list_suppliers(request, ws)
     out = io.StringIO()
-    writer = csv.writer(out)
+    writer = csvsafe.writer(out)
     writer.writerow(["Supplier", "Domain", "Tier", "Data handled", "Owner", "Grade", "Score", "Minimum grade", "Status",
                      "Risk level", "Risk score", "Last assessed", "Basis for assessment", "Notes"])  # fmt: skip
     for s in data["suppliers"]:

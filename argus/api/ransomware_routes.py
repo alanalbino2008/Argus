@@ -49,11 +49,9 @@ async def ransomware_hub(
         raise HTTPException(status_code=502, detail=f"The ransomware feed is unavailable: {exc}") from exc
 
     posts = R.recent_posts(raw)
-    stored = await store.get(R.KNOWN_GROUPS_KEY) or {}
-    known = {str(g) for g in (stored.get("groups") or [])}
-    new_groups, updated = R.detect_new_groups(posts, known)
-    if updated != known:
-        await store.set(R.KNOWN_GROUPS_KEY, {"groups": sorted(updated), "updated_at": now.isoformat()})
+    new_groups, record, changed = R.track_groups(posts, await store.get(R.KNOWN_GROUPS_KEY), now)
+    if changed:
+        await store.set(R.KNOWN_GROUPS_KEY, record)
     roster = await sources.groups()
 
     matched = R.filter_posts(posts, group=group, country=country, sector=sector, q=q)

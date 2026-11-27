@@ -334,3 +334,11 @@ def test_analyzer_flags_kev_first_and_end_of_life_software():
     flags = GraphIntelligenceAnalyzer.analyze(g)["risk_flags"]
     assert flags[0] == "Actively exploited CVE (CISA KEV, used by ransomware): CVE-2024-21762"
     assert "End-of-life software since 2022-11-28: php 7.4.3" in flags
+
+
+def test_match_cycle_tolerates_odd_eol_dates_from_the_feed():
+    cycles = [{"cycle": "1.0", "eol": "2020-01-01T00:00:00Z", "latest": "1.0.9"},
+              {"cycle": "2.0", "eol": "not-a-date", "latest": "2.0.1"}]  # fmt: skip
+    assert match_cycle(cycles, "1.0.3", today=date(2026, 1, 1))["eol"] is True  # a "Z" timestamp, any Python
+    junk = match_cycle(cycles, "2.0.1", today=date(2026, 1, 1))
+    assert junk["eol"] is False and junk["eol_date"] is None  # junk is "unknown", not a crash

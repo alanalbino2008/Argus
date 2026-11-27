@@ -44,14 +44,17 @@ async def fetch_exposures(settings: Settings, identifier: str, kind: str, route:
             return []
         url = f"{HIBP}/breachedaccount/{quote(identifier.lower(), safe='')}?truncateResponse=false"
         headers = {"hibp-api-key": settings.hibp_api_key.get_secret_value()}
-        async with client(settings, route) as http, http.get(url, headers=headers) as resp:
-            if resp.status in (404, 401):
-                return []
-            if resp.status != 200:
-                return []
-            data = await resp.json(content_type=None)
+        try:
+            async with client(settings, route) as http, http.get(url, headers=headers) as resp:
+                if resp.status != 200:  # 404 = not in any breach; 401/403/429/5xx = nothing usable this time
+                    return []
+                data = await resp.json(content_type=None)
+        except Exception:  # noqa: BLE001 - a provider failure never breaks a search
+            return []
         out = []
-        for b in data or []:
+        for b in data if isinstance(data, list) else []:
+            if not isinstance(b, dict):
+                continue
             classes = b.get("DataClasses") or []
             out.append(breaches.exposure(identifier, kind, {
                 "breach": b.get("Name") or b.get("Title"), "breach_date": b.get("BreachDate"),

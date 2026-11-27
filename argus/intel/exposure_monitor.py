@@ -38,6 +38,7 @@ from argus.intel.exposure import (
     domain_breach_findings,
     email_stealer_findings,
     headline,
+    mask_email,
     paste_findings,
     ransomware_findings,
     stealer_findings,
@@ -55,6 +56,11 @@ _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 def _looks_like_email(selector: str) -> bool:
     return bool(_EMAIL.match(selector.strip()))
+
+
+def _public(value: str) -> str:
+    """Alerts leave Argus (Slack, Teams, email, SIEM): an email address in one is always masked."""
+    return mask_email(value) if _looks_like_email(value) else value
 
 
 class ExposureMonitor:
@@ -229,6 +235,11 @@ class ExposureMonitor:
             by_subject[f["subject"]].append(f)
         if watch["scope"] == "domain":
             text = headline(watch["domain"], news, baseline=baseline, subject_name=watch["organisation"] or None)
+        elif watch["scope"] == "selector":
+            term = _public(watch["domain"])
+            text = headline(
+                term, news, baseline=baseline, subject_name=f"watched term “{watch['organisation'] or term}”"
+            )
         else:
             ordered = sorted(by_subject.items(), key=lambda kv: -SEVERITY_ORDER[worst([f["severity"] for f in kv[1]])])
             text = " · ".join(
@@ -237,7 +248,7 @@ class ExposureMonitor:
             ) + (f" · and {len(ordered) - 3} more supplier(s)" if len(ordered) > 3 else "")
         counts = {k: sum(1 for f in news if f["kind"] == k) for k in {f["kind"] for f in news}}
         return {
-            "target": watch["domain"] or "supplier register",
+            "target": _public(watch["domain"]) if watch["domain"] else "supplier register",
             "severity": worst([f["severity"] for f in news]),
             "headline": text,
             "summary": {
@@ -247,7 +258,7 @@ class ExposureMonitor:
                     "scope": watch["scope"],
                     "baseline": baseline,
                     "counts": counts,
-                    "subjects": sorted(by_subject)[:20],
+                    "subjects": sorted(_public(s) for s in by_subject)[:20],
                     "accounts": len({f["account"] for f in news if f.get("account")}),
                 },
             },

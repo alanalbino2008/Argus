@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import io
 import json
 from datetime import datetime, timezone
@@ -13,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from argus import __version__
 from argus.api.compliance_service import evidence_context
 from argus.api.deps import WorkspaceContext, audit, in_workspace
+from argus.core import csvsafe
 from argus.intel.compliance import BY_ID, DISCLAIMER, FRAMEWORKS, assess_framework
 from argus.security.auth import Role
 
@@ -42,7 +42,7 @@ async def export_framework_csv(framework_id: str, request: Request, ws: Workspac
     now, frameworks = await _assess(request, ws)
     fw = next(f for f in frameworks if f["id"] == framework_id)
     out = io.StringIO()
-    writer = csv.writer(out)
+    writer = csvsafe.writer(out)
     writer.writerow(["Control", "Title", "Status", "Coverage", "Why", "Evidence", "Findings", "Untracked findings"])
     for c in fw["controls"]:
         writer.writerow([

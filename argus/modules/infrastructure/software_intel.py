@@ -81,7 +81,10 @@ def match_cycle(cycles: list[dict[str, Any]], version: str, today: date | None =
         reached, eol_date = eol, None
     else:
         eol_date = str(eol) if eol else None
-        reached = eol_date is not None and date.fromisoformat(eol_date) <= today
+        try:  # an external feed: tolerate "2025-04-30T00:00:00Z" (fromisoformat rejects "Z" before 3.11) and junk
+            reached = eol_date is not None and date.fromisoformat(eol_date[:10]) <= today
+        except ValueError:
+            reached, eol_date = False, None
     latest = str(cycle.get("latest") or "")
     return {
         "version": version,

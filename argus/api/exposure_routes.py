@@ -7,7 +7,6 @@ are written to the audit log with the number of addresses disclosed.
 
 from __future__ import annotations
 
-import csv
 import io
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -17,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from argus.api import remediation_hooks
 from argus.api.deps import WorkspaceContext, audit, in_workspace, require_approval
+from argus.core import csvsafe
 from argus.core.models import EntityType
 from argus.intel.exposure import KIND_LABEL, SEVERITY_ORDER, summarise
 from argus.intel.suppliers import normalise_domain
@@ -135,6 +135,10 @@ async def create_selector_watch(body: SelectorWatchRequest, request: Request, ws
     selector = " ".join(body.selector.split()).strip()
     if len(selector) < 2:
         raise HTTPException(status_code=422, detail="Enter a term to watch")
+    # "Acme Corp" and "acme corp" ask the sources the same question: one watch, or every alert comes twice.
+    for w in await _repo(request).list_watches(workspace_id=ws.id):
+        if w["scope"] == "selector" and (w["selector"] or "").lower() == selector.lower():
+            raise HTTPException(status_code=409, detail=f"“{w['selector']}” is already watched")
     watch = await _repo(request).create_watch(
         workspace_id=ws.id, scope="selector", domain=selector, organisation=body.label.strip(),
         basis=body.basis.strip(), by=ws.principal.name,
@@ -204,15 +208,17 @@ async def export_exposure(request: Request, ws: WorkspaceContext = ANALYST, stat
     findings = await _repo(request).findings(workspace_id=ws.id, reveal=True)
     rows = _ordered([f for f in findings if status == "all" or f["status"] == "open"])
     out = io.StringIO()
-    writer = csv.writer(out)
+    writer = csvsafe.writer(out)
     writer.writerow(["Severity", "Type", "Subject", "Account", "What", "Breach or group", "Data exposed", "When",
-                     "First seen", "Status", "Note"])  # fmt: skip
+                     "First seen", "Status", "Note", "Reference"])  # fmt: skip
     for f in rows:
         d = f["details"]
         writer.writerow([
             f["severity"], KIND_LABEL[f["kind"]], f["subject_name"], f["account"] or "", f["title"],
-            d.get("breach_title") or d.get("group") or "", ", ".join(d.get("data_classes") or d.get("websites") or []),
+            d.get("breach_title") or d.get("group") or d.get("source") or "",
+            ", ".join(d.get("data_classes") or d.get("websites") or []),
             f["occurred_at"] or "", (f["first_seen_at"] or "")[:10], f["status"], f["note"],
+            d.get("onion") or d.get("url") or d.get("website") or "",  # where a dark-web / paste / leak post is
         ])  # fmt: skip
     await audit(request, ws.principal, "exposure.export", None,
                 details={"findings": len(rows), "addresses": len({f["account"] for f in rows if f["account"]})})  # fmt: skip

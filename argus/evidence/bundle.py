@@ -8,7 +8,6 @@ explains, in plain words, how to check each layer.
 
 from __future__ import annotations
 
-import csv
 import io
 import json
 import re
@@ -17,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from argus import __version__
+from argus.core import csvsafe
 from argus.evidence.capture import sha256
 
 README = """EVIDENCE BUNDLE: {title}
@@ -24,7 +24,8 @@ Exported {exported} by {by} with Argus {version}.
 
 WHAT IS HERE
   case.json            The case: purpose, notes, people and other entities, links, timeline.
-  timeline.csv         Every dated event and capture, in order.
+  timeline.csv         Every dated event and capture, in order. A cell a spreadsheet would run as a
+                       formula starts with a ' (CSV-injection guard); case.json holds the exact text.
   captures/<id>/       One folder per piece of evidence:
      files/            The preserved files (page.html, screenshot.png, text.txt, ...).
      manifest.json     What was captured, from where, when, and the SHA-256 of every file.
@@ -70,7 +71,7 @@ def build_bundle(case: dict[str, Any], items: list[dict[str, Any]], captures: li
         add(zf, "case.json", json.dumps({"case": case, "items": items, "exported_at": exported.isoformat(),
                                          "exported_by": by}, indent=2, ensure_ascii=False).encode())  # fmt: skip
         timeline = io.StringIO()
-        writer = csv.writer(timeline)
+        writer = csvsafe.writer(timeline)
         writer.writerow(["When", "Kind", "Title", "Details"])
         events = [(i["occurred_at"], i["kind"], i["title"], i["body"][:500]) for i in items if i.get("occurred_at")]
         events += [(c["captured_at"], "capture", c["title"] or c.get("url") or c["id"], f"digest {c['digest']}")

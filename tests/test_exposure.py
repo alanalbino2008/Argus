@@ -363,6 +363,11 @@ def test_a_selector_watch_covers_the_dark_web_pastes_and_leak_feeds(client):
     caps = data["capabilities"]
     assert caps["darkweb_index"] is True and caps["paste_monitor"] is True
 
+    # The alert names the watched term, not a "supplier".
+    alert = client.get("/api/alerts").json()[0]
+    assert "watched term “Codename”" in alert["headline"] and "supplier" not in alert["headline"]
+    assert alert["target"] == "Project Falcon" and alert["summary"]["exposure"]["scope"] == "selector"
+
     # Re-running finds nothing new.
     client.post(f"/api/exposure/watches/{created.json()['id']}/check")
     assert client.portal.call(monitor.tick)[0]["new"] == 0
@@ -379,6 +384,17 @@ def test_an_email_selector_also_checks_infostealer_logs(client):
     [f] = client.get("/api/exposure?status=all").json()["findings"]
     assert f["kind"] == "stealer_log" and f["severity"] == "critical" and f["subject"] == "ceo@acme.com"
     assert set(f["details"]["websites"]) == {"netflix.com", "portal.work.example"}
+    # Alerts leave Argus (Slack, Teams, email, SIEM): the watched address is masked everywhere in them.
+    alert = client.get("/api/alerts").json()[0]
+    assert "ceo@acme.com" not in json.dumps(alert) and alert["target"] == "c•••o@acme.com"
+    assert alert["summary"]["exposure"]["subjects"] == ["c•••o@acme.com"]
+    # Without a label, the headline names the term itself, masked.
+    unlabelled = selector_watch(client, selector="cfo@acme.com", label="")
+    sources.stealer_emails["cfo@acme.com"] = ["bank.example"]
+    assert unlabelled.status_code == 201
+    client.portal.call(monitor.tick)
+    latest = client.get("/api/alerts").json()[0]
+    assert "watched term “c•••o@acme.com”" in latest["headline"] and "cfo@acme.com" not in json.dumps(latest)
 
 
 def test_selector_watch_validation_and_dedup(client):
@@ -388,6 +404,7 @@ def test_selector_watch_validation_and_dedup(client):
     first = selector_watch(client, selector="Acme Corp")
     assert first.status_code == 201
     assert selector_watch(client, selector="Acme Corp").status_code == 409  # already watched
+    assert selector_watch(client, selector="  acme   CORP ").status_code == 409  # same term, other case/spacing
     # a selector and a domain of the same text are different scopes and both allowed
     assert watch(client, domain="acme.com").status_code == 201
 

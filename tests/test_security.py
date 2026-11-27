@@ -214,3 +214,19 @@ def test_empty_bootstrap_key_generates_one(make_client, caplog):
     keys = client.app.state.keys
     assert client.portal.call(keys.count_active) == 1
     assert "will NOT be shown again" in caplog.text
+
+
+def test_in_memory_rate_limiter_forgets_stale_keys(monkeypatch):
+    from argus.security import ratelimit
+
+    monkeypatch.setattr(ratelimit, "_PRUNE_ABOVE", 5)
+    clock = [1000.0]
+    monkeypatch.setattr(ratelimit.time, "monotonic", lambda: clock[0])
+    limiter = ratelimit.SlidingWindowLimiter(limit=2, window=60, shared=False)
+    for i in range(6):
+        assert limiter.hit(f"ip-{i}")
+    clock[0] += 61  # every key is now outside the window
+    assert limiter.hit("fresh")
+    assert set(limiter._events) == {"fresh"}  # stale addresses were swept, not kept forever
+    # a key still inside its window is kept, and its count still applies
+    assert limiter.hit("fresh") and not limiter.hit("fresh")

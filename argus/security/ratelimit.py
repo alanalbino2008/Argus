@@ -31,6 +31,7 @@ from typing import Any
 logger = logging.getLogger("argus.ratelimit")
 _ALL: weakref.WeakSet[SlidingWindowLimiter] = weakref.WeakSet()
 _store: _DatabaseCounters | None = None
+_PRUNE_ABOVE = 10_000  # keys tracked in memory before stale ones are swept
 
 
 def reset_all() -> None:
@@ -91,6 +92,8 @@ class SlidingWindowLimiter:
     def hit(self, key: str) -> bool:
         """Record an attempt in this process. Returns False (and records nothing) if over the limit."""
         now = time.monotonic()
+        if len(self._events) > _PRUNE_ABOVE:
+            self._prune(now)
         q = self._events[key]
         while q and now - q[0] >= self.window:
             q.popleft()
@@ -98,6 +101,13 @@ class SlidingWindowLimiter:
             return False
         q.append(now)
         return True
+
+    def _prune(self, now: float) -> None:
+        """Forget keys with no attempt inside the window. Without this a per-address limiter on a public
+        endpoint keeps an entry for every address it has ever seen, and memory grows for as long as the
+        process runs."""
+        for key in [k for k, q in self._events.items() if not q or now - q[-1] >= self.window]:
+            del self._events[key]
 
     def retry_after(self, key: str) -> int:
         if key in self._waits:

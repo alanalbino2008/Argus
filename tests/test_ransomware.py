@@ -53,13 +53,20 @@ def test_facets_and_stats():
     assert sum(d["count"] for d in s["by_day"]) == 4  # all four posts fall within the last 14 days
 
 
-def test_new_group_detection():
+def test_new_group_detection_baselines_then_tracks_first_seen():
     posts = R.recent_posts(RAW)
-    known = {"lockbit3", "akira"}
-    new, updated = R.detect_new_groups(posts, known)
-    assert new == ["shinyhunters"] and "shinyhunters" in updated and updated >= known
-    # once known, nothing new
-    assert R.detect_new_groups(posts, updated)[0] == []
+    # First ever run: a silent baseline, nothing is "new" just because Argus never looked before.
+    new, record, changed = R.track_groups(posts, None, NOW)
+    assert new == [] and changed and record["first_seen"]["akira"] == R.BASELINE
+    # A group appears later: it is new, and stays new (for every viewer) for a week.
+    later = posts + R.recent_posts([{"victim": "X", "group": "NewCrew", "discovered": _day(0)}])
+    new, record2, changed = R.track_groups(later, record, NOW)
+    assert new == ["NewCrew"] and changed and record2["first_seen"]["newcrew"] == NOW.date().isoformat()
+    again, _, changed_again = R.track_groups(later, record2, NOW)
+    assert again == ["NewCrew"] and not changed_again  # a second viewer still sees it
+    assert R.track_groups(later, record2, NOW + timedelta(days=R.NEW_FOR_DAYS + 1))[0] == []  # no longer new
+    # The earlier list-only format is read as the baseline.
+    assert R.track_groups(posts, {"groups": ["lockbit3", "akira", "shinyhunters"]}, NOW)[0] == []
 
 
 # ---------------------------------------------------------------------------- the API
@@ -94,10 +101,13 @@ def test_the_hub_endpoint_returns_posts_stats_and_new_groups(client):
     assert out["capabilities"]["ransomware"] is True
     assert out["stats"]["active_groups"] == 3 and out["roster_count"] == 3
     assert out["facets"]["groups"][0]["name"] == "akira"
-    assert out["new_groups"] == ["akira", "lockbit3", "shinyhunters"]  # nothing known yet, so all are new
+    assert out["new_groups"] == []  # the first look is a silent baseline, not "everything is new"
     assert out["posts"][0]["victim"] == "Acme Corp"
-    # the snapshot is persisted: a second call reports no new groups
-    assert client.get("/api/ransomware").json()["new_groups"] == []
+    # a group that appears afterwards is new — and every viewer sees it, not just the first
+    fresh = {"victim": "Y", "group": "freshcrew", "discovered": datetime.now(timezone.utc).date().isoformat()}
+    client.app.state.exposure_monitor.sources._posts = [*RAW, fresh]
+    assert client.get("/api/ransomware").json()["new_groups"] == ["freshcrew"]
+    assert client.get("/api/ransomware").json()["new_groups"] == ["freshcrew"]
     assert any(e["action"] == "ransomware.view" for e in client.get("/api/audit?limit=10").json())
 
 
