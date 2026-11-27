@@ -811,6 +811,8 @@ def _now() -> str:
 
 # ---------------------------------------------------------------------------- timeline, associates, AI dossier
 _dossier_limiter = SlidingWindowLimiter(limit=6, window=60, name="subject_dossier")
+_breach_limiter = SlidingWindowLimiter(limit=10, window=60, name="subject_breaches")
+_reveal_limiter = SlidingWindowLimiter(limit=6, window=300, name="breach_reveal")
 
 
 class SubjectOptions(BaseModel):
@@ -990,6 +992,8 @@ async def run_breaches(case_id: str, subject_id: str, request: Request, ws: Work
     settings = request.app.state.settings
     if settings.breach_provider == "none":
         raise HTTPException(status_code=409, detail="No breach provider is configured (set ARGUS_BREACH_PROVIDER)")
+    if not await _breach_limiter.allow(ws.principal.key_id):
+        raise HTTPException(status_code=429, detail="Too many breach look-ups at once; try again in a minute")
     route = route_for(settings, case, None)
     data = await request.app.state.subjects.data(subject_id) or {}
     identifiers = _breach_identifiers(data)[: settings.breach_lookups_max]
@@ -1062,6 +1066,8 @@ async def reveal_password(case_id: str, subject_id: str, body: RevealRequest, re
                   if e.get("password_sha256") == body.hash and e["identifier"] == body.identifier.lower()), None)  # fmt: skip
     if match is None:
         raise HTTPException(status_code=404, detail="That exposure is not on this person")
+    if not await _reveal_limiter.allow(ws.principal.key_id):
+        raise HTTPException(status_code=429, detail="Too many password reveals; try again shortly")
     await require_approval(request, ws, "breach.reveal", f"{subject_id}:{body.hash[:12]}",
                            f"Reveal a leaked password for {body.identifier}")  # fmt: skip
     route = route_for(settings, case, None)

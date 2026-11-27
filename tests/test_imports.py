@@ -138,3 +138,18 @@ def test_importing_needs_a_legal_authorisation_and_is_evidence(make_client):
     bad = c.post(f"/api/cases/{case_id}/imports", files={"file": ("x.csv", b"a,b\n1,2\n", "text/csv")})
     assert bad.status_code == 422
     assert c.get(f"/api/cases/{case_id}/imports/ev_nope").status_code == 404
+
+
+def test_imports_are_rate_limited(make_client, monkeypatch):
+    from argus.api import import_routes
+
+    c = make_client()
+    case_id = c.post("/api/cases", json={"title": "F", "purpose": "Fraud report R-62", "confirmed": True,
+                                         "authorization": "Order 1"}).json()["id"]  # fmt: skip
+    monkeypatch.setattr(import_routes._import_limiter, "limit", 1)
+    files = {"file": ("cdr.csv", CDR.encode(), "text/csv")}
+    assert c.post(f"/api/cases/{case_id}/imports", files=files).status_code == 201
+    assert (
+        c.post(f"/api/cases/{case_id}/imports", files={"file": ("cdr.csv", CDR.encode(), "text/csv")}).status_code
+        == 429
+    )

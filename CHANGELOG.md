@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.119.2] — Hardening review, part 2 (fetches and limits)
+
+### Security
+- Confirmed the new outbound fetchers (documents, archived pages, custom breach provider, OpenCellID) all
+  go through Argus's SSRF guard, which blocks private/loopback/link-local hosts including on redirects.
+- **Rate limits** on the endpoints that trigger external look-ups or are sensitive: breach look-ups
+  (10/min), password reveals (6 per 5 min), data imports (12/min), cell look-ups (4/min).
+
 ## [1.119.1] — Hardening the untrusted-file readers
 
 ### Security

@@ -30,4 +30,22 @@ evidence file. None of it changes what a normal file produces.
   a WARC file. A header value containing a line break can no longer inject extra header lines or forge a
   record boundary in the evidence.
 
-All of these are covered by regression tests (`tests/test_import_hardening.py`).
+## Outbound fetches (SSRF)
+
+The new sources that fetch a web address an investigator does not control — documents found by web
+search, archived profiles and pages, a custom breach provider, OpenCellID — all go through Argus's
+existing outbound guard: every request's host is checked, and the DNS resolver refuses private, loopback
+and link-local addresses (including the cloud metadata address `169.254.169.254`), so a public URL that
+redirects to an internal one is still blocked. This is covered by the existing SSRF tests
+(`test_security`, `test_opsec`).
+
+## Rate limits
+
+The endpoints that trigger external look-ups or are sensitive now have their own per-caller limits, so a
+single key cannot flood a provider or the server: breach look-ups (10/min), password reveals (6 per 5
+min), data imports (12/min) and cell look-ups (4/min), alongside the existing scan and dossier limits.
+
+## Covered by tests
+
+Regression tests for the file readers are in `tests/test_import_hardening.py`; the rate limits in
+`tests/test_breaches.py` and `tests/test_imports.py`.

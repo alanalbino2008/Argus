@@ -24,6 +24,7 @@ from argus.api.deps import WorkspaceContext, audit, in_workspace
 from argus.evidence.capture import Capture, build, trusted_timestamp
 from argus.intel import imports as I
 from argus.security.auth import Role
+from argus.security.ratelimit import SlidingWindowLimiter
 
 router = APIRouter(prefix="/api", tags=["cases"])
 VIEWER = Depends(in_workspace(Role.VIEWER))
@@ -34,6 +35,8 @@ LABELS = {
     "contacts": "Contact list",
     "ufdr": "Phone extraction (UFDR)",
 }
+_import_limiter = SlidingWindowLimiter(limit=12, window=60, name="case_import")
+_cells_limiter = SlidingWindowLimiter(limit=4, window=60, name="case_import_cells")
 
 
 @router.post("/cases/{case_id}/imports", status_code=201)
@@ -48,6 +51,8 @@ async def import_data(case_id: str, request: Request, file: UploadFile = File(..
                                                     "these files hold other people's communications and money")  # fmt: skip
     if kind not in I.KINDS:
         raise HTTPException(status_code=422, detail=f"Kind must be one of: {', '.join(I.KINDS)}")
+    if not await _import_limiter.allow(ws.principal.key_id):
+        raise HTTPException(status_code=429, detail="Too many imports at once; try again in a minute")
     settings = request.app.state.settings
     limit = settings.evidence_max_upload_mb * 1024 * 1024
     data = await file.read(limit + 1)
@@ -199,6 +204,8 @@ async def place_cells(case_id: str, capture_id: str, request: Request, ws: Works
     )
     if found is None or found["data_import"]["kind"] not in ("cdr", "ufdr"):
         raise HTTPException(status_code=404, detail="Call records not found in this case")
+    if not await _cells_limiter.allow(ws.principal.key_id):
+        raise HTTPException(status_code=429, detail="Too many cell look-ups at once; try again in a minute")
     cells = cell_ids(await import_records(request.app, capture_id))
     if not cells:
         raise HTTPException(status_code=422, detail="No cell identities (MCC-MNC-LAC-CI) were found in these records")

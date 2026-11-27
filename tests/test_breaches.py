@@ -162,3 +162,12 @@ def test_breach_provider_off_by_default(make_client):
     sid = c.post(f"/api/cases/{case_id}/subjects", json={"name": "Jane", "confirmed": True,
                  "known": {"emails": ["jane@example.org"]}}).json()["id"]  # fmt: skip
     assert c.post(f"/api/cases/{case_id}/subjects/{sid}/breaches").status_code == 409
+
+
+def test_breach_and_reveal_endpoints_are_rate_limited(make_client, monkeypatch):
+    from argus.api import subject_routes
+
+    c, case_id, sid = _subject_with_breaches(make_client, monkeypatch)
+    monkeypatch.setattr(subject_routes._breach_limiter, "limit", 1)
+    assert c.post(f"/api/cases/{case_id}/subjects/{sid}/breaches").status_code == 200
+    assert c.post(f"/api/cases/{case_id}/subjects/{sid}/breaches").status_code == 429
