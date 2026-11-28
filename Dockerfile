@@ -42,7 +42,8 @@ COPY --from=builder /opt/venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db
+    ARGUS_DATABASE_URL=sqlite+aiosqlite:////app/data/argus.db \
+    FORWARDED_ALLOW_IPS=127.0.0.1
 
 WORKDIR /app
 USER 10001:10001
@@ -54,6 +55,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request as u,sys; sys.exit(u.build_opener(u.ProxyHandler({})).open('http://127.0.0.1:8000/api/health').status != 200)"
 
 # 0.0.0.0 inside the container is required for port publishing; access is still API-key protected.
-# --proxy-headers: trust X-Forwarded-* from the ingress so audit logs record real client IPs.
+# --proxy-headers: read the real client IP from X-Forwarded-For, but ONLY when the connection comes from a
+# trusted proxy (FORWARDED_ALLOW_IPS, read by uvicorn). Trusting every peer ("*") would let anyone forge
+# their IP and slip past network allow-lists, per-IP rate limits and sign-in lockouts. Default: loopback
+# only. Behind a load balancer, set FORWARDED_ALLOW_IPS to its address or subnet (CIDR), e.g. 10.0.0.0/8.
+# --no-server-header: don't advertise the server software and version.
 # --no-access-log: Argus writes its own access log (route templates, request ids, no query strings).
-CMD ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*", "--timeout-graceful-shutdown", "20", "--no-access-log"]
+CMD ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--no-server-header", "--timeout-graceful-shutdown", "20", "--no-access-log"]

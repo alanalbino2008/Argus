@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     auth_enabled: bool = Field(
         default=True, description="Require API keys. Disable ONLY for isolated local development."
     )
+    api_docs_enabled: bool = Field(
+        default=True,
+        description="Serve the interactive API reference (/docs, /redoc, /openapi.json). Turn off to hide the API map",
+    )
     bootstrap_admin_key: SecretStr | None = Field(
         default=None, description="Admin key to install on first start (otherwise one is generated and logged once)"
     )
@@ -153,6 +157,12 @@ class Settings(BaseSettings):
         description="RFC 3161 timestamp authority for evidence (e.g. https://freetsa.org/tsr); only digests are sent",
     )
     evidence_max_upload_mb: int = Field(default=25, ge=1, le=200, description="Largest evidence file accepted")
+    max_request_kb: int = Field(
+        default=4096,
+        ge=64,
+        le=65536,
+        description="Largest request body (JSON, forms) accepted; uploads use the evidence limit",
+    )
     remediation_poll_seconds: float = Field(
         default=300.0, gt=0, description="How often overdue remediation tasks and expired acceptances are checked"
     )

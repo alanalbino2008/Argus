@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.126.0] — Security audit and hardening
+
+### Security
+- **Forged client IPs:** the container and Helm chart no longer trust `X-Forwarded-For` from every peer
+  (`--forwarded-allow-ips "*"`). Before, any client could pass a key's network allow-list and every
+  per-address rate limit and lockout, and could write false addresses into the audit log. Trusted proxies
+  are now explicit: `FORWARDED_ALLOW_IPS` (container default: loopback), Helm `config.trustedProxies`,
+  and the private network in cluster compose.
+- **Open redirect:** the post-sign-in return path rejected `//host` but not `/<TAB>/host`. Browsers strip
+  the tab, so the user was redirected to another site. Control characters, whitespace and anything with
+  a scheme or host are now refused.
+- **Request size limit:** bodies over `ARGUS_MAX_REQUEST_KB` (default 4 MB) get 413 before they are
+  read. Uploads get the evidence limit plus 1 MB. Streamed bodies are cut off at the limit. Before, one
+  anonymous 64 MB request added about 200 MB to server memory.
+- **API-key guessing lockout:** after 30 wrong keys in 5 minutes, that address gets 429. During the
+  lockout every key it sends is refused, including a correct one.
+- **Less disclosure:** anonymous `/api/health` no longer returns the version, database type or scan
+  count. With no token, `/metrics` answers only loopback, private networks or a signed-in admin. The
+  `server` header is gone. `ARGUS_API_DOCS_ENABLED=false` hides `/docs` and `/openapi.json`.
+- **Development mode** (`ARGUS_AUTH_ENABLED=false`) serves only loopback and private networks.
+
+See `docs/explained/128-security-audit.md` for the full audit, including what was tested and held up.
+
 ## [1.125.0] — Command palette, WCAG 2.1 AA, navigable Settings
 
 ### Added

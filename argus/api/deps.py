@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import ipaddress
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
@@ -23,6 +24,22 @@ logger = logging.getLogger("argus.api.auth")
 
 # Throttle how many failed-auth events per IP are written to the audit log (anti log-flooding).
 _auth_failure_audit = SlidingWindowLimiter(limit=10, window=60)
+# Brute-force lockout: after this many wrong API keys from one address in the window, every key presented
+# from that address is refused with 429 - before it is checked - until the window passes. A right key
+# guessed during a lockout gets the same 429, so the lock cannot be used as an oracle. Per replica.
+KEY_FAILURES_PER_IP = 30
+KEY_FAILURE_WINDOW = 300.0
+_key_failures = SlidingWindowLimiter(limit=KEY_FAILURES_PER_IP, window=KEY_FAILURE_WINDOW, name="api_key_guess",
+                                     shared=False)  # fmt: skip
+
+
+def _key_lockout(ip: str) -> HTTPException:
+    metrics.RATE_LIMITED.labels("api_key_guess").inc()
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="Too many invalid API keys from this address; try again later",
+        headers={"Retry-After": str(_key_failures.retry_after(ip))},
+    )
 
 
 def client_ip(request: Request) -> str | None:
@@ -88,8 +105,21 @@ async def audit(
         logger.exception("Failed to write audit event %s", action)
 
 
+def public_address(ip: str | None) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip or "")
+    except ValueError:
+        return False  # not a network peer (a Unix socket, an in-process test client)
+    return not (addr.is_loopback or addr.is_private or addr.is_link_local)
+
+
 async def get_principal(request: Request) -> Principal:
     if not request.app.state.settings.auth_enabled:
+        # Development mode grants everyone admin - so it serves only this machine and private networks.
+        # An instance accidentally exposed with authentication off does not hand the internet its data.
+        if public_address(client_ip(request)):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Authentication is disabled on this server; it only serves local networks")  # fmt: skip
         return ANONYMOUS_ADMIN
     key = _extract_key(request)
     owner = request.cookies.get(OWNER_COOKIE)
@@ -102,6 +132,8 @@ async def get_principal(request: Request) -> Principal:
         return await _session_principal(request, cookie)
     keys: ApiKeyRepository = request.app.state.keys
     ip = client_ip(request)
+    if key and _key_failures.remaining(ip or "unknown") <= 0:
+        raise _key_lockout(ip or "unknown")
     principal, why = await keys.check(key, ip) if key else (None, None)
     if principal is None:
         # An expired key, or a key used from outside its networks, is refused like a wrong one:
@@ -117,6 +149,8 @@ async def get_principal(request: Request) -> Principal:
             )
             await audit(request, anon, "auth.failed", request.url.path, "denied",
                         {"reason": detail, "key_prefix": key[:10]})  # fmt: skip
+        if key and (not _key_failures.hit(ip or "unknown") or _key_failures.remaining(ip or "unknown") <= 0):
+            raise _key_lockout(ip or "unknown")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Valid API key required (Authorization: Bearer <key> or X-API-Key header)",

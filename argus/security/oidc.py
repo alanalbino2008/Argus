@@ -70,8 +70,17 @@ def new_login_secrets() -> tuple[str, str, str]:
 
 
 def safe_return_path(value: str | None) -> str:
-    """Only same-site relative paths: never an open redirect to another site."""
-    if not value or not value.startswith("/") or value.startswith("//") or "\\" in value or "\n" in value:
+    """Only same-site relative paths: never an open redirect to another site.
+
+    Browsers silently drop tabs, CR/LF and other control characters from a URL before following it, so
+    "/<TAB>/evil.example" would become "//evil.example" — a redirect to another site. Any control character
+    or whitespace makes the value unsafe, as does anything a URL parser reads as a scheme or a host."""
+    if not value or any(ord(c) <= 0x20 or ord(c) == 0x7F for c in value):
+        return "/"
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return "/"
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc:
         return "/"
     return value[:512]
 

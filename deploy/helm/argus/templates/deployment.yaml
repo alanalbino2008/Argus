@@ -62,7 +62,8 @@ spec:
           image: {{ include "argus.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["uvicorn", "argus.api.server:app", "--host", "0.0.0.0", "--port", "8000",
-                    "--proxy-headers", "--forwarded-allow-ips", "*",
+                    "--proxy-headers", "--no-server-header",
+                    "--forwarded-allow-ips", {{ .Values.config.trustedProxies | quote }},
                     "--log-level", {{ .Values.config.logLevel | quote }},
                     "--no-access-log",  # Argus writes its own access log (route templates, request ids, no query strings)
                     "--timeout-graceful-shutdown", "30"]

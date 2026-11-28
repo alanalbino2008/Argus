@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import ipaddress
 import json
 import logging
 import time
@@ -74,7 +75,16 @@ from argus.api.case_routes import router as case_router
 from argus.api.compliance_routes import router as compliance_router
 from argus.api.connect_routes import router as connect_router
 from argus.api.csp_routes import router as csp_router
-from argus.api.deps import WorkspaceContext, audit, in_workspace, public_base_url, require_platform_admin
+from argus.api.deps import (
+    WorkspaceContext,
+    audit,
+    client_ip,
+    get_principal,
+    in_workspace,
+    public_address,
+    public_base_url,
+    require_platform_admin,
+)
 from argus.api.executive_routes import router as executive_router
 from argus.api.executive_service import issue_board_report
 from argus.api.exposure_routes import router as exposure_router
@@ -162,6 +172,7 @@ from argus.reports.service import issue_report
 from argus.security import vault
 from argus.security.approvals import ApprovalRepository, ApprovalRequired
 from argus.security.auth import SYSTEM, Principal, Role
+from argus.security.body_limit import BodyLimitMiddleware
 from argus.security.crypto import secret_box_from_settings
 from argus.security.headers import SecurityHeadersMiddleware
 from argus.security.network import validate_scan_target
@@ -689,6 +700,9 @@ app = FastAPI(
     openapi_tags=API_TAGS,
     generate_unique_id_function=_operation_id,
     license_info={"name": "Proprietary"},
+    docs_url="/docs" if get_settings().api_docs_enabled else None,
+    redoc_url="/redoc" if get_settings().api_docs_enabled else None,
+    openapi_url="/openapi.json" if get_settings().api_docs_enabled else None,
 )
 app.openapi = partial(build_openapi, app)  # type: ignore[method-assign]
 
@@ -696,6 +710,8 @@ if get_settings().compress_responses:
     # Innermost, so security headers and metrics see the final response. Auth is by header, never a
     # cookie, so a cross-site page cannot make credentialed requests to mount a BREACH-style attack.
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+# Inside the function-style middlewares below: their task groups would wrap its 413 in an ExceptionGroup.
+app.add_middleware(BodyLimitMiddleware)  # oversized bodies are refused before anything buffers them
 app.middleware("http")(licence_gate)  # personal edition: the subscription decides what is allowed
 app.middleware("http")(vault_gate)  # a locked case vault: nothing but unlocking until it is open
 app.add_middleware(SecurityHeadersMiddleware)
@@ -1304,8 +1320,32 @@ async def prometheus_metrics(request: Request):
             raise HTTPException(
                 status_code=401, detail="Metrics token required", headers={"WWW-Authenticate": "Bearer"}
             )
+    elif not _internal_caller(request):
+        # No token: only scrapers on the same host or a private network (Prometheus in the cluster), or a
+        # signed-in administrator. To the internet the endpoint does not exist.
+        principal = await _optional_principal(request)
+        if principal is None or principal.role.rank < Role.ADMIN.rank:
+            raise HTTPException(status_code=404, detail="Not found")
     body, content_type = metrics.render()
     return Response(body, media_type=content_type)
+
+
+def _internal_caller(request: Request) -> bool:
+    """The (proxy-verified) client address is loopback or on a private network."""
+    try:
+        addr = ipaddress.ip_address(client_ip(request) or "")
+    except ValueError:
+        return False
+    return addr.is_loopback or addr.is_private
+
+
+async def _optional_principal(request: Request) -> Principal | None:
+    """Who is calling, if they presented valid credentials; None otherwise. Never refuses the request:
+    a probe answers even a caller that is rate-limited or locked out (it just gets the short answer)."""
+    try:
+        return await get_principal(request)
+    except HTTPException:
+        return None
 
 
 @app.get("/api/live")
@@ -1328,13 +1368,17 @@ async def health(request: Request):
         logger.warning("Health check: database unreachable", exc_info=True)
         db_ok = False
         metrics.DATABASE_UP.set(0)
-    body = {
+    body: dict[str, Any] = {
         "status": "ok" if db_ok else "degraded",
-        "database": {"backend": db.dialect, "reachable": db_ok},
-        "active_scans": len(INVESTIGATIONS),
+        "database": {"reachable": db_ok},
         "instance": request.app.state.settings.instance_id,
-        "version": app.version,
     }
+    # Load balancers need only the status. The version and database type help an attacker pick an
+    # exploit, so they are for signed-in users and the internal network only.
+    if _internal_caller(request) or await _optional_principal(request) is not None:
+        body["database"]["backend"] = db.dialect
+        body["active_scans"] = len(INVESTIGATIONS)
+        body["version"] = app.version
     if not db_ok:
         return Response(json.dumps(body), status_code=503, media_type="application/json")
     return body
@@ -1924,6 +1968,9 @@ async def websocket_stream(websocket: WebSocket, inv_id: str):
     ticket = websocket.query_params.get("ticket")
     auth_enabled = websocket.app.state.settings.auth_enabled
     redeemed = await websocket.app.state.ws_tickets.redeem_for_workspace(ticket) if auth_enabled else None
+    if not auth_enabled and public_address(websocket.client.host if websocket.client else None):
+        await websocket.close(code=4403)  # development mode serves local networks only
+        return
     if auth_enabled and redeemed is None:
         metrics.AUTH_FAILURES.labels("websocket_ticket").inc()
         await websocket.close(code=4401)

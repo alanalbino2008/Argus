@@ -121,6 +121,10 @@ secrets:
 
 # ---------------------------------------------------------------------------- application
 config:
+  # Proxies allowed to set X-Forwarded-For (comma-separated IPs/CIDRs). Only their header is believed;
+  # anyone else's is ignored, so a client cannot forge its IP past allow-lists and rate limits.
+  # Narrow this to your ingress controller's pod/node subnet. Never "*".
+  trustedProxies: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
   maxConcurrentScans: 5          # cluster-wide cap
   scansPerMinute: 10             # per API key, per replica
   apiRequestsPerMinute: 600      # per API key, per replica (0 = unlimited); browser sessions are not limited
