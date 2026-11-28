@@ -323,6 +323,20 @@
         },
         "ownerEmail": {
           "type": "string"
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "production",
+            "development"
+          ]
+        },
+        "trustedProxies": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "pattern": "(^|,)\\s*\\*\\s*(,|$)"
+          }
         }
       }
     },

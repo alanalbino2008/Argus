@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     )
 
     # --- Security (Phase 3) ---------------------------------------------------------
+    environment: Literal["development", "production"] = Field(
+        default="development",
+        description="'production' refuses to start with an unsafe configuration (see argus --preflight)",
+    )
     auth_enabled: bool = Field(
         default=True, description="Require API keys. Disable ONLY for isolated local development."
     )

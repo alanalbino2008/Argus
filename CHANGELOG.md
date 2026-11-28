@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.127.0] — Production readiness
+
+### Added
+- **Production preflight.** With `ARGUS_ENVIRONMENT=production` (now the default in the container image
+  and the Helm chart), the server refuses to start while any of these is true, and the log names the
+  fix:
+  - authentication is off;
+  - `FORWARDED_ALLOW_IPS="*"`;
+  - replicas share no encryption key;
+  - the public URL is plain HTTP;
+  - CORS allows `*`.
+
+  Advice (SQLite, text logs, no SMTP or metrics token) is logged as a warning. `argus --preflight` runs
+  the checks on demand and exits with 1 on errors. Set it in Helm with `config.environment`.
+- **Go-live checklist**: `docs/PRODUCTION.md`.
+
+### Changed
+- **Reproducible, verified images.**
+  - Dependencies are installed from `requirements.lock`: exact versions, with SHA-256 hashes checked by
+    `--require-hashes`.
+  - The base image is pinned by digest.
+  - pip is removed from the runtime image.
+  - The single-node image keeps its encryption key on the data volume (`ARGUS_ENCRYPTION_KEY_FILE`).
+- Compose cluster: `ARGUS_ENCRYPTION_KEY` is now required, as `POSTGRES_PASSWORD` already was.
+- CI:
+  - audits the locked versions;
+  - fails on a stale lock;
+  - runs the image read-only without capabilities;
+  - checks that it holds no package installer;
+  - checks that an unsafe configuration is refused.
+
+### Fixed
+- The CI check "image contains no secrets, source tree or git history" could never fail: with
+  `pipefail`, `! docker run … | grep` took its result from `docker run`. It now tests the captured
+  listing.
+
 ## [1.126.0] — Security audit and hardening
 
 ### Security

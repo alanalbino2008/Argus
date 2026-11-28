@@ -14,11 +14,12 @@ x-argus: &argus
   environment: &argus-env
     ARGUS_DATABASE_URL: postgresql+asyncpg://argus:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/argus
     ARGUS_AUTO_MIGRATE: "false"
+    ARGUS_ENVIRONMENT: production
     ARGUS_LOG_FORMAT: json
     # Only the nginx load balancer (on this private network) may set X-Forwarded-For.
     FORWARDED_ALLOW_IPS: ${ARGUS_TRUSTED_PROXIES:-127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
     ARGUS_BOOTSTRAP_ADMIN_KEY: ${ARGUS_BOOTSTRAP_ADMIN_KEY:-}
-    ARGUS_ENCRYPTION_KEY: ${ARGUS_ENCRYPTION_KEY:-}   # same on every replica
+    ARGUS_ENCRYPTION_KEY: ${ARGUS_ENCRYPTION_KEY:?set ARGUS_ENCRYPTION_KEY (the same on every replica)}
     ARGUS_PUBLIC_URL: ${ARGUS_PUBLIC_URL:-http://localhost:8000}
     ARGUS_SMTP_HOST: ${ARGUS_SMTP_HOST:-}
     ARGUS_SMTP_USERNAME: ${ARGUS_SMTP_USERNAME:-}

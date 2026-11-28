@@ -121,6 +121,9 @@ secrets:
 
 # ---------------------------------------------------------------------------- application
 config:
+  # "production" refuses to start with an unsafe configuration (auth off, trust-all proxies, plain-HTTP
+  # public URL, no shared encryption key...) and names the fix in the pod log. See `argus --preflight`.
+  environment: production
   # Proxies allowed to set X-Forwarded-For (comma-separated IPs/CIDRs). Only their header is believed;
   # anyone else's is ignored, so a client cannot forge its IP past allow-lists and rate limits.
   # Narrow this to your ingress controller's pod/node subnet. Never "*".

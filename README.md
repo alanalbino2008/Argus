@@ -591,7 +591,7 @@ SSRF blocks, auth failures) with bounded labels, writes JSON logs correlated by 
 `investigation_id`, and ships 14 unit-tested alert rules with runbooks and a Grafana dashboard —
 as a ServiceMonitor, PrometheusRule and dashboard ConfigMap on Kubernetes, or a Prometheus + Grafana
 overlay for Docker Compose ([`docs/explained/12-observability.md`](docs/explained/12-observability.md)).
-Operator guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · How it works:
+Operator guide: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) · Go-live checklist: [`docs/PRODUCTION.md`](docs/PRODUCTION.md) · How it works:
 [`docs/explained/11-kubernetes-and-postgresql.md`](docs/explained/11-kubernetes-and-postgresql.md).
 
 ---

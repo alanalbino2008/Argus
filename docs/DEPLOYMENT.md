@@ -8,6 +8,8 @@ Three supported shapes, all from the same container image:
 | `deploy/compose/cluster.yml` | PostgreSQL | A VM or two with high availability of the API |
 | Helm chart (`deploy/helm/argus`) | PostgreSQL (managed, or bundled for evaluation) | Kubernetes, production |
 
+Before going live, work through the [go-live checklist](PRODUCTION.md) and run `argus --preflight`.
+
 ---
 
 ## 1. Kubernetes with Helm

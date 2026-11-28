@@ -521,6 +521,27 @@ def verify_audit_cli(path: str, trusted_key: str | None) -> int:
     return 0
 
 
+def preflight_cli() -> int:
+    """Print every production finding for the current configuration; 1 if any is an error."""
+    from argus.core import preflight
+    from argus.core.settings import get_settings
+
+    findings = preflight.check(get_settings())
+    errors = [f for f in findings if f.level == "error"]
+    for f in findings:
+        mark = "[red]ERROR  [/red]" if f.level == "error" else "[yellow]WARNING[/yellow]"
+        console.print(f"{mark} {f.code}: {f.message}\n         fix: {f.fix}")
+    if not findings:
+        console.print("[green]Ready for production: no findings.[/green]")
+    elif not errors:
+        console.print(f"[green]No errors[/green] ({len(findings)} warning(s)): safe to start in production.")
+    else:
+        console.print(
+            f"[red]{len(errors)} error(s):[/red] with ARGUS_ENVIRONMENT=production the server will not start."
+        )
+    return 1 if errors else 0
+
+
 def cli_entrypoint():
     """Command line parser."""
     parser = argparse.ArgumentParser(
@@ -591,6 +612,8 @@ def cli_entrypoint():
     )
     parser.add_argument("--verify-report", metavar="FILE", help="Check a signed case report, then exit")
     parser.add_argument("--verify-audit", metavar="FILE", help="Check an audit log export (JSON Lines), then exit")
+    parser.add_argument("--preflight", action="store_true",
+                        help="Check this configuration is safe for production (exit 1 on errors), then exit")  # fmt: skip
     parser.add_argument("--check", action="store_true",
                         help="Check the database, its references, the audit chain and all evidence, then exit")  # fmt: skip
     parser.add_argument(
@@ -610,6 +633,8 @@ def cli_entrypoint():
         raise SystemExit(verify_report_cli(args.verify_report, args.report_key))
     if args.verify_audit:
         raise SystemExit(verify_audit_cli(args.verify_audit, args.report_key))
+    if args.preflight:
+        raise SystemExit(preflight_cli())
     if args.check:
         raise SystemExit(asyncio.run(integrity_cli()))
 

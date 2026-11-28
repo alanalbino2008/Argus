@@ -204,6 +204,18 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: pip-audit (known CVEs in runtime and tooling dependencies)
         run: pip-audit -r requirements-dev.txt --strict
+      - name: pip-audit of the exact versions shipped in the image (requirements.lock)
+        run: pip-audit -r requirements.lock --require-hashes --disable-pip --strict
+      # The image installs requirements.lock, not pyproject.toml: a dependency added or changed in
+      # pyproject.toml without re-locking would be missing from (or wrong in) the image.
+      - name: requirements.lock matches pyproject.toml
+        run: |
+          pip install "uv==0.11.32"
+          cp requirements.lock /tmp/check.lock
+          uv pip compile pyproject.toml --extra postgres --generate-hashes --universal --python-version 3.12 \
+            -o /tmp/check.lock -q
+          diff <(grep -v '^#' requirements.lock) <(grep -v '^#' /tmp/check.lock) \
+            || { echo "::error::requirements.lock is stale: re-run the command at the top of the file"; exit 1; }
 
   docker:
     name: Docker image build & health check
@@ -221,7 +233,9 @@ jobs:
           cache-to: type=gha,mode=max
       - name: Run container and wait for a healthy status
         run: |
-          docker run -d --name argus -p 8000:8000 argus:ci
+          # As production runs it: read-only filesystem, no Linux capabilities, no privilege escalation.
+          docker run -d --name argus -p 8000:8000 --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges argus:ci
           for i in $(seq 1 40); do
             status=$(docker inspect -f '{{.State.Health.Status}}' argus)
             [ "$status" = healthy ] && break
@@ -231,7 +245,23 @@ jobs:
           [ "$(docker inspect -f '{{.State.Health.Status}}' argus)" = healthy ]
       - name: Image must not contain secrets, source tree or git history
         run: |
-          ! docker run --rm --entrypoint sh argus:ci -c 'ls -a /app; ls /app/.git /app/.env /app/tests 2>/dev/null' | grep -E '\.git|\.env|tests'
+          # Capture first: with pipefail, "! docker run ... | grep" would pass whatever the image held.
+          found=$(docker run --rm --entrypoint sh argus:ci -c 'ls -a /app; ls -d /app/.git /app/.env /app/tests 2>/dev/null; true')
+          echo "$found"
+          ! echo "$found" | grep -qE '\.git|\.env|tests'
+      - name: Image has no package installer (nothing can be installed into a running container)
+        run: |
+          found=$(docker run --rm --entrypoint sh argus:ci -c 'command -v pip pip3; python -m pip --version 2>/dev/null; true')
+          echo "found: ${found:-nothing}"
+          [ -z "$found" ]
+      - name: An unsafe configuration refuses to start (production preflight)
+        run: |
+          set +e
+          out=$(timeout 60 docker run --rm -e ARGUS_AUTH_ENABLED=false -e FORWARDED_ALLOW_IPS='*' argus:ci 2>&1)
+          code=$?
+          echo "$out" | grep -E "Preflight" || true
+          [ "$code" -ne 0 ] && [ "$code" -ne 124 ] && echo "$out" | grep -q "Preflight auth_disabled" \
+            && echo "$out" | grep -q "Preflight trust_all_proxies"
       # Known vulnerabilities in everything inside the image: the base OS packages and every Python
       # package. A critical one with a fix available fails the build; accepted risks go in .trivyignore,
       # each with a reason and a review date.

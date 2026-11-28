@@ -132,7 +132,7 @@ from argus.api.vault_routes import router as vault_router
 from argus.api.vault_routes import vault_gate
 from argus.api.watch_routes import router as watch_router
 from argus.api.workspace_routes import router as workspace_router
-from argus.core import runtime_config
+from argus.core import preflight, runtime_config
 from argus.core.engine import ArgusEngine
 from argus.core.events import Event, EventType, event_bus
 from argus.core.graph import IntelligenceGraph
@@ -274,6 +274,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     logs.configure(settings.log_format, settings.log_level, settings.instance_id)
     metrics.init(settings.instance_id, settings.max_concurrent_scans)
+    preflight.enforce(settings)  # production: an unsafe configuration stops the start, naming the fix
     restored = backup_files.apply_pending_restore(settings)  # a restore prepared before the restart, if any
     db = Database(settings.database_url, echo=settings.db_echo)
     if settings.auto_migrate:

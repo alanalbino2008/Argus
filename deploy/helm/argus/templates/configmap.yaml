@@ -5,6 +5,7 @@ metadata:
   labels: {{- include "argus.labels" . | nindent 4 }}
 data:
   ARGUS_AUTO_MIGRATE: "false"
+  ARGUS_ENVIRONMENT: {{ .Values.config.environment | quote }}
   ARGUS_MAX_CONCURRENT_SCANS: {{ .Values.config.maxConcurrentScans | quote }}
   ARGUS_SCANS_PER_MINUTE: {{ .Values.config.scansPerMinute | quote }}
   ARGUS_API_REQUESTS_PER_MINUTE: {{ .Values.config.apiRequestsPerMinute | quote }}
